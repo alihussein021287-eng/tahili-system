@@ -1,0 +1,21 @@
+// خريطة فئات الصيانة (ملف عادي — لا يحمل "use server")
+export const CATS: Record<string, { label: string; tables: string[]; note?: string }> = {
+  appointments: { label: "المواعيد", tables: ['"public"."appointments"'] },
+  queue: { label: "الطابور", tables: ['"public"."QueueEntry"'] },
+  sessions: { label: "الجلسات والخطط العلاجية", tables: ['"public"."therapy_sessions"', '"public"."TreatmentPlan"', '"public"."ProgressMetric"', '"public"."VitalSign"'] },
+  prescriptions: { label: "الوصفات", tables: ['"public"."prescriptions"'] },
+  admissions: { label: "الرقود وجرعات الأدوية", tables: ['"public"."admissions"', '"public"."MedDose"'] },
+  wounds: { label: "تقييم الجروح والضمادات", tables: ['"public"."wound_assessments"', '"public"."dressing_records"'] },
+  correspondence: { label: "المخاطبات والمرفقات", tables: ['"public"."correspondence"', '"public"."attachments"'] },
+  devices: { label: "الأجهزة", tables: ['"public"."Device"'] },
+  finance: { label: "الفواتير والدفعات", tables: ['"public"."Invoice"', '"public"."Payment"'] },
+  tasks: { label: "المهام", tables: ['"public"."Task"'] },
+  shiftsLeaves: { label: "المناوبات والإجازات", tables: ['"public"."Shift"', '"public"."Leave"'] },
+  attendance: { label: "الحضور والموظفون", tables: ['"public"."Attendance"', '"public"."Employee"'] },
+  clinicalDocs: { label: "التشخيصات والتقارير الطبية واعتماداتها", tables: ['"public"."diagnoses"', '"public"."medical_reports"', '"public"."ReportApproval"'] },
+  relativesVisits: { label: "ذوو القربى والزيارات", tables: ['"public"."relatives"', '"public"."visits"'] },
+  audit: { label: "سجل التدقيق", tables: ['"public"."audit_logs"'] },
+  meds: { label: "الأدوية والمخزون والمورّدون", tables: ['"public"."medications"', '"public"."medication_batches"', '"public"."stock_movements"', '"public"."suppliers"'], note: "يشمل الوصفات المرتبطة بالأدوية." },
+  reference: { label: "القوائم المرجعية (محافظات/إصابات/مراكز...)", tables: ['"public"."governorates"', '"public"."districts"', '"public"."injury_types"', '"public"."centers"', '"public"."formations"', '"public"."Rank"', '"public"."Room"'], note: "قد يشمل المرضى المرتبطين بهذه القوائم." },
+  patients: { label: "المرضى (كل ملفاتهم)", tables: ['"public"."patients"'], note: "يمسح كل سجلات المريض (مواعيد، جلسات، فواتير، أجهزة...)." },
+};

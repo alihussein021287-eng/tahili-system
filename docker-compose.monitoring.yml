@@ -1,0 +1,85 @@
+# ==============================================================================
+# طبقة أدوات المراقبة — تُشغَّل فوق docker-compose.yml الأساسي، ما تلمس تطبيقك
+#
+# التشغيل:
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+#
+# الوصول عبر SSH tunnel فقط (المنافذ مقفلة على localhost للأمان):
+#   ssh -L 5050:localhost:5050 -L 3001:localhost:3001 -L 3002:localhost:3002 root@SERVER_IP
+#   بعدها من متصفح جهازك:
+#     PgAdmin      → http://localhost:5050
+#     Uptime Kuma  → http://localhost:3001
+#     Grafana      → http://localhost:3002   (admin / GRAFANA_PASSWORD)
+#
+# ملاحظة: القيم السرية تُقرأ من .env — لازم تضيفها (بدون قيم افتراضية ضعيفة):
+#   PGADMIN_EMAIL, PGADMIN_PASSWORD, GRAFANA_PASSWORD
+# ==============================================================================
+
+services:
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tahili_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:?set PGADMIN_EMAIL in .env}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?set PGADMIN_PASSWORD in .env}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - pgadmindata:/var/lib/pgadmin
+    ports:
+      - "127.0.0.1:5050:80"
+    depends_on:
+      - postgres
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: tahili_uptime
+    restart: unless-stopped
+    volumes:
+      - uptimekuma:/app/data
+    ports:
+      - "127.0.0.1:3001:3001"
+
+  loki:
+    image: grafana/loki:2.9.6
+    container_name: tahili_loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - lokidata:/loki
+
+  promtail:
+    image: grafana/promtail:2.9.6
+    container_name: tahili_promtail
+    restart: unless-stopped
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: tahili_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3002:3000"
+    depends_on:
+      - loki
+
+volumes:
+  pgadmindata:
+  uptimekuma:
+  lokidata:
+  grafanadata:

@@ -1,0 +1,23 @@
+# Optional security override.
+# This file is NOT active unless you explicitly use it with:
+#
+# docker compose -f docker-compose.yml -f docker-compose.secure-ports.yml up -d
+#
+# Purpose:
+# - Keep PostgreSQL and MinIO accessible only from the server itself.
+# - Do not expose database/storage ports to the whole network.
+#
+# IMPORTANT:
+# This uses Docker Compose !override so ports are replaced, not merged.
+# Do NOT apply during working hours unless you already confirmed that
+# no external client connects directly to ports 5432, 9000, or 9001.
+
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:5432:5432"
+
+  minio:
+    ports: !override
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
