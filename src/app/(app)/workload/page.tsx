@@ -1,15 +1,14 @@
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
 import { currentPerms, requirePerm } from "@/lib/access";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function Workload() {
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   await requirePerm("workload.view");
   const perms = await currentPerms();
   const canLogSession = perms.has("clinical.session");

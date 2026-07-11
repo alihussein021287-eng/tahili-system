@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/access";
+import { getApiSession } from "@/lib/access";
 import { BACKUP_DIR } from "@/lib/backup";
 import fs from "fs";
 import path from "path";
@@ -7,8 +7,9 @@ import path from "path";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const s = await getSession();
-  if ((s?.user as any)?.role !== "ADMIN") return new NextResponse("غير مصرّح", { status: 403 });
+  const { session: s, response } = await getApiSession();
+  if (response || !s) return response!;
+  if ((s.user as any)?.role !== "ADMIN") return new NextResponse("غير مصرّح", { status: 403 });
   const name = path.basename(req.nextUrl.searchParams.get("f") || "");
   const file = path.join(BACKUP_DIR, name);
   if (!(name.endsWith(".sql") || name.endsWith(".sql.gz")) || !fs.existsSync(file)) return new NextResponse("غير موجود", { status: 404 });

@@ -1,6 +1,5 @@
+import { getApiSession } from "@/lib/access";
 import { NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { readStoredFile } from "@/lib/storage";
 import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 import { prisma } from "@/lib/db";
@@ -14,8 +13,8 @@ const NO_STORE_HEADERS = {
 };
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ key: string[] }> }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return new Response("غير مصرّح", { status: 401, headers: NO_STORE_HEADERS });
+  const { session, response } = await getApiSession();
+  if (response || !session) return response!;
 
   const { key } = await params;
   const rawKey = key.join("/");

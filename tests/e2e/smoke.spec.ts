@@ -10,6 +10,8 @@ test("تسجيل الدخول ينجح ويوصل للرئيسية", async ({ pa
   await expect(page.locator("#u")).toBeVisible();
 
   await page.locator("#u").fill(USERNAME);
+  await page.getByRole("button", { name: "متابعة" }).click();
+  await expect(page.locator("#p")).toBeVisible();
   await page.locator("#p").fill(PASSWORD);
   await page.getByRole("button", { name: "دخول" }).click();
 
@@ -18,11 +20,13 @@ test("تسجيل الدخول ينجح ويوصل للرئيسية", async ({ pa
   await expect(page).toHaveURL(/\/$|\/(?!login)/, { timeout: 10000 });
 });
 
-test("بيانات خاطئة ترجع رسالة خطأ واضحة ولا تدخل النظام", async ({ page }) => {
+test("كلمة سر خاطئة ترجع رسالة واضحة ولا تدخل النظام", async ({ page }) => {
   await page.goto("/login");
-  await page.locator("#u").fill("لا_يوجد_مستخدم_بهذا_الاسم");
+  await page.locator("#u").fill(USERNAME);
+  await page.getByRole("button", { name: "متابعة" }).click();
+  await expect(page.locator("#p")).toBeVisible();
   await page.locator("#p").fill("كلمة-سر-غلط");
   await page.getByRole("button", { name: "دخول" }).click();
 
-  await expect(page.locator("text=اسم المستخدم أو كلمة السر غير صحيحة")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("text=كلمة السر غير صحيحة")).toBeVisible({ timeout: 5000 });
 });

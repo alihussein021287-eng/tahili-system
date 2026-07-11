@@ -1,8 +1,7 @@
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { canManageUsers, ROLE_LABELS } from "@/lib/permissions";
 import { loadPerms } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
@@ -13,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function UserDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   if (!canManageUsers((session?.user as any)?.role)) redirect("/");
 
   const user = await prisma.user.findUnique({ where: { id }, include: { branch: true } });

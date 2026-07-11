@@ -1,13 +1,12 @@
-import { getServerSession } from "next-auth";
+import { requireSession } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
-import { authOptions } from "@/lib/auth";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { changeOwnPassword } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function Account() {
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   const name = session?.user?.name ?? "";
   const role = (session?.user as any)?.role;
 

@@ -1,5 +1,5 @@
 "use server";
-import { getSession, assertAdminDelete } from "@/lib/access";
+import { requireSession, assertAdminDelete } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import { runBackup, restoreBackup as doRestore, BACKUP_DIR, backupErrorMessage } from "@/lib/backup";
@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 
 async function assertAdmin() {
-  const s = await getSession();
+  const s = await requireSession();
   if ((s?.user as any)?.role !== "ADMIN") throw new Error("غير مصرّح — الأدمن فقط");
   return s;
 }

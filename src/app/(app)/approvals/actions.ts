@@ -1,14 +1,13 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { assertPerm, currentPerms } from "@/lib/access";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 async function actor() {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   return { id: (s?.user as any)?.id ?? null, name: s?.user?.name ?? null };
 }
 

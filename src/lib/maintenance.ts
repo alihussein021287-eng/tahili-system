@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { getSession } from "./access";
+import { requireSession } from "./access";
 
 // هل وضع الصيانة مُفعّل؟ (مفتاح بقاعدة البيانات يتحكم به الأدمن)
 export async function maintenanceOn(): Promise<boolean> {
@@ -11,7 +11,7 @@ export async function maintenanceOn(): Promise<boolean> {
 
 // حارس للإجراءات: يرمي خطأ إن لم يكن أدمن أو الوضع متوقف
 export async function assertMaintenanceAdmin() {
-  const s = await getSession();
+  const s = await requireSession();
   if ((s?.user as any)?.role !== "ADMIN") throw new Error("غير مصرّح — الأدمن فقط");
   if (!(await maintenanceOn())) throw new Error("وضع الصيانة متوقف");
   return s;

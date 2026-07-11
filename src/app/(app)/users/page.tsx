@@ -1,4 +1,4 @@
-import { getSession } from "@/lib/access";
+import { requireSession } from "@/lib/access";
 import { Combobox } from "@/components/Combobox";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 const ROLE_OPTIONS = Object.entries(ROLE_LABELS).map(([value, label]: any) => ({ value, label }));
 
 export default async function Users({ searchParams }: { searchParams: Promise<{ q?: string; role?: string; status?: string; branch?: string }> }) {
-  const session = await getSession();
+  const session = await requireSession();
   if (!canManageUsers((session?.user as any)?.role)) redirect("/");
   const sp = await searchParams;
   const where: any = {};

@@ -2,6 +2,7 @@
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { passwordError } from "@/lib/security";
+import { incrementAuthVersion } from "@/lib/auth-version";
 
 // فحص اسم المستخدم: يحدّد إذا يحتاج تفعيل أو دخول عادي
 export async function checkUsername(username: string): Promise<{ state: "activate" | "password" | "invalid"; name?: string }> {
@@ -24,7 +25,13 @@ export async function activateAccount(username: string, password: string, confir
   const passwordHash = await bcrypt.hash(password, 10);
   await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash, needsActivation: false, failedLoginCount: 0, lockedUntil: null },
+    data: {
+      passwordHash,
+      needsActivation: false,
+      failedLoginCount: 0,
+      lockedUntil: null,
+      ...incrementAuthVersion(),
+    },
   });
   return { ok: true };
 }

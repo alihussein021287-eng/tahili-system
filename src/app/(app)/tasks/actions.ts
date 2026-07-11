@@ -1,7 +1,6 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
@@ -14,7 +13,7 @@ function withSaved(message: string) {
 }
 
 export async function createTask(fd: FormData) {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   await assertPerm("tasks.create");
   const title = fd.get("title")?.toString().trim();
   if (!title) redirect(withSaved("عنوان المهمة مطلوب"));
@@ -55,7 +54,7 @@ export async function startTask(id: string) {
 }
 
 export async function completeTask(id: string) {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   await assertPerm("tasks.complete");
   await prisma.task.update({ where: { id }, data: { status: "DONE", completedAt: new Date(), completedById: (s?.user as any)?.id } });
   await logAudit({ action: "UPDATE", tableName: "tasks", recordId: id, newValue: { status: "DONE" } });

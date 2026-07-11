@@ -1,7 +1,6 @@
+import { requireSession } from "@/lib/access";
 import { requirePerm } from "@/lib/access";
-import { getServerSession } from "next-auth";
 import { PageHeader } from "@/components/PageHeader";
-import { authOptions } from "@/lib/auth";
 import { canEdit } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -11,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ImportPatients({ searchParams }: { searchParams: Promise<{ err?: string; result?: string; details?: string }> }) {
   await requirePerm("patients.import");
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   if (!canEdit((session?.user as any)?.role)) redirect("/patients");
   const { err, result, details } = await searchParams;
 

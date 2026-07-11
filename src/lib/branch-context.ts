@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/db";
-import { getSession } from "@/lib/access";
+import { requireSession } from "@/lib/access";
 
 export async function currentUserBranch() {
-  const session = await getSession();
+  const session = await requireSession();
   const id = (session?.user as any)?.id as string | undefined;
   if (!id) return null;
   return prisma.user.findUnique({

@@ -1,6 +1,5 @@
+import { getSession } from "@/lib/access";
 import { prisma } from "./db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "./auth";
 
 export async function logAudit(opts: {
   userId?: string; action: "CREATE" | "UPDATE" | "DELETE";
@@ -10,7 +9,7 @@ export async function logAudit(opts: {
     // إن لم يُمرّر المستخدم، نجلبه من الجلسة الحالية تلقائياً
     let userId = opts.userId;
     if (!userId) {
-      const s = await getServerSession(authOptions);
+      const s = await getSession();
       userId = (s?.user as any)?.id;
     }
     await prisma.auditLog.create({ data: {

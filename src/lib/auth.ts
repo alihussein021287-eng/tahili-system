@@ -4,6 +4,16 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { LOGIN_MAX_ATTEMPTS, LOGIN_LOCK_MINUTES } from "./security";
 
+export function applyUserClaims(token: Record<string, unknown>, user?: Record<string, unknown>) {
+  if (!user) return token;
+  return {
+    ...token,
+    role: user.role,
+    uid: user.id,
+    authVersion: user.authVersion,
+  };
+}
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: { signIn: "/login" },
@@ -49,19 +59,19 @@ export const authOptions: NextAuthOptions = {
           data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
         });
         await logLogin({ userId: user.id, username: user.username, name: user.fullName, success: true });
-        return { id: user.id, name: user.fullName, role: user.role } as any;
+        return { id: user.id, name: user.fullName, role: user.role, authVersion: user.authVersion } as any;
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
-      if (user) { token.role = (user as any).role; token.uid = (user as any).id; }
-      return token;
+      return applyUserClaims(token, user as any) as any;
     },
     async session({ session, token }) {
       if (session.user) {
         (session.user as any).role = token.role;
         (session.user as any).id = token.uid;
+        (session.user as any).authVersion = token.authVersion;
       }
       return session;
     },

@@ -1,13 +1,12 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { canManageUsers } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 
 async function reqAdmin() {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   if (!canManageUsers((s?.user as any)?.role)) throw new Error("غير مصرّح");
 }
 export async function setRolePerm(role: any, key: string, allowed: boolean) {

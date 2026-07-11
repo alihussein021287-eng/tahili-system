@@ -9,11 +9,53 @@ import {
   assertPermissionLoaded,
   PermissionStoreUnavailableError,
 } from "@/lib/permission-store";
+import { SessionStoreUnavailableError, validateCurrentSession } from "@/lib/session-validation";
 
 export { PermissionStoreUnavailableError } from "@/lib/permission-store";
+export { SessionStoreUnavailableError } from "@/lib/session-validation";
 
-// جلسة المستخدم الحالي — مكاشة لكل request (تمنع فك الجلسة أكثر من مرة بنفس الصفحة)
-export const getSession = cache(async () => getServerSession(authOptions));
+// جلسة موثقة من DB ومكاشة داخل الطلب الواحد فقط.
+// لا نثق بدور JWT، ونرفض التوكنات القديمة التي لا تحتوي authVersion.
+export const getSession = cache(async () => {
+  const session = await getServerSession(authOptions);
+  return validateCurrentSession(session, (id) => prisma.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      fullName: true,
+      role: true,
+      isActive: true,
+      needsActivation: true,
+      authVersion: true,
+    },
+  }));
+});
+
+export async function getApiSession(loadSession: typeof getSession = getSession) {
+  try {
+    const session = await loadSession();
+    return session
+      ? { session, response: null }
+      : { session: null, response: new Response("غير مصرح", { status: 401, headers: { "Cache-Control": "no-store" } }) };
+  } catch (error) {
+    if (error instanceof SessionStoreUnavailableError) {
+      return {
+        session: null,
+        response: new Response("خدمة التحقق من الجلسة غير متاحة مؤقتاً", {
+          status: 503,
+          headers: { "Cache-Control": "no-store" },
+        }),
+      };
+    }
+    throw error;
+  }
+}
+
+export async function requireSession() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  return session;
+}
 
 const loggedPermissionErrors = new WeakSet<PermissionStoreUnavailableError>();
 const PERMISSION_ERROR_LOG_THROTTLE_MS = 5_000;
@@ -49,6 +91,8 @@ export const currentPerms = cache(async (): Promise<Set<string>> => {
 
 // حارس صفحة: يمنع ويحوّل للرئيسية إن لم تتوفّر الصلاحية
 export async function requirePerm(key: string) {
+  const session = await getSession();
+  if (!session) redirect("/login");
   const perms = await currentPerms();
   if (!perms.has(key)) redirect("/");
   return perms;
@@ -56,12 +100,13 @@ export async function requirePerm(key: string) {
 
 // حارس على مستوى الإجراء (يرفض حتى لو تجاوز الواجهة)
 export async function assertPerm(key: string) {
+  await requireSession();
   await assertPermissionLoaded(key, currentPerms);
 }
 
 // الحذف حصري للأدمن بكل النظام — يُستدعى بأول كل دالة حذف
 export async function assertAdminDelete() {
-  const s = await getSession();
+  const s = await requireSession();
   const userId = (s?.user as any)?.id as string | undefined;
   if (!userId) throw new Error("الحذف صلاحية حصرية لمدير النظام");
 

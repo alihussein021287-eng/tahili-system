@@ -1,6 +1,5 @@
-import { getServerSession } from "next-auth";
+import { requireSession } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
-import { authOptions } from "@/lib/auth";
 import { canManageUsers } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -11,7 +10,7 @@ export const dynamic = "force-dynamic";
 const ROLES = ["MANAGER", "DOCTOR", "HEAD_THERAPIST", "THERAPIST", "PHARMACIST", "ACCOUNTANT", "RECEPTION", "RESIDENT", "DATA_ENTRY", "LAB", "RADIOLOGY", "DRESSING", "PROSTHETICS", "VIEWER"] as const;
 
 export default async function PermissionsPage() {
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   if (!canManageUsers((session?.user as any)?.role)) redirect("/");
 
   const roleSets: Record<string, string[]> = {};

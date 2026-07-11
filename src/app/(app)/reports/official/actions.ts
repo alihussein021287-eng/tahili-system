@@ -1,13 +1,12 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { assertPerm } from "@/lib/access";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 
 export async function approveOfficialReport(year: number, month: number, fd: FormData) {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   await assertPerm("reports.approve");
   const refKey = `${year}-${month}`;
   const approvedBy = fd.get("approvedBy")?.toString().trim() || (s?.user?.name ?? "");

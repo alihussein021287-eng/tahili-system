@@ -1,7 +1,6 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -14,7 +13,7 @@ function withSaved(path: string, message: string) {
 }
 
 async function guard(key: string) {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   await assertPerm(key);
   return s;
 }

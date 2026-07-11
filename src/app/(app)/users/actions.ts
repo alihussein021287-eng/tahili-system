@@ -1,8 +1,7 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { canManageUsers } from "@/lib/permissions";
 import { roleDefaultSet, ALL_PERMS } from "@/lib/perms";
 import { revalidatePath } from "next/cache";
@@ -10,9 +9,10 @@ import bcrypt from "bcryptjs";
 import { passwordError } from "@/lib/security";
 import { userCreateSchema, userUpdateSchema, parseOrThrow } from "@/lib/validate";
 import { assertCanApplyAdminChange } from "@/lib/admin-security";
+import { incrementAuthVersion, incrementAuthVersionIf } from "@/lib/auth-version";
 
 async function requireAdmin() {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   if (!canManageUsers((s?.user as any)?.role)) throw new Error("غير مصرّح");
 }
 
@@ -52,7 +52,13 @@ export async function toggleUser(id: string, isActive: boolean) {
     const target = await tx.user.findUniqueOrThrow({ where: { id }, select: { role: true, isActive: true } });
     const activeAdminCount = await tx.user.count({ where: { role: "ADMIN", isActive: true } });
     assertCanApplyAdminChange(activeAdminCount, target, { ...target, isActive });
-    await tx.user.update({ where: { id }, data: { isActive } });
+    await tx.user.update({
+      where: { id },
+      data: {
+        isActive,
+        ...incrementAuthVersionIf(target.isActive !== isActive),
+      },
+    });
   }, { isolationLevel: "Serializable" });
   await logAudit({ action: "UPDATE", tableName: "users", recordId: id, newValue: { isActive } });
   revalidatePath("/users");
@@ -65,7 +71,10 @@ export async function resetPassword(id: string, fd: FormData) {
   const pwErr = passwordError(pw);
   if (pwErr) throw new Error(pwErr);
   const passwordHash = await bcrypt.hash(pw, 10);
-  await prisma.user.update({ where: { id }, data: { passwordHash } });
+  await prisma.user.update({
+    where: { id },
+    data: { passwordHash, ...incrementAuthVersion() },
+  });
   await logAudit({ action: "UPDATE", tableName: "users", recordId: id, newValue: { passwordReset: true } });
   revalidatePath(`/users/${id}`);
 }
@@ -93,7 +102,14 @@ export async function updateUser(id: string, fd: FormData) {
     const target = await tx.user.findUniqueOrThrow({ where: { id }, select: { role: true, isActive: true } });
     const activeAdminCount = await tx.user.count({ where: { role: "ADMIN", isActive: true } });
     assertCanApplyAdminChange(activeAdminCount, target, { ...target, role: data.role ?? target.role });
-    await tx.user.update({ where: { id }, data });
+    const nextRole = data.role ?? target.role;
+    await tx.user.update({
+      where: { id },
+      data: {
+        ...data,
+        ...incrementAuthVersionIf(nextRole !== target.role),
+      },
+    });
   }, { isolationLevel: "Serializable" });
   await logAudit({ action: "UPDATE", tableName: "users", recordId: id, newValue: { role: data.role } });
   revalidatePath(`/users/${id}`);
@@ -145,7 +161,13 @@ export async function applyRoleTemplate(userId: string, role: string, alsoSetRol
       const target = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { role: true, isActive: true } });
       const activeAdminCount = await tx.user.count({ where: { role: "ADMIN", isActive: true } });
       assertCanApplyAdminChange(activeAdminCount, target, { ...target, role });
-      await tx.user.update({ where: { id: userId }, data: { role: role as any } });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          role: role as any,
+          ...incrementAuthVersionIf(target.role !== role),
+        },
+      });
     }
     for (const key of ALL_PERMS) {
       await tx.userPermission.upsert({

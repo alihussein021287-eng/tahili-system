@@ -1,7 +1,6 @@
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { canManageUsers } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -11,7 +10,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   if (!canManageUsers((session?.user as any)?.role)) redirect("/");
 
   const { page } = await searchParams;

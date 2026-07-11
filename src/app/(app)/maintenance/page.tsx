@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getSession } from "@/lib/access";
+import { requireSession } from "@/lib/access";
 import { maintenanceOn } from "@/lib/maintenance";
 import { PageHeader } from "@/components/PageHeader";
 import { wipeCategory, wipeAll } from "./actions";
@@ -10,7 +10,7 @@ import { CATS } from "./cats";
 export const dynamic = "force-dynamic";
 
 export default async function Maintenance({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
-  const session = await getSession();
+  const session = await requireSession();
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   if (!isAdmin || !(await maintenanceOn())) notFound();
   const sp = await searchParams;

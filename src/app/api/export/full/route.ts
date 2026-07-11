@@ -1,5 +1,4 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getApiSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 import { GENDER, MARITAL, PATIENT_STATUS, INVOICE_STATUS, DEVICE_STATUS } from "@/lib/labels";
@@ -22,10 +21,10 @@ function fmt(d: any) {
 }
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  const { session, response } = await getApiSession();
+  if (response || !session) return response!;
   const role = (session?.user as any)?.role;
   const uid = (session?.user as any)?.id;
-  if (!session) return new Response("غير مصرّح", { status: 401 });
   const permission = await checkApiPermission(uid, role, "patients.export");
   if (permission.allowed === false) return apiPermissionResponse(permission);
   const perms = permission.permissions;
