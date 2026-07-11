@@ -1,10 +1,12 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { isInitialSetupAllowed } from "@/lib/setup-security";
 import { completeSetup } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
+  if (!isInitialSetupAllowed()) notFound();
   const activeAdmin = await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } });
   if (activeAdmin) redirect("/login");
 

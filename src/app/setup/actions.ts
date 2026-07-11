@@ -4,10 +4,10 @@ import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { passwordError } from "@/lib/security";
+import { assertInitialSetupAllowed } from "@/lib/setup-security";
 
 export async function completeSetup(fd: FormData) {
-  const activeAdmin = await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } });
-  if (activeAdmin) redirect("/login");
+  assertInitialSetupAllowed();
 
   const username = fd.get("username")?.toString().trim() || "admin";
   const fullName = fd.get("fullName")?.toString().trim() || "مدير النظام";
@@ -18,36 +18,44 @@ export async function completeSetup(fd: FormData) {
   if (pwErr) throw new Error(pwErr);
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const existing = await prisma.user.findUnique({ where: { username } });
-  if (existing) {
-    await prisma.user.update({
-      where: { id: existing.id },
-      data: { fullName, passwordHash, role: "ADMIN", isActive: true, needsActivation: false },
-    });
-  } else {
-    await prisma.user.create({
-      data: { username, fullName, passwordHash, role: "ADMIN", isActive: true, needsActivation: false },
-    });
-  }
+  const setupCompleted = await prisma.$transaction(async (tx) => {
+    const activeAdmin = await tx.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } });
+    if (activeAdmin) return false;
 
-  await prisma.orgSetting.upsert({
-    where: { id: 1 },
-    update: {
-      name: fd.get("name")?.toString().trim() || "المجمع التأهيلي الطبي",
-      subtitle: fd.get("subtitle")?.toString().trim() || null,
-      address: fd.get("address")?.toString().trim() || null,
-      phone: fd.get("phone")?.toString().trim() || null,
-      logoUrl: fd.get("logoUrl")?.toString().trim() || null,
-    },
-    create: {
-      id: 1,
-      name: fd.get("name")?.toString().trim() || "المجمع التأهيلي الطبي",
-      subtitle: fd.get("subtitle")?.toString().trim() || null,
-      address: fd.get("address")?.toString().trim() || null,
-      phone: fd.get("phone")?.toString().trim() || null,
-      logoUrl: fd.get("logoUrl")?.toString().trim() || null,
-    },
-  });
+    const existing = await tx.user.findUnique({ where: { username } });
+    if (existing) {
+      await tx.user.update({
+        where: { id: existing.id },
+        data: { fullName, passwordHash, role: "ADMIN", isActive: true, needsActivation: false },
+      });
+    } else {
+      await tx.user.create({
+        data: { username, fullName, passwordHash, role: "ADMIN", isActive: true, needsActivation: false },
+      });
+    }
+
+    await tx.orgSetting.upsert({
+      where: { id: 1 },
+      update: {
+        name: fd.get("name")?.toString().trim() || "المجمع التأهيلي الطبي",
+        subtitle: fd.get("subtitle")?.toString().trim() || null,
+        address: fd.get("address")?.toString().trim() || null,
+        phone: fd.get("phone")?.toString().trim() || null,
+        logoUrl: fd.get("logoUrl")?.toString().trim() || null,
+      },
+      create: {
+        id: 1,
+        name: fd.get("name")?.toString().trim() || "المجمع التأهيلي الطبي",
+        subtitle: fd.get("subtitle")?.toString().trim() || null,
+        address: fd.get("address")?.toString().trim() || null,
+        phone: fd.get("phone")?.toString().trim() || null,
+        logoUrl: fd.get("logoUrl")?.toString().trim() || null,
+      },
+    });
+    return true;
+  }, { isolationLevel: "Serializable" });
+
+  if (!setupCompleted) throw new Error("التهيئة غير متاحة");
 
   redirect("/login");
 }
