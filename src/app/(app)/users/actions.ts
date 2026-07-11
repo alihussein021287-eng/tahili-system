@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { passwordError } from "@/lib/security";
 import { userCreateSchema, userUpdateSchema, parseOrThrow } from "@/lib/validate";
+import { assertCanApplyAdminChange } from "@/lib/admin-security";
 
 async function requireAdmin() {
   const s = await getServerSession(authOptions);
@@ -47,7 +48,12 @@ export async function createUser(fd: FormData) {
 
 export async function toggleUser(id: string, isActive: boolean) {
   await requireAdmin();
-  await prisma.user.update({ where: { id }, data: { isActive } });
+  await prisma.$transaction(async (tx) => {
+    const target = await tx.user.findUniqueOrThrow({ where: { id }, select: { role: true, isActive: true } });
+    const activeAdminCount = await tx.user.count({ where: { role: "ADMIN", isActive: true } });
+    assertCanApplyAdminChange(activeAdminCount, target, { ...target, isActive });
+    await tx.user.update({ where: { id }, data: { isActive } });
+  }, { isolationLevel: "Serializable" });
   await logAudit({ action: "UPDATE", tableName: "users", recordId: id, newValue: { isActive } });
   revalidatePath("/users");
   revalidatePath(`/users/${id}`);
@@ -73,9 +79,7 @@ export async function updateUser(id: string, fd: FormData) {
     role: g("role") || undefined,
     email: g("email") || "",
   });
-  await prisma.user.update({
-    where: { id },
-    data: {
+  const data = {
       ...(fd.has("branchId") ? { branchId: fd.get("branchId")?.toString() ? Number(fd.get("branchId")) : null } : {}),
       fullName: v.fullName,
       role: (v.role as any) || undefined,
@@ -84,9 +88,14 @@ export async function updateUser(id: string, fd: FormData) {
       jobTitle: g("jobTitle") || null,
       department: g("department") || null,
       note: g("note") || null,
-    },
-  });
-  await logAudit({ action: "UPDATE", tableName: "users", recordId: id });
+  };
+  await prisma.$transaction(async (tx) => {
+    const target = await tx.user.findUniqueOrThrow({ where: { id }, select: { role: true, isActive: true } });
+    const activeAdminCount = await tx.user.count({ where: { role: "ADMIN", isActive: true } });
+    assertCanApplyAdminChange(activeAdminCount, target, { ...target, role: data.role ?? target.role });
+    await tx.user.update({ where: { id }, data });
+  }, { isolationLevel: "Serializable" });
+  await logAudit({ action: "UPDATE", tableName: "users", recordId: id, newValue: { role: data.role } });
   revalidatePath(`/users/${id}`);
   revalidatePath("/users");
 }
@@ -131,17 +140,22 @@ export async function clearUserPerms(userId: string) {
 export async function applyRoleTemplate(userId: string, role: string, alsoSetRole = false) {
   await requireAdmin();
   const tmpl = roleDefaultSet(role as any);
-  await prisma.$transaction([
-    ...(alsoSetRole ? [prisma.user.update({ where: { id: userId }, data: { role: role as any } })] : []),
-    ...ALL_PERMS.map((key) =>
-      prisma.userPermission.upsert({
+  await prisma.$transaction(async (tx) => {
+    if (alsoSetRole) {
+      const target = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { role: true, isActive: true } });
+      const activeAdminCount = await tx.user.count({ where: { role: "ADMIN", isActive: true } });
+      assertCanApplyAdminChange(activeAdminCount, target, { ...target, role });
+      await tx.user.update({ where: { id: userId }, data: { role: role as any } });
+    }
+    for (const key of ALL_PERMS) {
+      await tx.userPermission.upsert({
         where: { userId_permKey: { userId, permKey: key } },
         update: { allowed: tmpl.has(key) },
         create: { userId, permKey: key, allowed: tmpl.has(key) },
-      })
-    ),
-  ]);
-  await logAudit({ action: "UPDATE", tableName: "user_permissions", recordId: userId, newValue: { template: role } });
+      });
+    }
+  }, { isolationLevel: "Serializable" });
+  await logAudit({ action: "UPDATE", tableName: "user_permissions", recordId: userId, newValue: { template: role, roleChanged: alsoSetRole } });
   revalidatePath(`/users/${userId}`);
   revalidatePath("/users");
 }
