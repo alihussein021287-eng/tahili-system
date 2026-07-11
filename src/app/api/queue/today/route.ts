@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { fmtTime } from "@/lib/labels";
-import { loadPerms } from "@/lib/access";
+import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +12,8 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const uid = (session.user as any)?.id;
   const role = (session.user as any)?.role;
-  const perms = await loadPerms(uid, role);
-  if (!perms.has("queue.view")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const permission = await checkApiPermission(uid, role, "queue.view");
+  if (permission.allowed === false) return apiPermissionResponse(permission);
 
   const startToday = new Date(new Date().toDateString());
   const entries = await prisma.queueEntry.findMany({

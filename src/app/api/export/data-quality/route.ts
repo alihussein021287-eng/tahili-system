@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { loadPerms } from "@/lib/access";
+import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 import { getPatientDataQuality } from "@/lib/data-quality";
 import { fmtDate } from "@/lib/labels";
 
@@ -14,8 +14,8 @@ function esc(v: unknown) {
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response("غير مصرّح", { status: 401 });
-  const perms = await loadPerms((session.user as any)?.id, (session.user as any)?.role);
-  if (!perms.has("patients.view")) return new Response("لا تملك صلاحية عرض المراجعين", { status: 403 });
+  const permission = await checkApiPermission((session.user as any)?.id, (session.user as any)?.role, "patients.view");
+  if (permission.allowed === false) return apiPermissionResponse(permission);
 
   const url = new URL(req.url);
   const report = await getPatientDataQuality(url.searchParams.get("kind") ?? undefined);

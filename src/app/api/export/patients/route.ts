@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { loadPerms } from "@/lib/access";
+import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 import { GENDER, MARITAL, PATIENT_STATUS } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +15,8 @@ function esc(v: any) {
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response("غير مصرّح", { status: 401 });
-  const perms = await loadPerms((session.user as any)?.id, (session.user as any)?.role);
-  if (!perms.has("patients.export")) return new Response("لا تملك صلاحية التصدير", { status: 403 });
+  const permission = await checkApiPermission((session.user as any)?.id, (session.user as any)?.role, "patients.export");
+  if (permission.allowed === false) return apiPermissionResponse(permission);
 
   const sp = req.nextUrl.searchParams;
   const where: any = {};

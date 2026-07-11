@@ -4,26 +4,41 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { roleDefaultSet, ALL_PERMS } from "@/lib/perms";
+import {
+  loadPermissionsFromStore,
+  assertPermissionLoaded,
+  PermissionStoreUnavailableError,
+} from "@/lib/permission-store";
+
+export { PermissionStoreUnavailableError } from "@/lib/permission-store";
 
 // جلسة المستخدم الحالي — مكاشة لكل request (تمنع فك الجلسة أكثر من مرة بنفس الصفحة)
 export const getSession = cache(async () => getServerSession(authOptions));
 
+const loggedPermissionErrors = new WeakSet<PermissionStoreUnavailableError>();
+const PERMISSION_ERROR_LOG_THROTTLE_MS = 5_000;
+let lastPermissionErrorLoggedAt = 0;
+
+function logPermissionStoreFailure(error: PermissionStoreUnavailableError) {
+  if (loggedPermissionErrors.has(error)) return;
+  loggedPermissionErrors.add(error);
+  const now = Date.now();
+  if (now - lastPermissionErrorLoggedAt < PERMISSION_ERROR_LOG_THROTTLE_MS) return;
+  lastPermissionErrorLoggedAt = now;
+  console.error("[permissions] permission store unavailable", { code: error.code });
+}
+
 // يحسب الصلاحيات الفعلية: افتراضي الدور ← تعديل الدور (DB) ← استثناء المستخدم (DB)
 export async function loadPerms(userId?: string, role?: UserRole): Promise<Set<string>> {
-  if (!role) return new Set();
-  if (role === "ADMIN") return new Set(ALL_PERMS);
-  const set = roleDefaultSet(role);
   try {
-    // الاستعلامان متوازيان بدل متسلسلين
-    const [rp, up] = await Promise.all([
-      prisma.rolePermission.findMany({ where: { role } }),
-      userId ? prisma.userPermission.findMany({ where: { userId } }) : Promise.resolve([]),
-    ]);
-    for (const r of rp) { if (r.allowed) set.add(r.permKey); else set.delete(r.permKey); }
-    for (const u of up) { if (u.allowed) set.add(u.permKey); else set.delete(u.permKey); }
-  } catch {}
-  return set;
+    return await loadPermissionsFromStore(userId, role, {
+      findRolePermissions: (currentRole) => prisma.rolePermission.findMany({ where: { role: currentRole } }),
+      findUserPermissions: (currentUserId) => prisma.userPermission.findMany({ where: { userId: currentUserId } }),
+    });
+  } catch (error) {
+    if (error instanceof PermissionStoreUnavailableError) logPermissionStoreFailure(error);
+    throw error;
+  }
 }
 
 // صلاحيات المستخدم الحالي — مكاشة لكل request (تمنع تكرار استعلامات الصلاحيات بنفس الصفحة)
@@ -41,13 +56,25 @@ export async function requirePerm(key: string) {
 
 // حارس على مستوى الإجراء (يرفض حتى لو تجاوز الواجهة)
 export async function assertPerm(key: string) {
-  const perms = await currentPerms();
-  if (!perms.has(key)) throw new Error("غير مصرّح بهذا الإجراء");
+  await assertPermissionLoaded(key, currentPerms);
 }
 
 // الحذف حصري للأدمن بكل النظام — يُستدعى بأول كل دالة حذف
 export async function assertAdminDelete() {
   const s = await getSession();
-  if ((s?.user as any)?.role !== "ADMIN") throw new Error("الحذف صلاحية حصرية لمدير النظام");
+  const userId = (s?.user as any)?.id as string | undefined;
+  if (!userId) throw new Error("الحذف صلاحية حصرية لمدير النظام");
+
+  // Do not trust the role embedded in the JWT for destructive operations.
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true, isActive: true },
+  });
+  if (!user?.isActive || user.role !== "ADMIN") {
+    throw new Error("الحذف صلاحية حصرية لمدير النظام");
+  }
+
+  // ADMIN-only mutations still require a successful permission-store read.
+  await loadPerms(userId, user.role);
   return s;
 }

@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { loadPerms } from "@/lib/access";
+import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +11,8 @@ function esc(v: string) {
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return new Response("غير مصرّح", { status: 401 });
-  const perms = await loadPerms((session.user as any)?.id, (session.user as any)?.role);
-  if (!perms.has("patients.import")) return new Response("لا تملك صلاحية الاستيراد", { status: 403 });
+  const permission = await checkApiPermission((session.user as any)?.id, (session.user as any)?.role, "patients.import");
+  if (permission.allowed === false) return apiPermissionResponse(permission);
 
   const headers = ["الاسم الرباعي", "الهاتف", "اسم الأم", "سنة التولد", "السكن", "ملاحظات"];
   const example = ["علي حسين قاسم محمد", "07701234567", "زينب", "1990", "بغداد", "سطر مثال - احذفه قبل الاستيراد"];

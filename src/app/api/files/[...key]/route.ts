@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { readStoredFile } from "@/lib/storage";
-import { loadPerms } from "@/lib/access";
+import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -23,14 +23,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ key
     return new Response("مسار غير صالح", { status: 400, headers: NO_STORE_HEADERS });
   }
 
-  const perms = await loadPerms((session.user as any)?.id, (session.user as any)?.role);
   const fileUrl = `/api/files/${rawKey}`;
   const [patientAttachment, officialDocument] = await Promise.all([
     prisma.attachment.findFirst({ where: { fileUrl }, select: { id: true } }),
     prisma.officialDocument.findFirst({ where: { attachmentUrl: fileUrl }, select: { id: true } }),
   ]);
-  const allowed = (patientAttachment && perms.has("patients.view")) || (officialDocument && perms.has("officialdocs.view")) || (!patientAttachment && !officialDocument && perms.has("patients.view"));
-  if (!allowed) return new Response("لا تملك صلاحية عرض الملفات", { status: 403, headers: NO_STORE_HEADERS });
+  const requiredPermissions = [
+    ...(patientAttachment || !officialDocument ? ["patients.view"] : []),
+    ...(officialDocument ? ["officialdocs.view"] : []),
+  ];
+  const permission = await checkApiPermission(
+    (session.user as any)?.id,
+    (session.user as any)?.role,
+    requiredPermissions,
+  );
+  if (permission.allowed === false) return apiPermissionResponse(permission);
 
   const buf = await readStoredFile(rawKey);
   if (!buf) return new Response("غير موجود", { status: 404, headers: NO_STORE_HEADERS });
