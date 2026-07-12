@@ -159,6 +159,26 @@ enum PurchaseOrderStatus {
   CANCELLED
 }
 
+enum WoundedExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  READY_FOR_PAYMENT
+  PAID
+  CANCELLED
+}
+
+enum ExpenseApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+enum ExpenseCorrectionType {
+  CORRECTION
+  REVERSAL
+}
+
 enum CarePeriod {
   MORNING // صباح
   EVENING // مساء
@@ -320,6 +340,9 @@ model User {
   purchaseOrdersCreated       PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
   purchaseOrdersApproved      PurchaseOrder[] @relation("PurchaseOrderApprovedBy")
   purchaseReceiptsCreated     PurchaseReceipt[] @relation("PurchaseReceiptCreatedBy")
+  woundedExpensesCreated      WoundedExpense[] @relation("WoundedExpenseCreatedBy")
+  woundedExpensesPaid         WoundedExpense[] @relation("WoundedExpensePaidBy")
+  woundedExpenseApprovals     WoundedExpenseApproval[]
 
   @@index([username])
   @@map("users")
@@ -581,6 +604,77 @@ model PurchaseOrderAttachment {
   @@map("purchase_order_attachments")
 }
 
+model WoundedExpense {
+  id              String @id @default(cuid())
+  voucherNo       String @unique
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  beneficiary     String
+  beneficiaryEntity String?
+  expenseType     String
+  reason          String
+  amount          Decimal @db.Decimal(14, 2)
+  currency        String @default("IQD")
+  requestDate     DateTime @default(now())
+  dueDate         DateTime?
+  paidAt          DateTime?
+  createdById     String
+  createdBy       User @relation("WoundedExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  paidById        String?
+  paidBy          User? @relation("WoundedExpensePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  notes           String?
+  costCenter      String?
+  department      String?
+  paymentMethod   String?
+  financialReference String?
+  payoutIdempotencyKey String? @unique
+  status          WoundedExpenseStatus @default(DRAFT)
+  requiredApprovalLevels Int @default(1)
+  parentExpenseId String?
+  parentExpense   WoundedExpense? @relation("ExpenseCorrections", fields: [parentExpenseId], references: [id], onDelete: Restrict)
+  corrections     WoundedExpense[] @relation("ExpenseCorrections")
+  correctionType  ExpenseCorrectionType?
+  correctionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  approvals       WoundedExpenseApproval[]
+  attachments     WoundedExpenseAttachment[]
+
+  @@index([patientId, requestDate])
+  @@index([status, dueDate])
+  @@index([expenseType, requestDate])
+  @@index([parentExpenseId])
+  @@map("wounded_expenses")
+}
+
+model WoundedExpenseApproval {
+  id          String @id @default(cuid())
+  expenseId   String
+  expense     WoundedExpense @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  level       Int
+  decision    ExpenseApprovalDecision
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reason      String?
+  decidedAt   DateTime @default(now())
+
+  @@unique([expenseId, level])
+  @@index([userId, decidedAt])
+  @@map("wounded_expense_approvals")
+}
+
+model WoundedExpenseAttachment {
+  id          String @id @default(cuid())
+  expenseId   String
+  expense     WoundedExpense @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  fileName    String
+  fileUrl     String
+  createdAt   DateTime @default(now())
+
+  @@index([expenseId])
+  @@map("wounded_expense_attachments")
+}
+
 // =====================================================================
 //  الكيان المركزي: المريض
 // =====================================================================
@@ -685,6 +779,7 @@ model Patient {
   centerPrograms     CenterProgram[]
   centerSessions     CenterSession[]
   centerAssessments  CenterAssessment[]
+  woundedExpenses    WoundedExpense[]
 
   @@index([fullName])
   @@index([fileNumber])
@@ -1318,6 +1413,7 @@ model OrgSetting {
   phone                 String?
   logoUrl               String?
   maintenanceMode       Boolean   @default(false) // وضع الصيانة (يفعّله الأدمن)
+  expenseApprovalLevels Int       @default(1)
   autoBackup            Boolean   @default(true) // نسخة تلقائية يومية
   lastAutoBackupAt      DateTime?
   // مدد الاحتفاظ بالسجلات (بالأيام) — يتحكم بها الأدمن. سجل التدقيق دائم ولا يُمسّ.
