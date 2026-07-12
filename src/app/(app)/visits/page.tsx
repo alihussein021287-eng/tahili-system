@@ -5,6 +5,7 @@ import { requirePerm, currentPerms } from "@/lib/access";
 import Link from "next/link";
 import { fmtDateTime, fmtDate, PATIENT_STATUS } from "@/lib/labels";
 import { receptionCheckIn, recordVisit } from "./actions";
+import { CENTER_STATIONS } from "@/lib/stations";
 
 export const dynamic = "force-dynamic";
 const HALLS = ["قاعة التمارين الميكانيكية", "قاعة الأجهزة الفيزياوية", "قاعة العلاج المائي"];
@@ -50,12 +51,20 @@ export default async function VisitsPage({ searchParams }: { searchParams: Promi
 
       {editable && (
         <form action={recordVisit} className="card flex flex-wrap items-end gap-2 p-3">
+          <input type="hidden" name="returnTo" value="/visits" />
           <div className="flex-1 min-w-[240px]">
             <label className="label">تسجيل حضور مراجع</label>
             <Combobox name="patientId" required allowFree={false} placeholder="اختر المراجع"
               options={patients.map((p) => ({ value: String(p.id), label: `${p.fullName} (#${p.fileNumber})` }))} />
           </div>
           <div className="flex-1 min-w-[160px]"><label className="label">ملاحظة</label><input name="notes" className="input" placeholder="اختياري" /></div>
+          <div className="min-w-[210px]">
+            <label className="label" htmlFor="quick-destination">الوجهة التالية</label>
+            <select id="quick-destination" name="destination" className="input" defaultValue="">
+              <option value="">بدون تحويل</option>
+              {CENTER_STATIONS.map((station) => <option key={station.name} value={station.name}>{station.name}</option>)}
+            </select>
+          </div>
           <button className="btn-primary" type="submit">✔ تسجيل حضور</button>
         </form>
       )}
@@ -104,6 +113,13 @@ export default async function VisitsPage({ searchParams }: { searchParams: Promi
                     <div className="min-w-[180px] flex-1">
                       <label className="label">ملاحظة الزيارة</label>
                       <input name="notes" className="input" placeholder="اختياري" />
+                    </div>
+                    <div className="min-w-[210px]">
+                      <label className="label" htmlFor={`destination-${p.id}`}>الوجهة التالية</label>
+                      <select id={`destination-${p.id}`} name="destination" className="input" defaultValue="">
+                        <option value="">بدون تحويل</option>
+                        {CENTER_STATIONS.map((station) => <option key={station.name} value={station.name}>{station.name}</option>)}
+                      </select>
                     </div>
                     {canQueue && (
                       <>

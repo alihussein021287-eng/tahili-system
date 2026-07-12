@@ -1,6 +1,8 @@
+import type { UserRole } from "@prisma/client";
+
 export type CenterStation = {
   name: string;
-  role: string;
+  role: UserRole;
   description: string;
   href: string;
   aliases?: string[];
@@ -21,10 +23,18 @@ export const CENTER_STATIONS: CenterStation[] = [
 
 export const CENTER_STATION_NAMES = CENTER_STATIONS.map((station) => station.name);
 
+export function centerStationByName(name: string | null | undefined) {
+  const value = (name ?? "").trim();
+  if (!value) return null;
+  return CENTER_STATIONS.find(
+    (station) => station.name === value || station.aliases?.includes(value),
+  ) ?? null;
+}
+
 export function normalizeStationName(name: string | null | undefined) {
   const value = (name ?? "").trim();
   if (!value) return "محطات أخرى";
-  const found = CENTER_STATIONS.find((station) => station.name === value || station.aliases?.includes(value));
+  const found = centerStationByName(value);
   return found?.name ?? value;
 }
 
