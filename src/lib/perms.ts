@@ -37,6 +37,16 @@ export const PERM_GROUPS: PermGroup[] = [
     { key: "therapy.plan.finalize", label: "التقييم النهائي للبرنامج" },
     { key: "therapy.admin.override", label: "تجاوز قفل الخطة والجلسات (أدمن فقط)", adminOnly: true },
   ]},
+  { section: "centers", title: "مساحات المراكز", items: [
+    { key: "centers.view", label: "عرض مساحات المراكز" },
+    { key: "centers.central.view", label: "عرض مركزي لكل المراكز" },
+    { key: "centers.memberships.manage", label: "إدارة عضويات المراكز" },
+    { key: "centers.resources.manage", label: "إدارة الموارد والحجوزات" },
+    { key: "centers.programs.manage", label: "قبول الإحالات وإدارة البرامج" },
+    { key: "centers.sessions.record", label: "تسجيل الجلسات المسندة" },
+    { key: "centers.programs.finalize", label: "التقييم النهائي والمتابعة" },
+    { key: "centers.psych.sensitive", label: "عرض الملاحظات النفسية الحساسة" },
+  ]},
   { section: "referrals", title: "الفحوص والإحالات", items: [
     { key: "referrals.view", label: "عرض طلبات الفحوص والإحالات" },
     { key: "referrals.create", label: "إنشاء طلب فحص أو إحالة" },
@@ -173,6 +183,7 @@ const THERAPIST_DEFAULT = [
   "patients.edit", "patients.print", "patients.portal",
   "clinical.session", "clinical.metrics", "clinical.plan", "clinical.report", "clinical.wound", "clinical.care",
   "therapy.view", "therapy.session.record",
+  "centers.view", "centers.sessions.record",
   "appointments.create", "appointments.edit",
   "queue.manage", "visits.manage", "meds.view", "meds.manage",
   "reports.official", "reports.print",
@@ -182,6 +193,7 @@ const DOCTOR_DEFAULT = [
   "patients.create", "patients.archive", "patients.import", "patients.export",
   "clinical.diagnosis", "clinical.prescription", "clinical.admission", "clinical.care",
   "therapy.view", "therapy.plan.finalize",
+  "centers.view", "centers.central.view", "centers.programs.finalize", "centers.psych.sensitive",
   "beds.view", "beds.manage", "beds.assign",
   "inventory.view", "inventory.manage", "workload.view",
   "journey.manage", "officialdocs.manage",
@@ -197,6 +209,7 @@ const MANAGER_DEFAULT = [
   "shifts.manage", "shifts.approve", "reports.approve", "journey.manage",
   "approvals.approve", "approvals.execute",
   "referrals.view", "referrals.print", "referrals.updateStatus",
+  "centers.view", "centers.central.view", "centers.memberships.manage", "centers.resources.manage", "centers.programs.manage", "centers.programs.finalize", "centers.psych.sensitive",
 ];
 const ACCOUNTANT_DEFAULT = [
   "dashboard.view", "patients.view", "reports.view",
@@ -239,6 +252,7 @@ const HEAD_THERAPIST_DEFAULT = [...STATION_BASE,
   "appointments.create", "appointments.edit", "queue.manage", "visits.manage",
   "clinical.session", "clinical.plan", "clinical.metrics", "clinical.report",
   "therapy.view", "therapy.plan.manage", "therapy.plan.finalize",
+  "centers.view", "centers.resources.manage", "centers.programs.manage", "centers.programs.finalize", "centers.psych.sensitive",
   "meds.view", "workload.view", "journey.manage", "shifts.view", "referrals.view", "referrals.accept",
 ];
 

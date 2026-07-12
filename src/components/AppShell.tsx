@@ -31,6 +31,8 @@ const ALL_ITEMS: Item[] = [
   { href: "/appointments", label: "المواعيد", icon: "▦", perm: "appointments.view" },
   { href: "/therapy", label: "العلاج الطبيعي", icon: "🏃", perm: "therapy.view" },
   { href: "/therapy/today", label: "جلساتي اليوم", icon: "🗓", perm: "therapy.session.record" },
+  { href: "/centers", label: "مساحات المراكز", icon: "🏥", perm: "centers.view" },
+  { href: "/centers/reports", label: "تقارير المراكز", icon: "📊", perm: "centers.view" },
   { href: "/queue", label: "الطابور", icon: "⏳", perm: "queue.view" },
   { href: "/visits", label: "استعلامات وحضور المراجعين", icon: "📋", perm: "visits.view" },
   { href: "/approvals", label: "سير الموافقات", icon: "✅", perm: "approvals.view" },
@@ -65,9 +67,9 @@ const ALL_ITEMS: Item[] = [
 // مجموعات التنقل: تبويب رئيسي (مجموعة) ← تبويبات فرعية (روابط)
 const STANDALONE = ["/", "/notifications"]; // روابط عامة تبقى مفردة فوق
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
-  { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/therapy", "/therapy/today", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
+  { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/therapy", "/therapy/today", "/centers", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
   { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy", "/pharmacy/stock", "/pharmacy/reports", "/inventory", "/devices"] },
-  { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports", "/reports/official", "/reports/statistical", "/official-docs", "/station-kpis", "/analytics", "/finance"] },
+  { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports", "/reports/official", "/reports/statistical", "/centers/reports", "/official-docs", "/station-kpis", "/analytics", "/finance"] },
   { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/tasks", "/approvals", "/workload", "/attendance", "/shifts"] },
   { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/users", "/permissions", "/audit", "/login-log", "/settings", "/backup", "/readiness"] },
 ];

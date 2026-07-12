@@ -29,6 +29,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         visits: { orderBy: { visitDate: "desc" }, take: 5 },
         therapySessions: { include: { center: true }, orderBy: { createdAt: "desc" } },
         treatmentPlans: { include: { therapist: true, hall: true, sessions: true, referralRequest: true }, orderBy: { createdAt: "desc" } },
+        centerPrograms: { include: { center: true, assignedTo: true }, orderBy: { createdAt: "desc" } },
         referralRequests: { where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { treatmentPlan: true }, orderBy: { acceptedAt: "desc" } },
         therapySessionLogs: { include: { session: true, appointment: true }, orderBy: { performedAt: "desc" }, take: 25 },
         prescriptions: { include: { medication: true }, orderBy: { prescribedAt: "desc" } },
@@ -49,6 +50,12 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
   const therapyStaff = await prisma.user.findMany({ where: { isActive: true, role: "THERAPIST" }, include: { _count: { select: { therapyPlansAssigned: { where: { status: "ACTIVE" } }, therapyAppointmentsAssigned: { where: { status: "SCHEDULED", scheduledAt: { gte: new Date(new Date().setHours(0,0,0,0)), lt: new Date(new Date().setHours(24,0,0,0)) } } } } } }, orderBy: { fullName: "asc" } });
   if (!patient) notFound();
   const perms = await currentPerms();
+  if (!perms.has("centers.central.view")) {
+    const accessSession = await getSession();
+    const memberships = await prisma.centerMembership.findMany({ where: { userId: (accessSession?.user as any)?.id, status: "ACTIVE" }, select: { centerId: true } });
+    const allowed = new Set(memberships.map((membership) => membership.centerId));
+    (patient as any).centerPrograms = (patient.centerPrograms || []).filter((program: any) => allowed.has(program.centerId));
+  }
   const slApprovals = patient?.sickLeaves?.length
     ? await prisma.reportApproval.findMany({ where: { kind: "sick-leave", refKey: { in: patient.sickLeaves.map((l: any) => l.id) } } })
     : [];

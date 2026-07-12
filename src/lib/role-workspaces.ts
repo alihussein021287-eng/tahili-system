@@ -45,6 +45,7 @@ export const roleWorkspaces: RoleWorkspace[] = [
     description: "جلسات اليوم، المهام، متابعة التقدم، والمرفقات.",
     cards: [
       { title: "جلساتي اليوم", description: "تسجيل حضور ونتائج الجلسات المسندة.", href: "/therapy/today", permission: "therapy.session.record", priority: 5 },
+      { title: "مساحات المراكز", description: "برامج المركز والجلسات والموارد.", href: "/centers", permission: "centers.view", priority: 6 },
       { title: "لوحة الرعاية", description: "متابعة خطة العلاج.", href: "/care-board", permission: "patients.view", priority: 10 },
       { title: "المهام", description: "مهام وجلسات اليوم.", href: "/tasks", permission: "tasks.view", priority: 20 },
       { title: "عبء العمل", description: "توزيع العمل على الكادر.", href: "/workload", permission: "reports.view", priority: 30 },

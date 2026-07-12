@@ -28,6 +28,7 @@ import { Combobox } from "@/components/Combobox";
 import { Zoom } from "@/components/Zoom";
 import { PatientReferralTab } from "@/components/referrals/PatientReferralTab";
 import { PatientTherapyProgram } from "@/components/therapy/PatientTherapyProgram";
+import { PatientCenterPrograms } from "@/components/centers/PatientCenterPrograms";
 
 const TABS = [
   { key: "timeline", label: "الخط الزمني", icon: "🕒", group: "overview" },
@@ -40,6 +41,7 @@ const TABS = [
   { key: "wounds", label: "تقييم الجروح", icon: "🩹", group: "medical" },
   { key: "sessions", label: "الجلسات العلاجية", icon: "🏃", group: "therapy" },
   { key: "therapyProgram", label: "برنامج العلاج الطبيعي", icon: "📅", group: "therapy" },
+  { key: "centerPrograms", label: "برامج المراكز", icon: "🏥", group: "therapy" },
   { key: "plan", label: "الخطة العلاجية", icon: "🎯", group: "therapy" },
   { key: "metrics", label: "المقاييس", icon: "📈", group: "therapy" },
   { key: "care", label: "التداوي والتضميد", icon: "🩼", group: "therapy" },
@@ -152,6 +154,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
             </>} />
         )}
         {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} halls={halls} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
+        {tab === "centerPrograms" && can("centers.view") && <PatientCenterPrograms programs={patient.centerPrograms || []} />}
         {tab === "sessions" && canSchedule && (
           <SchedulePlanner patientId={id} centers={centers} halls={halls} />
         )}
