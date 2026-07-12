@@ -26,6 +26,7 @@ import { TrendChart } from "@/components/TrendChart";
 import { CareSection } from "@/components/CareSection";
 import { Combobox } from "@/components/Combobox";
 import { Zoom } from "@/components/Zoom";
+import { PatientReferralTab } from "@/components/referrals/PatientReferralTab";
 
 const TABS = [
   { key: "timeline", label: "الخط الزمني", icon: "🕒", group: "overview" },
@@ -33,6 +34,7 @@ const TABS = [
   { key: "diag", label: "التشخيصات", icon: "🩺", group: "medical" },
   { key: "reports", label: "التقارير الطبية", icon: "📋", group: "medical" },
   { key: "resident", label: "الطبيب المقيم", icon: "🩺", group: "medical" },
+  { key: "referrals", label: "الفحوص والإحالات", icon: "↗", group: "medical" },
   { key: "vitals", label: "العلامات الحيوية", icon: "❤️", group: "medical" },
   { key: "wounds", label: "تقييم الجروح", icon: "🩹", group: "medical" },
   { key: "sessions", label: "الجلسات العلاجية", icon: "🏃", group: "therapy" },
@@ -58,7 +60,7 @@ const TAB_GROUPS: Record<string, string> = {
 const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
 // التبويبات التي تُحمّل بياناتها عند فتحها فقط (لتخفيف تحميل الصفحة)
-const LAZY_TABS = ["files", "metrics", "vitals", "plan", "rel", "activity", "care", "resident"];
+const LAZY_TABS = ["files", "metrics", "vitals", "plan", "rel", "activity", "care", "resident", "referrals"];
 
 export function PatientTabs({ patient, editable, perms = [], role = "", slApprovals = [], centers = [], medications = [], rooms = [], halls = [], staffNames = [], staffUsers = [] }: { patient: any; editable: boolean; perms?: string[]; role?: string; slApprovals?: any[]; centers?: any[]; medications?: any[]; rooms?: any[]; halls?: any[]; staffNames?: string[]; staffUsers?: any[] }) {
   const can = (k: string) => perms.includes(k);
@@ -237,6 +239,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
           <SectionPlan rows={lazy.plan} sessionsCount={completedTherapySessions(patient)} plannedCount={plannedTherapySessions(patient)} editable={can("clinical.plan")} patientId={id} afterMutate={reload("plan")} />
         )}
         {tab === "resident" && (lazy.resident === undefined ? <TabLoading /> : <SectionResidentReview rows={lazy.resident} editable={can("clinical.metrics")} patientId={id} afterMutate={reload("resident")} />)}
+        {tab === "referrals" && (lazy.referrals === undefined ? <TabLoading /> : <PatientReferralTab patientId={id} rows={lazy.referrals} canCreate={can("referrals.create")} centers={centers} reviewers={staffUsers.filter((user: any) => user.role === "DOCTOR")} residentReviews={patient.residentReviews || []} />)}
         {tab === "vitals" && (lazy.vitals === undefined ? <TabLoading /> : <SectionVitals rows={lazy.vitals} editable={can("clinical.metrics")} patientId={id} afterMutate={reload("vitals")} />)}
         {tab === "activity" && (lazy.activity === undefined ? <TabLoading /> : <ActivityLog logs={lazy.activity} />)}
         {tab === "care" && (lazy.care === undefined ? <TabLoading /> : <CareSection rows={lazy.care} editable={can("clinical.care")} patientId={id} medications={medications} afterMutate={reload("care")} />)}

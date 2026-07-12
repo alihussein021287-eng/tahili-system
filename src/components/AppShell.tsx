@@ -27,6 +27,7 @@ const ALL_ITEMS: Item[] = [
   { href: "/", label: "الرئيسية", icon: "▤", perm: "dashboard.view" },
   { href: "/notifications", label: "مركز التنبيهات", icon: "🔔", perm: "dashboard.view" },
   { href: "/patients", label: "المراجعون", icon: "☺", perm: "patients.view" },
+  { href: "/referrals", label: "الفحوص والإحالات", icon: "↗", perm: "referrals.view" },
   { href: "/appointments", label: "المواعيد", icon: "▦", perm: "appointments.view" },
   { href: "/queue", label: "الطابور", icon: "⏳", perm: "queue.view" },
   { href: "/visits", label: "استعلامات وحضور المراجعين", icon: "📋", perm: "visits.view" },
@@ -62,7 +63,7 @@ const ALL_ITEMS: Item[] = [
 // مجموعات التنقل: تبويب رئيسي (مجموعة) ← تبويبات فرعية (روابط)
 const STANDALONE = ["/", "/notifications"]; // روابط عامة تبقى مفردة فوق
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
-  { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/appointments", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
+  { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
   { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy", "/pharmacy/stock", "/pharmacy/reports", "/inventory", "/devices"] },
   { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports", "/reports/official", "/reports/statistical", "/official-docs", "/station-kpis", "/analytics", "/finance"] },
   { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/tasks", "/approvals", "/workload", "/attendance", "/shifts"] },

@@ -32,6 +32,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         prescriptions: { include: { medication: true }, orderBy: { prescribedAt: "desc" } },
         admissions: { include: { center: true, room: true }, orderBy: { admissionDate: "desc" } },
         woundAssessments: { include: { photos: true }, orderBy: { assessmentDate: "desc" } },
+        residentReviews: { orderBy: { date: "desc" }, take: 25 },
         correspondence: { orderBy: { bookDate: "desc" } },
         appointments: { orderBy: { scheduledAt: "desc" } },
         _count: { select: { treatmentPlans: true } },
@@ -42,7 +43,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     getRooms(),
     prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
   ]);
-  const taskUsers = await prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true }, orderBy: { fullName: "asc" } });
+  const taskUsers = await prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true }, orderBy: { fullName: "asc" } });
   if (!patient) notFound();
   const perms = await currentPerms();
   const slApprovals = patient?.sickLeaves?.length

@@ -26,7 +26,7 @@ export default async function OfficialDocView({ params, searchParams }: { params
   const [doc, patients, org] = await Promise.all([
     prisma.officialDocument.findUnique({
       where: { id },
-      include: { patient: { select: { id: true, fullName: true, fileNumber: true, phone: true } } },
+      include: { patient: { select: { id: true, fullName: true, fileNumber: true, phone: true } }, referralRequest: { select: { id: true } } },
     }),
     canManage ? prisma.patient.findMany({ where: { archivedAt: null }, select: { id: true, fullName: true, fileNumber: true }, orderBy: { fullName: "asc" }, take: 500 }) : Promise.resolve([]),
     getOrg(),
@@ -73,7 +73,7 @@ export default async function OfficialDocView({ params, searchParams }: { params
         {doc.attachmentUrl && <div className="mt-4 text-sm text-gray-600">المرفق محفوظ إلكترونياً داخل النظام.</div>}
       </div>
 
-      {canManage && (
+      {canManage && !doc.referralRequest && (
         <form action={updateOfficialDocument.bind(null, doc.id)} className="no-print card grid gap-3 p-4 md:grid-cols-4">
           <div className="md:col-span-4 font-semibold text-gray-700">تعديل بيانات الأرشفة</div>
           <div><label className="label">رقم الكتاب *</label><input name="number" className="input" defaultValue={doc.number} required /></div>
@@ -88,6 +88,7 @@ export default async function OfficialDocView({ params, searchParams }: { params
           <div className="md:col-span-4"><button className="btn-primary" type="submit">حفظ التعديلات</button></div>
         </form>
       )}
+      {doc.referralRequest && <div className="no-print rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">هذه الوثيقة مرتبطة بطلب إحالة وتُدار من صفحة الطلب.</div>}
     </div>
   );
 }
