@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { signIn } from "next-auth/react";
 import { checkUsername, activateAccount } from "./actions";
 import { useRouter } from "next/navigation";
@@ -54,34 +54,57 @@ export default function LoginPage() {
     if (loading) return;
     if (!username.trim()) { setError("اكتب اسم المستخدم"); return; }
     setLoading(true); setError("");
-    const r = await checkUsername(username.trim());
-    setLoading(false);
-    if (r.state === "invalid") { setError("اسم المستخدم غير موجود أو الحساب معطّل"); return; }
-    setStep(r.state === "activate" ? "activate" : "password");
+    try {
+      const r = await checkUsername(username.trim());
+      if (r.state === "invalid") { setError("اسم المستخدم غير موجود أو الحساب معطّل. تحقق من الاسم أو راجع مدير النظام."); return; }
+      setShow(false);
+      setStep(r.state === "activate" ? "activate" : "password");
+    } catch {
+      setError("تعذّر التحقق من الحساب. حاول مرة أخرى.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function submit() {
     if (loading) return;
     setLoading(true); setError("");
-    const res = await signIn("credentials", { username, password, redirect: false });
-    setLoading(false);
-    if (res?.error) setError("كلمة السر غير صحيحة");
-    else router.push("/");
+    try {
+      const res = await signIn("credentials", { username, password, redirect: false });
+      if (res?.error) setError("كلمة السر غير صحيحة");
+      else router.push("/");
+    } catch {
+      setError("تعذّر تسجيل الدخول. حاول مرة أخرى.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function activate() {
     if (loading) return;
     if (password !== confirm) { setError("كلمتا السر غير متطابقتين"); return; }
     setLoading(true); setError("");
-    const r = await activateAccount(username.trim(), temporaryPassword, password, confirm);
-    if (!r.ok) { setLoading(false); setError(r.error || "تعذّر التفعيل"); return; }
-    const res = await signIn("credentials", { username, password, redirect: false });
-    setLoading(false);
-    if (res?.error) { setError("تم التفعيل — سجّل الدخول"); setStep("password"); setPassword(""); }
-    else router.push("/");
+    try {
+      const r = await activateAccount(username.trim(), temporaryPassword, password, confirm);
+      if (!r.ok) { setError(r.error || "تعذّر التفعيل. تحقق من البيانات وحاول مرة أخرى."); return; }
+      const res = await signIn("credentials", { username, password, redirect: false });
+      if (res?.error) { setError("تم التفعيل. سجّل الدخول بكلمة السر الجديدة."); setStep("password"); setPassword(""); }
+      else router.push("/");
+    } catch {
+      setError("تعذّر تفعيل الحساب. حاول مرة أخرى.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function back() { setStep("user"); setTemporaryPassword(""); setPassword(""); setConfirm(""); setError(""); }
+  function back() { setStep("user"); setTemporaryPassword(""); setPassword(""); setConfirm(""); setShow(false); setError(""); }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (step === "user") void continueUser();
+    else if (step === "password") void submit();
+    else void activate();
+  }
 
   return (
     <div className="lp-root">
@@ -123,6 +146,7 @@ export default function LoginPage() {
         .lp-btn:active{transform:translateY(1px)}
         .lp-btn:disabled{opacity:.65;cursor:default}
         .lp-err{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:.6rem .8rem;border-radius:10px;font-size:.85rem;margin-bottom:1rem}
+        .lp-back{background:none;border:0;color:#0f766e;font-size:.82rem;margin-top:.8rem;cursor:pointer;font-family:inherit}
         @media (max-width:860px){
           .lp-root{flex-direction:column}
           .lp-brand{flex:none}
@@ -133,7 +157,7 @@ export default function LoginPage() {
         }
         @media (max-width:560px){ .lp-caps{display:none} .lp-updates{display:none} }
         @media (prefers-reduced-motion:reduce){ .lp-pulse path{animation:none;stroke-dashoffset:0} }
-        .lp-input:focus-visible,.lp-btn:focus-visible,.lp-eye:focus-visible{outline:2px solid #0f766e;outline-offset:2px}
+        .lp-input:focus-visible,.lp-btn:focus-visible,.lp-eye:focus-visible,.lp-back:focus-visible{outline:2px solid #0f766e;outline-offset:2px}
       `}</style>
 
       <aside className="lp-brand">
@@ -178,7 +202,7 @@ export default function LoginPage() {
               <span><b>●</b> نسخ احتياطي يومي</span>
               <span><b>●</b> واجهة عربية على الهاتف</span>
             </div>
-            <div style={{ fontSize: ".72rem", color: "#7fcabf", marginTop: ".8rem" }}>الإصدار 2.0 — يعمل محلياً داخل المركز</div>
+            <div style={{ fontSize: ".72rem", color: "#7fcabf", marginTop: ".8rem" }}>الإصدار 2.0، يعمل محلياً داخل المركز</div>
           </div>
         </div>
       </aside>
@@ -194,64 +218,68 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {error && <div className="lp-err">{error}</div>}
+          {error ? <div id="login-error" className="lp-err" aria-live="polite">{error}</div> : null}
 
-          <div className="lp-field">
-            <label className="lp-label" htmlFor="u">اسم المستخدم</label>
-            <input id="u" className="lp-input" autoFocus value={username} disabled={step !== "user"}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && step === "user" && continueUser()} />
-          </div>
-
-          {step === "password" && (
+          <form onSubmit={handleSubmit} aria-describedby={error ? "login-error" : undefined}>
             <div className="lp-field">
-              <label className="lp-label" htmlFor="p">كلمة السر</label>
-              <div className="lp-inwrap">
-                <input id="p" className="lp-input" type={show ? "text" : "password"} value={password} autoFocus
-                  onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()} style={{ paddingInlineStart: "2.4rem" }} />
-                <button type="button" className="lp-eye" onClick={() => setShow((v) => !v)} aria-label="إظهار/إخفاء">
-                  <Ico d={show ? "M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9 9 0 0121 12a13 13 0 01-1.7 2.4M6.3 6.3A13 13 0 003 12a9 9 0 0010.5 6.6" : "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z M12 9a3 3 0 100 6 3 3 0 000-6z"} size={18} />
-                </button>
-              </div>
+              <label className="lp-label" htmlFor="u">اسم المستخدم</label>
+              <input id="u" name="username" className="lp-input" value={username} disabled={step !== "user" || loading}
+                autoComplete="username" spellCheck={false} enterKeyHint="next"
+                aria-invalid={Boolean(error) && step === "user"}
+                onChange={(e) => setUsername(e.target.value)} />
             </div>
-          )}
 
-          {step === "activate" && (
-            <>
+            {step === "password" ? (
               <div className="lp-field">
-                <label className="lp-label" htmlFor="pt">كلمة المرور المؤقتة</label>
-                <input id="pt" className="lp-input" type={show ? "text" : "password"} value={temporaryPassword} autoFocus
-                  autoComplete="current-password" onChange={(e) => setTemporaryPassword(e.target.value)} />
+                <label className="lp-label" htmlFor="p">كلمة السر</label>
+                <div className="lp-inwrap">
+                  <input id="p" name="password" className="lp-input" type={show ? "text" : "password"} value={password}
+                    autoComplete="current-password" aria-invalid={Boolean(error)}
+                    onChange={(e) => setPassword(e.target.value)} style={{ paddingInlineStart: "2.4rem" }} />
+                  <button type="button" className="lp-eye" onClick={() => setShow((v) => !v)}
+                    aria-label={show ? "إخفاء كلمة السر" : "إظهار كلمة السر"} aria-pressed={show}>
+                    <Ico d={show ? "M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9 9 0 0121 12a13 13 0 01-1.7 2.4M6.3 6.3A13 13 0 003 12a9 9 0 0010.5 6.6" : "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z M12 9a3 3 0 100 6 3 3 0 000-6z"} size={18} />
+                  </button>
+                </div>
               </div>
-              <div className="lp-field">
-                <label className="lp-label" htmlFor="p1">كلمة السر الجديدة</label>
-                <input id="p1" className="lp-input" type={show ? "text" : "password"} value={password}
-                  autoComplete="new-password"
-                  onChange={(e) => setPassword(e.target.value)} />
-              </div>
-              <div className="lp-field">
-                <label className="lp-label" htmlFor="p2">تأكيد كلمة السر</label>
-                <input id="p2" className="lp-input" type={show ? "text" : "password"} value={confirm}
-                  autoComplete="new-password"
-                  onChange={(e) => setConfirm(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && activate()} />
-              </div>
-              <p style={{ fontSize: ".72rem", color: "#94a3b8", marginTop: "-.4rem", marginBottom: ".6rem" }}>
-                8 أحرف على الأقل، وتحتوي حروف وأرقام.
-              </p>
-            </>
-          )}
+            ) : null}
 
-          {step === "user" && <button className="lp-btn" onClick={continueUser} disabled={loading}>{loading ? "جارٍ التحقق..." : "متابعة"}</button>}
-          {step === "password" && <button className="lp-btn" onClick={submit} disabled={loading}>{loading ? "جارٍ الدخول..." : "دخول"}</button>}
-          {step === "activate" && <button className="lp-btn" onClick={activate} disabled={loading}>{loading ? "جارٍ التفعيل..." : "تفعيل وتسجيل الدخول"}</button>}
+            {step === "activate" ? (
+              <>
+                <div className="lp-field">
+                  <label className="lp-label" htmlFor="pt">كلمة المرور المؤقتة</label>
+                  <input id="pt" name="temporaryPassword" className="lp-input" type={show ? "text" : "password"} value={temporaryPassword}
+                    autoComplete="current-password" aria-invalid={Boolean(error)}
+                    onChange={(e) => setTemporaryPassword(e.target.value)} />
+                </div>
+                <div className="lp-field">
+                  <label className="lp-label" htmlFor="p1">كلمة السر الجديدة</label>
+                  <input id="p1" name="newPassword" className="lp-input" type={show ? "text" : "password"} value={password}
+                    autoComplete="new-password" aria-describedby="password-requirements" aria-invalid={Boolean(error)}
+                    onChange={(e) => setPassword(e.target.value)} />
+                </div>
+                <div className="lp-field">
+                  <label className="lp-label" htmlFor="p2">تأكيد كلمة السر</label>
+                  <input id="p2" name="confirmPassword" className="lp-input" type={show ? "text" : "password"} value={confirm}
+                    autoComplete="new-password" aria-describedby="password-requirements" aria-invalid={Boolean(error)}
+                    onChange={(e) => setConfirm(e.target.value)} />
+                </div>
+                <p id="password-requirements" style={{ fontSize: ".72rem", color: "#94a3b8", marginTop: "-.4rem", marginBottom: ".6rem" }}>
+                  استخدم 8 أحرف على الأقل، تشمل حروفاً وأرقاماً.
+                </p>
+              </>
+            ) : null}
 
-          {step !== "user" && (
-            <button type="button" onClick={back} style={{ background: "none", border: "none", color: "#0f766e", fontSize: ".82rem", marginTop: ".8rem", cursor: "pointer" }}>
-              ← رجوع (اسم مستخدم آخر)
-            </button>
-          )}
+            {step === "user" ? <button type="submit" className="lp-btn" disabled={loading}>{loading ? "جارٍ التحقق…" : "متابعة"}</button> : null}
+            {step === "password" ? <button type="submit" className="lp-btn" disabled={loading}>{loading ? "جارٍ الدخول…" : "دخول"}</button> : null}
+            {step === "activate" ? <button type="submit" className="lp-btn" disabled={loading}>{loading ? "جارٍ التفعيل…" : "تفعيل وتسجيل الدخول"}</button> : null}
+
+            {step !== "user" ? (
+              <button type="button" className="lp-back" onClick={back}>
+                رجوع لاستخدام اسم مستخدم آخر
+              </button>
+            ) : null}
+          </form>
 
           <p style={{ fontSize: ".78rem", color: "#94a3b8", marginTop: "1.2rem", textAlign: "center" }}>
             للحصول على حساب أو استعادة كلمة السر، راجع مدير النظام.
