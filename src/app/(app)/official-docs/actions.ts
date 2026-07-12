@@ -44,6 +44,8 @@ export async function addOfficialDocument(fd: FormData) {
 
 export async function updateOfficialDocument(id: string, fd: FormData) {
   await assertPerm("officialdocs.manage");
+  const linked = await prisma.referralRequest.findUnique({ where: { officialDocumentId: id }, select: { id: true } });
+  if (linked) throw new Error("تُدار وثيقة الإرسال المرتبطة من طلب الإحالة ولا يمكن تعديلها من الأرشيف العام");
   const number = clean(fd.get("number"));
   const subject = clean(fd.get("subject"));
   const docDate = clean(fd.get("docDate"));

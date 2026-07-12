@@ -1,4 +1,4 @@
-export type NotificationKind = "tasks" | "appointments" | "inventory" | "devices" | "system";
+export type NotificationKind = "tasks" | "appointments" | "inventory" | "devices" | "referrals" | "system";
 
 export type NotificationTone = {
   kind: NotificationKind;
@@ -12,6 +12,7 @@ const TONES: Record<NotificationKind, NotificationTone> = {
   appointments: { kind: "appointments", label: "مواعيد", icon: "📅", className: "border-sky-200 bg-sky-50 text-sky-700" },
   inventory: { kind: "inventory", label: "مخزون", icon: "📦", className: "border-orange-200 bg-orange-50 text-orange-700" },
   devices: { kind: "devices", label: "أجهزة", icon: "🔧", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  referrals: { kind: "referrals", label: "إحالات", icon: "↗", className: "border-teal-200 bg-teal-50 text-teal-700" },
   system: { kind: "system", label: "نظام", icon: "⚙", className: "border-slate-200 bg-slate-50 text-slate-700" },
 };
 
@@ -22,6 +23,7 @@ export function notificationKind(input: { title?: string | null; link?: string |
   if (link.startsWith("/appointments") || title.includes("موعد")) return "appointments";
   if (link.startsWith("/pharmacy") || link.startsWith("/inventory") || title.includes("وصفة") || title.includes("مخزون")) return "inventory";
   if (link.startsWith("/devices") || title.includes("جهاز") || title.includes("صيانة")) return "devices";
+  if (link.startsWith("/referrals") || title.includes("إحالة") || title.includes("فحص خارجي")) return "referrals";
   return "system";
 }
 
@@ -36,6 +38,7 @@ export function permissionForLink(link?: string | null) {
   if (link.startsWith("/pharmacy")) return "pharmacy.view";
   if (link.startsWith("/inventory")) return "inventory.view";
   if (link.startsWith("/devices")) return "devices.view";
+  if (link.startsWith("/referrals")) return "referrals.view";
   if (link.startsWith("/backup")) return "settings.backup";
   if (link.startsWith("/readiness")) return "settings.view";
   if (link.startsWith("/patients")) return "patients.view";
@@ -61,5 +64,6 @@ export const NOTIFICATION_KINDS = [
   { value: "appointments", label: "مواعيد" },
   { value: "inventory", label: "مخزون" },
   { value: "devices", label: "أجهزة" },
+  { value: "referrals", label: "إحالات" },
   { value: "system", label: "نظام" },
 ];

@@ -26,4 +26,19 @@ describe("roleDefaultSet", () => {
       expect(new Set(keys).size).toBe(keys.length);
     }
   });
+
+  it("يفصل الصلاحيات الطبية والإدارية للإحالات", () => {
+    const resident = roleDefaultSet("RESIDENT" as any);
+    const doctor = roleDefaultSet("DOCTOR" as any);
+    const manager = roleDefaultSet("MANAGER" as any);
+    const dataEntry = roleDefaultSet("DATA_ENTRY" as any);
+    expect(resident.has("referrals.create")).toBe(true);
+    expect(resident.has("referrals.print")).toBe(false);
+    expect(doctor.has("referrals.reviewResult")).toBe(true);
+    expect(manager.has("referrals.print")).toBe(true);
+    expect(manager.has("referrals.create")).toBe(false);
+    expect(manager.has("referrals.reviewResult")).toBe(false);
+    expect(dataEntry.has("referrals.recordResult")).toBe(true);
+    expect(dataEntry.has("referrals.reviewResult")).toBe(false);
+  });
 });

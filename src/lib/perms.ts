@@ -32,6 +32,16 @@ export const PERM_GROUPS: PermGroup[] = [
     { key: "clinical.metrics", label: "مقاييس التقدّم" },
     { key: "clinical.plan", label: "الخطة العلاجية" },
   ]},
+  { section: "referrals", title: "الفحوص والإحالات", items: [
+    { key: "referrals.view", label: "عرض طلبات الفحوص والإحالات" },
+    { key: "referrals.create", label: "إنشاء طلب فحص أو إحالة" },
+    { key: "referrals.print", label: "تجهيز وطباعة كتاب الإرسال" },
+    { key: "referrals.updateStatus", label: "تحديث حالة الإرسال" },
+    { key: "referrals.recordResult", label: "تسجيل وصول النتيجة" },
+    { key: "referrals.reviewResult", label: "مراجعة النتيجة طبياً" },
+    { key: "referrals.accept", label: "قبول الإحالة الداخلية" },
+    { key: "referrals.cancel", label: "إلغاء طلب مع السبب" },
+  ]},
   { section: "appointments", title: "المواعيد", items: [
     { key: "appointments.view", label: "عرض المواعيد" },
     { key: "appointments.create", label: "حجز موعد" },
@@ -169,15 +179,17 @@ const DOCTOR_DEFAULT = [
   "inventory.view", "inventory.manage", "workload.view",
   "journey.manage", "officialdocs.manage",
   "approvals.review", "sickleave.manage",
+  "referrals.view", "referrals.create", "referrals.updateStatus", "referrals.recordResult", "referrals.reviewResult", "referrals.accept", "referrals.cancel",
 ];
 const MANAGER_DEFAULT = [
-  ...DOCTOR_DEFAULT,
+  ...DOCTOR_DEFAULT.filter((permission) => !permission.startsWith("referrals.")),
   "pharmacy.view", "pharmacy.dispense", "pharmacy.batch", "pharmacy.print",
   "devices.view", "devices.create", "devices.maintain", 
   "attendance.view", "attendance.manage", "analytics.view",
   "finance.view", "finance.receipt", "finance.report",
   "shifts.manage", "shifts.approve", "reports.approve", "journey.manage",
   "approvals.approve", "approvals.execute",
+  "referrals.view", "referrals.print", "referrals.updateStatus",
 ];
 const ACCOUNTANT_DEFAULT = [
   "dashboard.view", "patients.view", "reports.view",
@@ -214,18 +226,19 @@ const LAB_DEFAULT = [...STATION_BASE, "clinical.report"];
 const RADIOLOGY_DEFAULT = [...STATION_BASE, "clinical.report"];
 const DRESSING_DEFAULT = [...STATION_BASE, "clinical.wound", "clinical.care"];
 const PROSTHETICS_DEFAULT = [...STATION_BASE, "devices.view", "devices.create", "devices.maintain"];
-const DATA_ENTRY_DEFAULT = [...STATION_BASE, "patients.create", "patients.edit", "patients.print", "patients.portal", "appointments.create", "appointments.edit", "queue.manage", "visits.manage"];
+const DATA_ENTRY_DEFAULT = [...STATION_BASE, "patients.create", "patients.edit", "patients.print", "patients.portal", "appointments.create", "appointments.edit", "queue.manage", "visits.manage", "referrals.view", "referrals.print", "referrals.updateStatus", "referrals.recordResult"];
 const HEAD_THERAPIST_DEFAULT = [...STATION_BASE,
   "patients.edit", "patients.print",
   "appointments.create", "appointments.edit", "queue.manage", "visits.manage",
   "clinical.session", "clinical.plan", "clinical.metrics", "clinical.report",
-  "meds.view", "workload.view", "journey.manage", "shifts.view",
+  "meds.view", "workload.view", "journey.manage", "shifts.view", "referrals.view", "referrals.accept",
 ];
 
 // الطبيب المقيم: صلاحيات المعالج + التشخيص/الإحالة (دور طبي)
 const RESIDENT_DEFAULT = [
   ...THERAPIST_DEFAULT,
   "clinical.diagnosis",
+  "referrals.view", "referrals.create", "referrals.updateStatus", "referrals.recordResult", "referrals.cancel",
 ];
 
 export const ROLE_DEFAULTS: Record<UserRole, string[]> = {

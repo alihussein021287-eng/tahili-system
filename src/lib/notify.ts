@@ -40,6 +40,15 @@ export async function notifyRoleInTransaction(
   );
 }
 
+export async function notifyUserInTransaction(
+  client: NotificationClient,
+  userId: string,
+  title: string,
+  opts: { body?: string; link?: string } = {},
+) {
+  return createNotification(client, { targetUserId: userId, title, body: opts.body ?? null, link: opts.link ?? null }, { includeReadInDedupe: true });
+}
+
 // إنشاء إشعار موجّه لدور معيّن (يُستخدم بين المحطات)
 export async function notifyRole(role: string | null | undefined, title: string, opts: { body?: string; link?: string } = {}) {
   if (!role) return;

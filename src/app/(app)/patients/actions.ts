@@ -528,6 +528,8 @@ export async function getPatientTabData(patientId: string, tab: string) {
       return prisma.vitalSign.findMany({ where: { patientId }, orderBy: { date: "asc" } });
     case "resident":
       return prisma.residentReview.findMany({ where: { patientId }, orderBy: { date: "desc" } });
+    case "referrals":
+      return prisma.referralRequest.findMany({ where: { patientId }, include: { destinationCenter: { select: { name: true } }, assignedReviewer: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } });
     case "plan":
       return prisma.treatmentPlan.findMany({ where: { patientId }, orderBy: { createdAt: "desc" } });
     case "rel":
@@ -709,6 +711,8 @@ export async function addOfficialDoc(patientId: string, fd: FormData) {
 export async function deleteOfficialDoc(patientId: string, id: string) {
   await assertAdminDelete();
   await guard("officialdocs.manage");
+  const linked = await prisma.referralRequest.findUnique({ where: { officialDocumentId: id }, select: { id: true } });
+  if (linked) throw new Error("لا يمكن حذف كتاب إرسال مرتبط بطلب إحالة");
   await prisma.officialDocument.delete({ where: { id } });
   await logAudit({ action: "DELETE", tableName: "official_documents", recordId: id });
   revalidatePath(`/patients/${patientId}`);
@@ -781,6 +785,8 @@ export async function updateCorrespondence(patientId: string, id: string, fd: Fo
 
 export async function updateOfficialDocText(patientId: string, id: string, fd: FormData) {
   const s = await guard("officialdocs.manage");
+  const linked = await prisma.referralRequest.findUnique({ where: { officialDocumentId: id }, select: { id: true } });
+  if (linked) throw new Error("لا يمكن تعديل كتاب إرسال مرتبط من الملف العام");
   await prisma.officialDocument.update({ where: { id }, data: {
     subject: fd.get("subject")?.toString() || "",
     body: fd.get("body")?.toString() || null,

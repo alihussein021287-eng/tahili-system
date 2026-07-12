@@ -23,13 +23,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ key
   }
 
   const fileUrl = `/api/files/${rawKey}`;
-  const [patientAttachment, officialDocument] = await Promise.all([
+  const [patientAttachment, officialDocument, referralResult] = await Promise.all([
     prisma.attachment.findFirst({ where: { fileUrl }, select: { id: true } }),
     prisma.officialDocument.findFirst({ where: { attachmentUrl: fileUrl }, select: { id: true } }),
+    prisma.referralRequest.findFirst({ where: { resultAttachmentUrl: fileUrl }, select: { id: true } }),
   ]);
   const requiredPermissions = [
-    ...(patientAttachment || !officialDocument ? ["patients.view"] : []),
+    ...(patientAttachment || (!officialDocument && !referralResult) ? ["patients.view"] : []),
     ...(officialDocument ? ["officialdocs.view"] : []),
+    ...(referralResult ? ["referrals.view"] : []),
   ];
   const permission = await checkApiPermission(
     (session.user as any)?.id,
