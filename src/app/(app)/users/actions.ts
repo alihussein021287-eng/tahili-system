@@ -10,6 +10,7 @@ import { passwordError } from "@/lib/security";
 import { userCreateSchema, userUpdateSchema, parseOrThrow } from "@/lib/validate";
 import { assertCanApplyAdminChange } from "@/lib/admin-security";
 import { incrementAuthVersion, incrementAuthVersionIf } from "@/lib/auth-version";
+import { initialCredentialError } from "@/lib/account-activation";
 
 async function requireAdmin() {
   const s = await requireSession();
@@ -19,15 +20,16 @@ async function requireAdmin() {
 export async function createUser(fd: FormData) {
   await requireAdmin();
   const rawPw = fd.get("password")?.toString() || "";
-  if (rawPw) { const e = passwordError(rawPw); if (e) throw new Error(e); }
+  const pwError = initialCredentialError(rawPw);
+  if (pwError) throw new Error(pwError);
   const v = parseOrThrow(userCreateSchema, {
     username: fd.get("username")?.toString() ?? "",
     fullName: fd.get("fullName")?.toString() ?? "",
     role: fd.get("role")?.toString() || undefined,
     email: fd.get("email")?.toString() || "",
   });
-  const needsActivation = !rawPw;
-  const passwordHash = await bcrypt.hash(rawPw || Math.random().toString(36).slice(2) + "Aa1", 10);
+  const activateImmediately = fd.get("activateImmediately")?.toString() === "1";
+  const passwordHash = await bcrypt.hash(rawPw, 10);
   const created = await prisma.user.create({
     data: {
       username: v.username,
@@ -39,7 +41,7 @@ export async function createUser(fd: FormData) {
       jobTitle: fd.get("jobTitle")?.toString() || null,
       department: fd.get("department")?.toString() || null,
       passwordHash,
-      needsActivation,
+      needsActivation: !activateImmediately,
     },
   });
   await logAudit({ action: "CREATE", tableName: "users", recordId: created.id });

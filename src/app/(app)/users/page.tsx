@@ -49,7 +49,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
       <form action={createUser} className="card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div><label className="label">اسم المستخدم</label><input className="input" name="username" required  autoComplete="off" /></div>
         <div><label className="label">الاسم الكامل</label><input className="input" name="fullName" required  autoComplete="off" /></div>
-        <div><label className="label">كلمة السر <span className="text-gray-400">(اتركها فارغة ليعيّنها الموظف بنفسه)</span></label><input className="input" name="password" type="text" placeholder="فارغة = تفعيل ذاتي"  autoComplete="off" /></div>
+        <div><label className="label">كلمة المرور المؤقتة</label><input className="input" name="password" type="password" required placeholder="يسلمها المدير للمستخدم خارج النظام" autoComplete="new-password" /></div>
         <div><label className="label">الدور</label>
 <Combobox name="role" allowFree={false} options={ROLE_OPTIONS} />
         </div>
@@ -59,6 +59,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
         <div><label className="label">المسمّى الوظيفي</label><input className="input" name="jobTitle"  autoComplete="off" /></div>
         <div><label className="label">القسم/الشعبة</label><input className="input" name="department"  autoComplete="off" /></div>
         <div><label className="label">البريد (اختياري)</label><input className="input" name="email"  autoComplete="off" /></div>
+        <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" name="activateImmediately" value="1" /> تفعيل الحساب مباشرة بهذه الكلمة (خيار إداري صريح)</label>
         <div className="flex items-end"><button className="btn-primary w-full" type="submit">إضافة مستخدم</button></div>
       </form>
 
