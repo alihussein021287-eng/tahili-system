@@ -23,48 +23,48 @@ enum CaseType {
 }
 
 enum Gender {
-  MALE   // ذكر
+  MALE // ذكر
   FEMALE // أنثى
 }
 
 enum MaritalStatus {
-  SINGLE   // أعزب
-  MARRIED  // متزوج
+  SINGLE // أعزب
+  MARRIED // متزوج
   DIVORCED // مطلق
-  WIDOWED  // أرمل
+  WIDOWED // أرمل
 }
 
 enum PatientStatus {
-  ACTIVE    // نشط (تحت المتابعة)
+  ACTIVE // نشط (تحت المتابعة)
   COMPLETED // أنهى المراجعات
-  INACTIVE  // غير نشط
+  INACTIVE // غير نشط
 }
 
 enum TherapyType {
-  PHYSICAL     // علاج طبيعي
-  PSYCHIATRIC  // تأهيل نفسي
+  PHYSICAL // علاج طبيعي
+  PSYCHIATRIC // تأهيل نفسي
   OCCUPATIONAL // علاج وظيفي
-  BLADDER      // تأهيل المثانة
-  ULCER_CARE   // علاج تقرحات (مركز النقاء)
-  HYPERBARIC   // هايبر أوكسجين (مركز النقاء)
+  BLADDER // تأهيل المثانة
+  ULCER_CARE // علاج تقرحات (مركز النقاء)
+  HYPERBARIC // هايبر أوكسجين (مركز النقاء)
 }
 
 enum DiagnosisType {
   PRELIMINARY // أولي
-  SPECIALIST  // تشخيص الطبيب الاختصاص
-  GENERAL     // عام
+  SPECIALIST // تشخيص الطبيب الاختصاص
+  GENERAL // عام
 }
 
 enum AdmissionStatus {
-  ADMITTED   // راقد حالياً
+  ADMITTED // راقد حالياً
   DISCHARGED // خرج
 }
 
 enum AttachmentType {
   DOCUMENT // وثيقة
-  IMAGE    // صورة
-  WOUND    // صورة جرح
-  OTHER    // أخرى
+  IMAGE // صورة
+  WOUND // صورة جرح
+  OTHER // أخرى
 }
 
 enum ReferralRequestType {
@@ -95,17 +95,17 @@ enum ReferralRequestStatus {
 }
 
 enum UserRole {
-  ADMIN     // مدير النظام
-  MANAGER   // مدير إداري
-  DOCTOR    // طبيب
+  ADMIN // مدير النظام
+  MANAGER // مدير إداري
+  DOCTOR // طبيب
   THERAPIST // معالج
-  VIEWER    // مشاهدة فقط
+  VIEWER // مشاهدة فقط
   ACCOUNTANT // شعبة مالية
   PHARMACIST // صيدلي
-  RECEPTION  // موظف استقبال
-  LAB        // مختبر
-  RADIOLOGY  // أشعة
-  DRESSING   // تضميد
+  RECEPTION // موظف استقبال
+  LAB // مختبر
+  RADIOLOGY // أشعة
+  DRESSING // تضميد
   PROSTHETICS // أطراف صناعية
   HEAD_THERAPIST // رئيس المعالجين
   DATA_ENTRY // مدخل بيانات
@@ -113,47 +113,71 @@ enum UserRole {
 }
 
 enum PrescriptionStatus {
-  PENDING   // بانتظار التجهيز
+  PENDING // بانتظار التجهيز
   DISPENSED // جُهّزت بالكامل
-  PARTIAL   // جُهّزت جزئياً
-  REJECTED  // مرفوضة
+  PARTIAL // جُهّزت جزئياً
+  REJECTED // مرفوضة
+}
+
+enum PrescriptionType {
+  INTERNAL
+  EXTERNAL
+}
+
+enum EligibilityDecision {
+  ELIGIBLE
+  NOT_ELIGIBLE
+  DOCTOR_REVIEW
+}
+
+enum MedicalReportType {
+  PRELIMINARY
+  FINAL
+}
+
+enum MedicalReportStatus {
+  DRAFT
+  READY_TO_PRINT
+  PRINTED_APPROVED
+  CANCELLED
 }
 
 enum StockMovementType {
-  IN       // إدخال
+  IN // إدخال
   DISPENSE // صرف
-  DISPOSE  // إتلاف
-  ADJUST   // تعديل
+  DISPOSE // إتلاف
+  ADJUST // تعديل
 }
 
 enum CarePeriod {
   MORNING // صباح
   EVENING // مساء
-  NIGHT   // ليلي
+  NIGHT // ليلي
 }
 
 enum CareKind {
   TREAT // تداوي
   DRESS // تضميد
-  BOTH  // تداوي وتضميد
+  BOTH // تداوي وتضميد
 }
 
 // سجل التداوي والتضميد اليومي
 model DressingRecord {
-  id             String     @id @default(cuid())
-  patientId      String
-  patient        Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  date           DateTime   @default(now()) // التاريخ
-  period         CarePeriod @default(MORNING) // الفترة
-  kind           CareKind   @default(DRESS) // النوع
-  medicationId   Int? // المادة من المخزون (اختياري)
-  materialName   String? // اسم المادة (نص حر)
-  quantity       Int? // الكمية المستهلكة
-  site           String? // موضع التضميد
-  woundState     String? // حالة الجرح/الوصف
-  performedBy    String? // المنفّذ
-  notes          String? // ملاحظات
-  createdAt      DateTime   @default(now())
+  id           String     @id @default(cuid())
+  patientId    String
+  patient      Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  date         DateTime   @default(now()) // التاريخ
+  period       CarePeriod @default(MORNING) // الفترة
+  kind         CareKind   @default(DRESS) // النوع
+  medicationId Int? // المادة من المخزون (اختياري)
+  materialName String? // اسم المادة (نص حر)
+  quantity     Int? // الكمية المستهلكة
+  site         String? // موضع التضميد
+  woundState   String? // حالة الجرح/الوصف
+  performedBy  String? // المنفّذ
+  notes        String? // ملاحظات
+  createdAt    DateTime   @default(now())
+
   @@index([patientId])
   @@index([date])
   @@map("dressing_records")
@@ -168,7 +192,7 @@ enum AppointmentStatus {
   SCHEDULED // مجدول
   COMPLETED // تم
   CANCELLED // ملغى
-  NOSHOW    // لم يحضر
+  NOSHOW // لم يحضر
 }
 
 // =====================================================================
@@ -176,39 +200,39 @@ enum AppointmentStatus {
 // =====================================================================
 
 model User {
-  branchId Int?
-  branch   Branch? @relation(fields: [branchId], references: [id])
-  id           String    @id @default(cuid())
-  username     String    @unique // اسم المستخدم
-  passwordHash String // كلمة السر (مشفّرة bcrypt)
-  fullName     String // الاسم الكامل
-  role         UserRole  @default(VIEWER) // الدور
-  isActive     Boolean   @default(true) // فعّال؟
-  needsActivation Boolean @default(false) // يتطلب تعيين كلمة سر بأول دخول
-  lastLoginAt  DateTime?
-  email        String?   // البريد الإلكتروني
-  phone        String?   // الهاتف
-  jobTitle     String?   // المسمّى الوظيفي
-  department   String?   // القسم/الشعبة
-  note         String?   // ملاحظات
-  failedLoginCount Int      @default(0) // محاولات دخول فاشلة متتالية
+  branchId         Int?
+  branch           Branch?   @relation(fields: [branchId], references: [id])
+  id               String    @id @default(cuid())
+  username         String    @unique // اسم المستخدم
+  passwordHash     String // كلمة السر (مشفّرة bcrypt)
+  fullName         String // الاسم الكامل
+  role             UserRole  @default(VIEWER) // الدور
+  isActive         Boolean   @default(true) // فعّال؟
+  needsActivation  Boolean   @default(false) // يتطلب تعيين كلمة سر بأول دخول
+  lastLoginAt      DateTime?
+  email            String? // البريد الإلكتروني
+  phone            String? // الهاتف
+  jobTitle         String? // المسمّى الوظيفي
+  department       String? // القسم/الشعبة
+  note             String? // ملاحظات
+  failedLoginCount Int       @default(0) // محاولات دخول فاشلة متتالية
   lockedUntil      DateTime? // مقفول لحد هذا الوقت (حماية brute-force)
   authVersion      Int       @default(0) // إبطال الجلسات القديمة عند التغييرات الأمنية
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // العلاقات: السجلات التي أنشأها هذا المستخدم
-  auditLogs        AuditLog[]
-  createdPatients  Patient[]         @relation("PatientCreatedBy")
-  tasksAssigned    Task[]            @relation("TaskAssignee")
-  tasksCreated     Task[]            @relation("TaskCreator")
-  woundAssessments WoundAssessment[] @relation("AssessedBy")
-  referralsCreated ReferralRequest[] @relation("ReferralCreatedBy")
+  auditLogs                  AuditLog[]
+  createdPatients            Patient[]         @relation("PatientCreatedBy")
+  tasksAssigned              Task[]            @relation("TaskAssignee")
+  tasksCreated               Task[]            @relation("TaskCreator")
+  woundAssessments           WoundAssessment[] @relation("AssessedBy")
+  referralsCreated           ReferralRequest[] @relation("ReferralCreatedBy")
   referralsAssignedForReview ReferralRequest[] @relation("ReferralAssignedReviewer")
-  referralStatusChanges ReferralRequest[] @relation("ReferralStatusChangedBy")
-  referralsReviewed ReferralRequest[] @relation("ReferralReviewedBy")
-  referralsAccepted ReferralRequest[] @relation("ReferralAcceptedBy")
-  referralsCancelled ReferralRequest[] @relation("ReferralCancelledBy")
+  referralStatusChanges      ReferralRequest[] @relation("ReferralStatusChangedBy")
+  referralsReviewed          ReferralRequest[] @relation("ReferralReviewedBy")
+  referralsAccepted          ReferralRequest[] @relation("ReferralAcceptedBy")
+  referralsCancelled         ReferralRequest[] @relation("ReferralCancelledBy")
 
   @@index([username])
   @@map("users")
@@ -216,16 +240,16 @@ model User {
 
 // سجل التدقيق — من عدّل، شنو، ومتى
 model AuditLog {
-  id         String   @id @default(cuid())
-  userId     String?
-  user       User?    @relation(fields: [userId], references: [id])
-  action     String // العملية: CREATE / UPDATE / DELETE
-  tableName  String // اسم الجدول المتأثر
-  recordId   String // معرّف السجل
-  oldValue   Json? // القيمة قبل
-  newValue   Json? // القيمة بعد
-  ipAddress  String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String // العملية: CREATE / UPDATE / DELETE
+  tableName String // اسم الجدول المتأثر
+  recordId  String // معرّف السجل
+  oldValue  Json? // القيمة قبل
+  newValue  Json? // القيمة بعد
+  ipAddress String?
+  createdAt DateTime @default(now())
 
   @@index([tableName, recordId])
   @@index([userId])
@@ -241,6 +265,7 @@ model Governorate {
   name      String     @unique // اسم المحافظة
   districts District[]
   patients  Patient[]
+
   @@map("governorates")
 }
 
@@ -250,18 +275,20 @@ model District {
   governorateId Int
   governorate   Governorate @relation(fields: [governorateId], references: [id])
   patients      Patient[]
+
   @@unique([name, governorateId])
   @@map("districts")
 }
 
 // المراكز العلاجية داخل المجمع
 model Center {
-  id            Int             @id @default(autoincrement())
-  name          String          @unique // اسم المركز
-  type          String? // نوع المركز
-  sessions      TherapySession[]
-  admissions    Admission[]
+  id               Int               @id @default(autoincrement())
+  name             String            @unique // اسم المركز
+  type             String? // نوع المركز
+  sessions         TherapySession[]
+  admissions       Admission[]
   referralRequests ReferralRequest[]
+
   @@map("centers")
 }
 
@@ -270,6 +297,7 @@ model InjuryType {
   id       Int       @id @default(autoincrement())
   name     String    @unique // نوع الإصابة
   patients Patient[]
+
   @@map("injury_types")
 }
 
@@ -278,19 +306,21 @@ model Formation {
   id       Int       @id @default(autoincrement())
   name     String    @unique // اسم التشكيل
   patients Patient[]
+
   @@map("formations")
 }
 
 // الأدوية / المواد العلاجية
 model Medication {
-  id            Int            @id @default(autoincrement())
-  name          String         @unique // اسم الدواء/المادة
-  quantity      Int            @default(0) // الكمية المتوفرة (مجموع الدفعات — يُحدّث تلقائياً)
-  minQuantity   Int            @default(0) // حد التنبيه (إعادة الطلب)
+  id            Int               @id @default(autoincrement())
+  name          String            @unique // اسم الدواء/المادة
+  quantity      Int               @default(0) // الكمية المتوفرة (مجموع الدفعات — يُحدّث تلقائياً)
+  minQuantity   Int               @default(0) // حد التنبيه (إعادة الطلب)
   unit          String? // الوحدة (حبة/علبة/أمبولة...)
   prescriptions Prescription[]
   batches       MedicationBatch[]
   movements     StockMovement[]
+
   @@map("medications")
 }
 
@@ -301,6 +331,7 @@ model Supplier {
   phone   String?
   note    String?
   batches MedicationBatch[]
+
   @@map("suppliers")
 }
 
@@ -317,6 +348,7 @@ model MedicationBatch {
   receivedAt   DateTime   @default(now()) // تاريخ الاستلام/الإدخال
   note         String?
   createdAt    DateTime   @default(now())
+
   @@index([medicationId])
   @@index([expiryDate])
   @@map("medication_batches")
@@ -336,6 +368,7 @@ model StockMovement {
   patientName    String? // اسم المريض (لقطة للسجل)
   prescriptionId String? // الوصفة المرتبطة (للصرف)
   createdAt      DateTime          @default(now())
+
   @@index([medicationId])
   @@index([type])
   @@index([createdAt])
@@ -348,25 +381,25 @@ model StockMovement {
 
 model Patient {
   nextCheckupAt DateTime? // موعد الفحص القادم (يحدده رئيس المعالجين)
-  branchId Int?
-  branch   Branch? @relation(fields: [branchId], references: [id])
-  id         String  @id @default(cuid())
-  fileNumber Int     @unique @default(autoincrement()) // رقم الملف (متسلسل يدوي/تلقائي)
+  branchId      Int?
+  branch        Branch?   @relation(fields: [branchId], references: [id])
+  id            String    @id @default(cuid())
+  fileNumber    Int       @unique @default(autoincrement()) // رقم الملف (متسلسل يدوي/تلقائي)
 
   // البيانات الشخصية
-  fullName       String // الاسم الرباعي
-  motherName     String? // اسم الأم
-  gender         Gender? // الجنس
-  birthYear      Int? // التولد (سنة - تُشتق تلقائياً)
-  birthDate      DateTime? // تاريخ التولد
-  phone          String? // رقم الهاتف
-  housing        String? // السكن
-  maritalStatus  MaritalStatus? // الحالة الزوجية
-  caseType       CaseType? // نوع الحالة (جريح/مريض)
-  wivesCount     Int?           @default(0) // عدد الزوجات
-  childrenCount  Int?           @default(0) // عدد الأطفال
-  education      String? // التحصيل الدراسي
-  dataEntryBy    String? // مدخل البيانات/منظم الاستمارة
+  fullName      String // الاسم الرباعي
+  motherName    String? // اسم الأم
+  gender        Gender? // الجنس
+  birthYear     Int? // التولد (سنة - تُشتق تلقائياً)
+  birthDate     DateTime? // تاريخ التولد
+  phone         String? // رقم الهاتف
+  housing       String? // السكن
+  maritalStatus MaritalStatus? // الحالة الزوجية
+  caseType      CaseType? // نوع الحالة (جريح/مريض)
+  wivesCount    Int?           @default(0) // عدد الزوجات
+  childrenCount Int?           @default(0) // عدد الأطفال
+  education     String? // التحصيل الدراسي
+  dataEntryBy   String? // مدخل البيانات/منظم الاستمارة
 
   // الموقع
   governorateId Int?
@@ -375,25 +408,25 @@ model Patient {
   district      District?    @relation(fields: [districtId], references: [id])
 
   // البيانات العسكرية/الإدارية
-  formationId   Int?
-  formation     Formation? @relation(fields: [formationId], references: [id])
-  rank          String? // الصفة
-  formationText String? // التشكيل (كتابة حرة)
+  formationId    Int?
+  formation      Formation? @relation(fields: [formationId], references: [id])
+  rank           String? // الصفة
+  formationText  String? // التشكيل (كتابة حرة)
   referralSource String? // جهة الإرسال
   militaryStatus String? // موقف الدائرة (عسكري/مدني)
-  receivesSalary Boolean?  @default(false) // يستلم راتب
-  kinshipDegree String? // درجة القرابة
-  inMobilization Boolean?  @default(false) // ضمن الحشد
+  receivesSalary Boolean?   @default(false) // يستلم راتب
+  kinshipDegree  String? // درجة القرابة
+  inMobilization Boolean?   @default(false) // ضمن الحشد
   disabilityPct  Float? // نسبة العجز
 
   // الإصابة
-  injuryTypeId  Int?
-  injuryType    InjuryType? @relation(fields: [injuryTypeId], references: [id])
-  injuryCause   String? // سبب الإصابة
-  injuryDate    DateTime? // تاريخ الإصابة
-  mobility      String? // الحركة
-  mobilityAid   String? // مساعد الحركة
-  prosthetic    String? // طرف صناعي
+  injuryTypeId Int?
+  injuryType   InjuryType? @relation(fields: [injuryTypeId], references: [id])
+  injuryCause  String? // سبب الإصابة
+  injuryDate   DateTime? // تاريخ الإصابة
+  mobility     String? // الحركة
+  mobilityAid  String? // مساعد الحركة
+  prosthetic   String? // طرف صناعي
 
   // الإحالة
   referralBookNo   String? // رقم الكتاب
@@ -401,10 +434,10 @@ model Patient {
   referredToCenter String? // المركز المُحال له
 
   // الحالة العامة
-  status              PatientStatus @default(ACTIVE) // الحالة
-  registrationDate    DateTime      @default(now()) // تاريخ التسجيل
-  visitsEndDate       DateTime? // تاريخ انتهاء المراجعات
-  notes               String?
+  status           PatientStatus @default(ACTIVE) // الحالة
+  registrationDate DateTime      @default(now()) // تاريخ التسجيل
+  visitsEndDate    DateTime? // تاريخ انتهاء المراجعات
+  notes            String?
 
   // التدقيق
   createdById String?
@@ -413,36 +446,36 @@ model Patient {
   updatedAt   DateTime @updatedAt
 
   // العلاقات (واحد لمتعدد)
-  diagnoses        Diagnosis[]
-  medicalReports   MedicalReport[]
-  therapySessions  TherapySession[]
+  diagnoses          Diagnosis[]
+  medicalReports     MedicalReport[]
+  therapySessions    TherapySession[]
   therapySessionLogs TherapySessionLog[]
-  visits           Visit[]
-  prescriptions    Prescription[]
-  admissions       Admission[]
-  woundAssessments WoundAssessment[]
-  correspondence   Correspondence[]
-  attachments      Attachment[]
-  relatives        Relative[]
-  appointments     Appointment[]
-  invoices         Invoice[]
-  devices          Device[]
-  progressMetrics  ProgressMetric[]
-  medDoses         MedDose[]
-  queueEntries     QueueEntry[]
-  treatmentPlans   TreatmentPlan[]
-  tasks            Task[]
-  careStages       CareStage[]
-  officialDocuments OfficialDocument[]
-  approvalRequests ApprovalRequest[]
-  sickLeaves       SickLeave[]
-  archivedAt       DateTime? // الأرشفة
-  accessToken      String?       @unique // رمز بوابة المريض
-  photoUrl         String? // صورة المريض
-  vitalSigns       VitalSign[]
-  residentReviews  ResidentReview[]
-  dressingRecords  DressingRecord[]
-  referralRequests ReferralRequest[]
+  visits             Visit[]
+  prescriptions      Prescription[]
+  admissions         Admission[]
+  woundAssessments   WoundAssessment[]
+  correspondence     Correspondence[]
+  attachments        Attachment[]
+  relatives          Relative[]
+  appointments       Appointment[]
+  invoices           Invoice[]
+  devices            Device[]
+  progressMetrics    ProgressMetric[]
+  medDoses           MedDose[]
+  queueEntries       QueueEntry[]
+  treatmentPlans     TreatmentPlan[]
+  tasks              Task[]
+  careStages         CareStage[]
+  officialDocuments  OfficialDocument[]
+  approvalRequests   ApprovalRequest[]
+  sickLeaves         SickLeave[]
+  archivedAt         DateTime? // الأرشفة
+  accessToken        String?             @unique // رمز بوابة المريض
+  photoUrl           String? // صورة المريض
+  vitalSigns         VitalSign[]
+  residentReviews    ResidentReview[]
+  dressingRecords    DressingRecord[]
+  referralRequests   ReferralRequest[]
 
   @@index([fullName])
   @@index([fileNumber])
@@ -471,13 +504,18 @@ model Diagnosis {
 
 // التقارير الطبية
 model MedicalReport {
-  id        String   @id @default(cuid())
-  patientId String
-  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  content   String // نص التقرير
-  doctor    String? // الطبيب
-  date      DateTime @default(now())
-  createdAt DateTime @default(now())
+  id         String               @id @default(cuid())
+  patientId  String
+  patient    Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  content    String // نص التقرير
+  doctor     String? // الطبيب
+  doctorId   String?
+  reportType MedicalReportType?
+  status     MedicalReportStatus?
+  readyAt    DateTime?
+  printedAt  DateTime?
+  date       DateTime             @default(now())
+  createdAt  DateTime             @default(now())
 
   @@index([patientId])
   @@map("medical_reports")
@@ -485,25 +523,25 @@ model MedicalReport {
 
 // جلسات العلاج (لكل المسارات)
 model TherapySession {
-  id              String      @id @default(cuid())
-  patientId       String
-  patient         Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  therapyType     TherapyType // نوع المسار العلاجي
-  centerId        Int?
-  center          Center?     @relation(fields: [centerId], references: [id])
-  treatmentPlan   String? // الخطة العلاجية
-  totalSessions   Int? // عدد الجلسات الكلي
-  actualSessions  Int?        @default(0) // عدد الجلسات الفعلي
-  startDate       DateTime? // تاريخ أول جلسة
-  endDate         DateTime? // تاريخ آخر جلسة
-  therapist       String? // المعالج
-  benefitRate     String? // نسبة الاستفادة
-  hadAdmission    Boolean?    @default(false) // لديه فترة رقود
-  admissionCount  Int?        @default(0) // عدد مرات الرقود
-  admissionDays   Int?        @default(0) // أيام الرقود
-  notes           String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id             String      @id @default(cuid())
+  patientId      String
+  patient        Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  therapyType    TherapyType // نوع المسار العلاجي
+  centerId       Int?
+  center         Center?     @relation(fields: [centerId], references: [id])
+  treatmentPlan  String? // الخطة العلاجية
+  totalSessions  Int? // عدد الجلسات الكلي
+  actualSessions Int?        @default(0) // عدد الجلسات الفعلي
+  startDate      DateTime? // تاريخ أول جلسة
+  endDate        DateTime? // تاريخ آخر جلسة
+  therapist      String? // المعالج
+  benefitRate    String? // نسبة الاستفادة
+  hadAdmission   Boolean?    @default(false) // لديه فترة رقود
+  admissionCount Int?        @default(0) // عدد مرات الرقود
+  admissionDays  Int?        @default(0) // أيام الرقود
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   // ═══ الجدولة (يحددها رئيس المعالجين) ═══
   hall          String? // القاعة المعالِجة
@@ -512,6 +550,7 @@ model TherapySession {
   scheduledById String? // منشئ الجدولة (رئيس المعالجين/الأدمن)
   appointments  Appointment[] // المواعيد المولّدة لكل جلسة
   logs          TherapySessionLog[]
+
   @@index([patientId])
   @@index([therapyType])
   @@index([therapist])
@@ -520,14 +559,14 @@ model TherapySession {
 
 // مواعيد/سجل المراجعات
 model Visit {
-  id          String   @id @default(cuid())
-  patientId   String
-  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  sequenceNo  Int? // تسلسل الزيارة
-  visitDate   DateTime @default(now()) // تاريخ الزيارة
-  center      String? // المركز
-  notes       String? // ملاحظات
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  patientId  String
+  patient    Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sequenceNo Int? // تسلسل الزيارة
+  visitDate  DateTime @default(now()) // تاريخ الزيارة
+  center     String? // المركز
+  notes      String? // ملاحظات
+  createdAt  DateTime @default(now())
 
   @@index([patientId])
   @@map("visits")
@@ -535,25 +574,30 @@ model Visit {
 
 // الوصفات والتجهيز
 model Prescription {
-  id           String      @id @default(cuid())
-  patientId    String
-  patient      Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  doctor       String? // الطبيب الاختصاص
-  medicationId Int?
-  medication   Medication? @relation(fields: [medicationId], references: [id])
-  materialName String? // اسم العلاج/المادة (إذا غير مفهرس)
-  usage        String? // الاستخدام
-  count        Int? // العدد
-  quantity     String? // الكمية
-  duration     String? // المدة
-  prescribedAt DateTime    @default(now()) // تاريخ الوصفة
-  isDispensed  Boolean     @default(false) // تم التجهيز بالكامل؟
-  status       PrescriptionStatus @default(PENDING) // حالة التجهيز
-  dispensedQty Int         @default(0) // الكمية المصروفة فعلياً (تراكمي)
-  rejectReason String? // سبب الرفض
-  dispensedAt  DateTime? // تاريخ التجهيز
-  dispensedBy  String? // الصيدلي الذي جهّز
-  createdAt    DateTime    @default(now())
+  id                    String               @id @default(cuid())
+  patientId             String
+  patient               Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor                String? // الطبيب الاختصاص
+  medicationId          Int?
+  medication            Medication?          @relation(fields: [medicationId], references: [id])
+  materialName          String? // اسم العلاج/المادة (إذا غير مفهرس)
+  usage                 String? // الاستخدام
+  count                 Int? // العدد
+  quantity              String? // الكمية
+  duration              String? // المدة
+  prescribedAt          DateTime             @default(now()) // تاريخ الوصفة
+  isDispensed           Boolean              @default(false) // تم التجهيز بالكامل؟
+  status                PrescriptionStatus   @default(PENDING) // حالة التجهيز
+  dispensedQty          Int                  @default(0) // الكمية المصروفة فعلياً (تراكمي)
+  rejectReason          String? // سبب الرفض
+  dispensedAt           DateTime? // تاريخ التجهيز
+  dispensedBy           String? // الصيدلي الذي جهّز
+  prescriptionType      PrescriptionType?
+  eligibilityDecision   EligibilityDecision?
+  eligibilityReason     String?
+  eligibilityRecordedAt DateTime?
+  createdById           String?
+  createdAt             DateTime             @default(now())
 
   @@index([patientId])
   @@map("prescriptions")
@@ -561,42 +605,48 @@ model Prescription {
 
 // الرقود
 model Admission {
-  id            String          @id @default(cuid())
-  patientId     String
-  patient       Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  centerId      Int?
-  center        Center?         @relation(fields: [centerId], references: [id])
-  roomId        Int?
-  room          Room?           @relation(fields: [roomId], references: [id])
-  admissionDate DateTime // تاريخ الدخول
-  dischargeDate DateTime? // تاريخ الخروج
-  durationDays  Int? // مدة الرقود
-  status        AdmissionStatus @default(ADMITTED)
-  notes         String? // الملاحظات
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                    String          @id @default(cuid())
+  patientId             String
+  patient               Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  centerId              Int?
+  center                Center?         @relation(fields: [centerId], references: [id])
+  roomId                Int?
+  room                  Room?           @relation(fields: [roomId], references: [id])
+  bedId                 Int?
+  bed                   Bed?            @relation(fields: [bedId], references: [id])
+  admissionDate         DateTime // تاريخ الدخول
+  dischargeDate         DateTime? // تاريخ الخروج
+  durationDays          Int? // مدة الرقود
+  expectedDischargeDate DateTime?
+  recommendingDoctor    String?
+  admissionReason       String?
+  status                AdmissionStatus @default(ADMITTED)
+  notes                 String? // الملاحظات
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
   @@index([patientId])
   @@index([status])
+  @@index([bedId, admissionDate, dischargeDate])
   @@map("admissions")
 }
 
 // تقييم الجروح
 model WoundAssessment {
-  id            String   @id @default(cuid())
-  patientId     String
-  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  assessedById  String?
-  assessedBy    User?    @relation("AssessedBy", fields: [assessedById], references: [id])
+  id             String   @id @default(cuid())
+  patientId      String
+  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  assessedById   String?
+  assessedBy     User?    @relation("AssessedBy", fields: [assessedById], references: [id])
   assessmentDate DateTime @default(now()) // تاريخ التقييم
-  woundType     String? // نوع الجرح/القرحة
-  exudate       String? // الإفرازات
-  redness       Boolean? @default(false) // احمرار
-  swelling      Boolean? @default(false) // تورم
-  odor          Boolean? @default(false) // رائحة
-  warmth        Boolean? @default(false) // حرارة
-  nextPlan      String? // خطوات الخطة التالية
-  createdAt     DateTime @default(now())
+  woundType      String? // نوع الجرح/القرحة
+  exudate        String? // الإفرازات
+  redness        Boolean? @default(false) // احمرار
+  swelling       Boolean? @default(false) // تورم
+  odor           Boolean? @default(false) // رائحة
+  warmth         Boolean? @default(false) // حرارة
+  nextPlan       String? // خطوات الخطة التالية
+  createdAt      DateTime @default(now())
 
   // صور التوثيق
   photos Attachment[]
@@ -625,15 +675,15 @@ model Correspondence {
 
 // المرفقات (وثائق وصور)
 model Attachment {
-  id          String          @id @default(cuid())
-  patientId   String?
-  patient     Patient?        @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  woundId     String?
-  wound       WoundAssessment? @relation(fields: [woundId], references: [id], onDelete: Cascade)
-  fileName    String // اسم الملف
-  fileUrl     String // رابط التخزين (MinIO/مسار)
-  type        AttachmentType  @default(DOCUMENT)
-  uploadedAt  DateTime        @default(now())
+  id         String           @id @default(cuid())
+  patientId  String?
+  patient    Patient?         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  woundId    String?
+  wound      WoundAssessment? @relation(fields: [woundId], references: [id], onDelete: Cascade)
+  fileName   String // اسم الملف
+  fileUrl    String // رابط التخزين (MinIO/مسار)
+  type       AttachmentType   @default(DOCUMENT)
+  uploadedAt DateTime         @default(now())
 
   @@index([patientId])
   @@map("attachments")
@@ -641,16 +691,16 @@ model Attachment {
 
 // معلومات ذوي القربى / الجريح أو الشهيد
 model Relative {
-  id            String  @id @default(cuid())
-  patientId     String
-  patient       Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  name          String? // اسم القريب / الجريح / الشهيد
-  job           String? // الوظيفة
-  workplace     String? // مكان العمل
-  healthStatus  String? // الحالة الصحية
-  socialStatus  String? // الحالة الاجتماعية
-  nearestPoint  String? // أقرب نقطة دالة
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  patientId    String
+  patient      Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  name         String? // اسم القريب / الجريح / الشهيد
+  job          String? // الوظيفة
+  workplace    String? // مكان العمل
+  healthStatus String? // الحالة الصحية
+  socialStatus String? // الحالة الاجتماعية
+  nearestPoint String? // أقرب نقطة دالة
+  createdAt    DateTime @default(now())
 
   @@index([patientId])
   @@map("relatives")
@@ -658,21 +708,22 @@ model Relative {
 
 // المواعيد
 model Appointment {
-  id          String            @id @default(cuid())
-  patientId   String
-  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  scheduledAt DateTime // وقت الموعد
-  type        String? // نوع الموعد (جلسة/فحص/متابعة)
-  therapyType TherapyType? // المسار العلاجي إن وُجد
-  assignedTo  String? // المعالج/الطبيب المسؤول
-  status      AppointmentStatus @default(SCHEDULED)
+  id              String            @id @default(cuid())
+  patientId       String
+  patient         Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  scheduledAt     DateTime // وقت الموعد
+  type            String? // نوع الموعد (جلسة/فحص/متابعة)
+  therapyType     TherapyType? // المسار العلاجي إن وُجد
+  assignedTo      String? // المعالج/الطبيب المسؤول
+  status          AppointmentStatus @default(SCHEDULED)
   patientResponse ConfirmStatus? // رد المريض من البوابة
-  notes       String?
-  createdAt   DateTime          @default(now())
+  notes           String?
+  createdAt       DateTime          @default(now())
 
-  sessionId   String? // مرتبط بجلسة علاجية مجدولة (إن وُجد)
-  session     TherapySession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  sessionId          String? // مرتبط بجلسة علاجية مجدولة (إن وُجد)
+  session            TherapySession?     @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   therapySessionLogs TherapySessionLog[]
+
   @@index([patientId])
   @@index([scheduledAt])
   @@index([status])
@@ -779,8 +830,8 @@ model ProgressMetric {
   id        String   @id @default(cuid())
   patientId String
   patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  label     String   // اسم المقياس (مثل: مدى الحركة، القوة)
-  value     Float    // القيمة
+  label     String // اسم المقياس (مثل: مدى الحركة، القوة)
+  value     Float // القيمة
   date      DateTime @default(now())
   notes     String?
   createdAt DateTime @default(now())
@@ -851,31 +902,46 @@ model Room {
   capacity   Int         @default(1)
   notes      String?
   admissions Admission[]
+  beds       Bed[]
+}
+
+model Bed {
+  id         Int         @id @default(autoincrement())
+  roomId     Int
+  room       Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  label      String
+  occupied   Boolean     @default(false)
+  admissions Admission[]
+  createdAt  DateTime    @default(now())
+
+  @@unique([roomId, label])
+  @@index([roomId, occupied])
+  @@map("beds")
 }
 
 model OrgSetting {
-  id              Int     @id @default(1)
-  name            String  @default("المجمع التأهيلي الطبي")
-  subtitle        String?
-  address         String?
-  phone           String?
-  logoUrl         String?
-  maintenanceMode Boolean @default(false) // وضع الصيانة (يفعّله الأدمن)
-  autoBackup       Boolean   @default(true) // نسخة تلقائية يومية
-  lastAutoBackupAt DateTime?
+  id                    Int       @id @default(1)
+  name                  String    @default("المجمع التأهيلي الطبي")
+  subtitle              String?
+  address               String?
+  phone                 String?
+  logoUrl               String?
+  maintenanceMode       Boolean   @default(false) // وضع الصيانة (يفعّله الأدمن)
+  autoBackup            Boolean   @default(true) // نسخة تلقائية يومية
+  lastAutoBackupAt      DateTime?
   // مدد الاحتفاظ بالسجلات (بالأيام) — يتحكم بها الأدمن. سجل التدقيق دائم ولا يُمسّ.
-  notifRetentionDays    Int @default(30)  // حذف الإشعارات المقروءة الأقدم من هذه المدة
-  loginLogRetentionDays Int @default(180) // حذف سجل الدخول الأقدم من هذه المدة
+  notifRetentionDays    Int       @default(30) // حذف الإشعارات المقروءة الأقدم من هذه المدة
+  loginLogRetentionDays Int       @default(180) // حذف سجل الدخول الأقدم من هذه المدة
   // ═══ ترويسة النموذج الرسمي (كتاب المخاطبة) ═══
-  officialHeader1  String? // سطر الترويسة 1 (هيئة الحشد الشعبي)
-  officialHeader2  String? // سطر الترويسة 2
-  officialHeader3  String? // سطر الترويسة 3
-  officialHeader4  String? // سطر الترويسة 4 (اسم المجمع)
-  officialMotto    String? // الآية/الشعار
-  officialMottoSub String? // مصدر الشعار
-  officialAddress  String? // العنوان (الفوتر)
-  officialPhone    String? // الهاتف (الفوتر)
-  officialToOffice String? // جهة المخاطبة (الى / مكتب...)
+  officialHeader1       String? // سطر الترويسة 1 (هيئة الحشد الشعبي)
+  officialHeader2       String? // سطر الترويسة 2
+  officialHeader3       String? // سطر الترويسة 3
+  officialHeader4       String? // سطر الترويسة 4 (اسم المجمع)
+  officialMotto         String? // الآية/الشعار
+  officialMottoSub      String? // مصدر الشعار
+  officialAddress       String? // العنوان (الفوتر)
+  officialPhone         String? // الهاتف (الفوتر)
+  officialToOffice      String? // جهة المخاطبة (الى / مكتب...)
 }
 
 model MedDose {
@@ -916,7 +982,7 @@ model RolePermission {
 }
 
 model UserPermission {
-  id      String   @id @default(cuid())
+  id      String  @id @default(cuid())
   userId  String
   permKey String
   allowed Boolean
@@ -936,14 +1002,14 @@ model VitalSign {
   patientId String
   patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   date      DateTime @default(now())
-  systolic  Int?     // الضغط الانقباضي
-  diastolic Int?     // الضغط الانبساطي
-  pulse     Int?     // النبض
-  temp      Float?   // الحرارة °C
-  spo2      Int?     // تشبّع الأكسجين %
-  respRate  Int?     // التنفّس
-  glucose   Int?     // سكر الدم mg/dL
-  weight    Float?   // الوزن kg
+  systolic  Int? // الضغط الانقباضي
+  diastolic Int? // الضغط الانبساطي
+  pulse     Int? // النبض
+  temp      Float? // الحرارة °C
+  spo2      Int? // تشبّع الأكسجين %
+  respRate  Int? // التنفّس
+  glucose   Int? // سكر الدم mg/dL
+  weight    Float? // الوزن kg
   notes     String?
   createdAt DateTime @default(now())
 
@@ -953,30 +1019,30 @@ model VitalSign {
 // ═══ تقييم الطبيب المقيم (قبل التشخيص) ═══
 // العلامات الحيوية وقت التقييم + الإحالة لطبيب اختصاص
 model ResidentReview {
-  id         String   @id @default(cuid())
-  patientId  String
-  patient    Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  date       DateTime @default(now())
-  residentDoctor String?  // اسم الطبيب المقيم
+  id             String   @id @default(cuid())
+  patientId      String
+  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  date           DateTime @default(now())
+  residentDoctor String? // اسم الطبيب المقيم
 
   // العلامات الحيوية (لقطة وقت التقييم)
-  systolic   Int?     // الضغط الانقباضي
-  diastolic  Int?     // الضغط الانبساطي
-  pulse      Int?     // النبض
-  temp       Float?   // الحرارة °C
-  spo2       Int?     // تشبّع الأكسجين %
-  respRate   Int?     // التنفّس
-  glucose    Int?     // سكر الدم mg/dL
-  weight     Float?   // الوزن kg
+  systolic  Int? // الضغط الانقباضي
+  diastolic Int? // الضغط الانبساطي
+  pulse     Int? // النبض
+  temp      Float? // الحرارة °C
+  spo2      Int? // تشبّع الأكسجين %
+  respRate  Int? // التنفّس
+  glucose   Int? // سكر الدم mg/dL
+  weight    Float? // الوزن kg
 
   // الإحالة لطبيب اختصاص
-  referralNeeded   Boolean @default(false) // هل يحتاج إحالة
-  specialtyType    String? // نوع الاختصاص (كسور/جراحة/عظام...) — قائمة أو نص حر
-  referralReason   String? // سبب الإحالة
-  referralNotes    String? // ملاحظات إضافية
+  referralNeeded Boolean @default(false) // هل يحتاج إحالة
+  specialtyType  String? // نوع الاختصاص (كسور/جراحة/عظام...) — قائمة أو نص حر
+  referralReason String? // سبب الإحالة
+  referralNotes  String? // ملاحظات إضافية
 
-  generalNotes String?  // ملاحظات عامة للطبيب المقيم
-  createdAt  DateTime @default(now())
+  generalNotes     String? // ملاحظات عامة للطبيب المقيم
+  createdAt        DateTime          @default(now())
   referralRequests ReferralRequest[]
 
   @@index([patientId])
@@ -993,10 +1059,10 @@ model ReferralRequest {
   residentReview   ResidentReview? @relation(fields: [residentReviewId], references: [id], onDelete: SetNull)
 
   createdById String
-  createdBy   User @relation("ReferralCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy   User   @relation("ReferralCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   assignedReviewerId String?
-  assignedReviewer   User? @relation("ReferralAssignedReviewer", fields: [assignedReviewerId], references: [id], onDelete: SetNull)
+  assignedReviewer   User?   @relation("ReferralAssignedReviewer", fields: [assignedReviewerId], references: [id], onDelete: SetNull)
 
   destinationCenterId Int?
   destinationCenter   Center? @relation(fields: [destinationCenterId], references: [id], onDelete: SetNull)
@@ -1010,13 +1076,13 @@ model ReferralRequest {
   status ReferralRequestStatus @default(DRAFT)
 
   statusChangedById String?
-  statusChangedBy   User? @relation("ReferralStatusChangedBy", fields: [statusChangedById], references: [id], onDelete: SetNull)
-  statusChangedAt DateTime @default(now())
+  statusChangedBy   User?    @relation("ReferralStatusChangedBy", fields: [statusChangedById], references: [id], onDelete: SetNull)
+  statusChangedAt   DateTime @default(now())
 
-  officialDocumentId String? @unique
+  officialDocumentId String?           @unique
   officialDocument   OfficialDocument? @relation("ReferralOfficialDocument", fields: [officialDocumentId], references: [id], onDelete: SetNull)
 
-  careStageId String? @unique
+  careStageId String?    @unique
   careStage   CareStage? @relation("ReferralCareStage", fields: [careStageId], references: [id], onDelete: SetNull)
 
   resultSummary       String?
@@ -1027,15 +1093,15 @@ model ReferralRequest {
 
   reviewedAt   DateTime?
   reviewedById String?
-  reviewedBy   User? @relation("ReferralReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedBy   User?     @relation("ReferralReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   acceptedAt   DateTime?
   acceptedById String?
-  acceptedBy   User? @relation("ReferralAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+  acceptedBy   User?     @relation("ReferralAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
 
   cancellationReason String?
   cancelledById      String?
-  cancelledBy        User? @relation("ReferralCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelledBy        User?   @relation("ReferralCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1052,10 +1118,10 @@ model ReferralRequest {
 
 // ===== المهام والتحويلات الداخلية =====
 enum TaskStatus {
-  OPEN        // مفتوحة
+  OPEN // مفتوحة
   IN_PROGRESS // قيد التنفيذ
-  DONE        // منجزة
-  CANCELLED   // ملغاة
+  DONE // منجزة
+  CANCELLED // ملغاة
 }
 
 enum TaskPriority {
@@ -1066,31 +1132,31 @@ enum TaskPriority {
 }
 
 model Task {
-  id            String       @id @default(cuid())
-  title         String // عنوان المهمة
-  description   String? // التفاصيل
-  status        TaskStatus   @default(OPEN)
-  priority      TaskPriority @default(NORMAL)
-  dueDate       DateTime? // موعد الاستحقاق
+  id          String       @id @default(cuid())
+  title       String // عنوان المهمة
+  description String? // التفاصيل
+  status      TaskStatus   @default(OPEN)
+  priority    TaskPriority @default(NORMAL)
+  dueDate     DateTime? // موعد الاستحقاق
 
   // الإسناد: لمستخدم محدد و/أو لدور كامل
-  assignedToId  String?
-  assignedTo    User?        @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
-  assignedRole  UserRole?
+  assignedToId String?
+  assignedTo   User?     @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedRole UserRole?
 
   // المُنشئ
-  createdById   String?
-  createdBy     User?        @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?   @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   // ربط اختياري بمريض (تحويل/متابعة)
-  patientId     String?
-  patient       Patient?     @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  patientId String?
+  patient   Patient? @relation(fields: [patientId], references: [id], onDelete: SetNull)
 
   completedAt   DateTime?
   completedById String?
 
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([assignedToId, status])
   @@index([assignedRole, status])
@@ -1102,8 +1168,8 @@ model Task {
 enum ShiftType {
   MORNING // صباحية
   EVENING // مسائية
-  NIGHT   // ليلية
-  FULL    // دوام كامل
+  NIGHT // ليلية
+  FULL // دوام كامل
 }
 
 model Shift {
@@ -1121,15 +1187,15 @@ model Shift {
 }
 
 enum LeaveType {
-  ANNUAL    // اعتيادية
-  SICK      // مرضية
+  ANNUAL // اعتيادية
+  SICK // مرضية
   EMERGENCY // اضطرارية
-  UNPAID    // بدون راتب
-  OTHER     // أخرى
+  UNPAID // بدون راتب
+  OTHER // أخرى
 }
 
 enum LeaveStatus {
-  PENDING  // قيد الموافقة
+  PENDING // قيد الموافقة
   APPROVED // مقبولة
   REJECTED // مرفوضة
 }
@@ -1165,27 +1231,27 @@ model ReportApproval {
 
 // ===== مسار متابعة المريض (سلسلة المحطّات المترابطة) =====
 enum StageStatus {
-  WAITING     // بالانتظار
+  WAITING // بالانتظار
   IN_PROGRESS // قيد التنفيذ
-  CONFIRMED   // مؤكّدة/منجزة
-  SKIPPED     // متجاوَزة
+  CONFIRMED // مؤكّدة/منجزة
+  SKIPPED // متجاوَزة
 }
 
 model CareStage {
-  id            String      @id @default(cuid())
-  patientId     String
-  patient       Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  id              String           @id @default(cuid())
+  patientId       String
+  patient         Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
   station         String // اسم المحطة (الاستقبال/الطبيب/الصيدلية/العلاج...)
   responsibleRole UserRole? // الدور المسؤول عن تأكيد هذه المحطة
-  sequence        Int         @default(0) // الترتيب بالسلسلة
-  status        StageStatus @default(WAITING)
-  note          String?
-  confirmedBy   String? // اسم المؤكِّد
-  confirmedById String?
-  confirmedAt   DateTime?
-  createdById   String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  sequence        Int              @default(0) // الترتيب بالسلسلة
+  status          StageStatus      @default(WAITING)
+  note            String?
+  confirmedBy     String? // اسم المؤكِّد
+  confirmedById   String?
+  confirmedAt     DateTime?
+  createdById     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   referralRequest ReferralRequest? @relation("ReferralCareStage")
 
   @@index([patientId, sequence])
@@ -1194,31 +1260,32 @@ model CareStage {
 
 // ===== أرشيف الإجراءات الرسمية (كتب/قرارات/إحالات) =====
 enum DocType {
-  LETTER   // كتاب رسمي
+  LETTER // كتاب رسمي
   DECISION // قرار
   REFERRAL // إحالة
   CIRCULAR // تعميم
-  OTHER    // أخرى
+  OTHER // أخرى
 }
+
 enum DocDirection {
   INCOMING // وارد
   OUTGOING // صادر
 }
 
 model OfficialDocument {
-  id            String       @id @default(cuid())
-  patientId     String?
-  patient       Patient?     @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  docType       DocType      @default(LETTER)
-  direction     DocDirection @default(INCOMING)
-  number        String // رقم الكتاب/القرار الرسمي
-  docDate       DateTime // التاريخ الرسمي
-  subject       String // الموضوع
-  entity        String? // الجهة (صادر إلى / وارد من)
-  body          String? // النص/الملاحظات
-  attachmentUrl String?
-  createdById   String?
-  createdAt     DateTime     @default(now())
+  id              String           @id @default(cuid())
+  patientId       String?
+  patient         Patient?         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  docType         DocType          @default(LETTER)
+  direction       DocDirection     @default(INCOMING)
+  number          String // رقم الكتاب/القرار الرسمي
+  docDate         DateTime // التاريخ الرسمي
+  subject         String // الموضوع
+  entity          String? // الجهة (صادر إلى / وارد من)
+  body            String? // النص/الملاحظات
+  attachmentUrl   String?
+  createdById     String?
+  createdAt       DateTime         @default(now())
   referralRequest ReferralRequest? @relation("ReferralOfficialDocument")
 
   @@index([patientId])
@@ -1234,6 +1301,7 @@ enum ApprovalType {
   PROCEDURE
   OTHER
 }
+
 enum ApprovalStatus {
   PENDING_REVIEW
   PENDING_APPROVAL
@@ -1279,7 +1347,7 @@ model ApprovalStep {
 model Notification {
   id           String    @id @default(cuid())
   targetRole   UserRole? // موجّه لدور
-  targetUserId String?   // أو لمستخدم محدد
+  targetUserId String? // أو لمستخدم محدد
   title        String
   body         String?
   link         String?
@@ -1321,37 +1389,37 @@ model Branch {
 
 // ===== الإجازات المرضية للمراجعين =====
 model SickLeave {
-  id            String   @id @default(cuid())
-  patientId     String
-  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  number        String? // الرقم الرسمي
-  startDate     DateTime
-  endDate       DateTime
-  days          Int
-  diagnosisText String // التشخيص المستند إليه
-  doctorName    String? // الطبيب الموصي
-  notes         String?
+  id                   String    @id @default(cuid())
+  patientId            String
+  patient              Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  number               String? // الرقم الرسمي
+  startDate            DateTime
+  endDate              DateTime
+  days                 Int
+  diagnosisText        String // التشخيص المستند إليه
+  doctorName           String? // الطبيب الموصي
+  notes                String?
   // ═══ لجنة المصادقة (3 أطباء) ═══
-  committee1    String? // اسم عضو اللجنة الأول
-  committee2    String? // اسم عضو اللجنة الثاني
-  committee3    String? // اسم عضو اللجنة الثالث
-  approved1At   DateTime? // تاريخ مصادقة العضو الأول
-  approved2At   DateTime? // تاريخ مصادقة العضو الثاني
-  approved3At   DateTime? // تاريخ مصادقة العضو الثالث
-  approved1ById String? // من صادق (العضو الأول)
-  approved2ById String? // من صادق (العضو الثاني)
-  approved3ById String? // من صادق (العضو الثالث)
-  needsManagerApproval Boolean @default(true) // هل تحتاج اعتماد المدير فوق اللجنة
+  committee1           String? // اسم عضو اللجنة الأول
+  committee2           String? // اسم عضو اللجنة الثاني
+  committee3           String? // اسم عضو اللجنة الثالث
+  approved1At          DateTime? // تاريخ مصادقة العضو الأول
+  approved2At          DateTime? // تاريخ مصادقة العضو الثاني
+  approved3At          DateTime? // تاريخ مصادقة العضو الثالث
+  approved1ById        String? // من صادق (العضو الأول)
+  approved2ById        String? // من صادق (العضو الثاني)
+  approved3ById        String? // من صادق (العضو الثالث)
+  needsManagerApproval Boolean   @default(true) // هل تحتاج اعتماد المدير فوق اللجنة
   // ═══ حقول النموذج الرسمي (كتاب المخاطبة) ═══
-  officialNumber   String? // العدد الرسمي للكتاب
-  officialDate     DateTime? // تاريخ الكتاب
-  sendBookNumber   String? // رقم كتاب الإرسال المُشار إليه
-  sendBookDate     String? // تاريخ كتاب الإرسال (نص حر)
-  sendBookFrom     String? // الصادر من (جهة كتاب الإرسال)
-  directorate      String? // المديرية/التشكيل المنسوب إليه
-  doctorSpecialty  String? // اختصاص الطبيب المعالج
-  createdById   String?
-  createdAt     DateTime @default(now())
+  officialNumber       String? // العدد الرسمي للكتاب
+  officialDate         DateTime? // تاريخ الكتاب
+  sendBookNumber       String? // رقم كتاب الإرسال المُشار إليه
+  sendBookDate         String? // تاريخ كتاب الإرسال (نص حر)
+  sendBookFrom         String? // الصادر من (جهة كتاب الإرسال)
+  directorate          String? // المديرية/التشكيل المنسوب إليه
+  doctorSpecialty      String? // اختصاص الطبيب المعالج
+  createdById          String?
+  createdAt            DateTime  @default(now())
 
   @@index([patientId])
 }
@@ -1360,10 +1428,13 @@ model SickLeave {
 model MobilityAid {
   id   Int    @id @default(autoincrement())
   name String @unique
+
   @@map("mobility_aids")
 }
+
 model ProstheticType {
   id   Int    @id @default(autoincrement())
   name String @unique
+
   @@map("prosthetic_types")
 }
