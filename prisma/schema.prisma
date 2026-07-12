@@ -149,6 +149,16 @@ enum StockMovementType {
   ADJUST // تعديل
 }
 
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ORDERED
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  CANCELLED
+}
+
 enum CarePeriod {
   MORNING // صباح
   EVENING // مساء
@@ -307,6 +317,9 @@ model User {
   centerMemberships           CenterMembership[]
   centerProgramsAssigned      CenterProgram[] @relation("CenterProgramAssignee")
   centerSessionsAssigned      CenterSession[] @relation("CenterSessionAssignee")
+  purchaseOrdersCreated       PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
+  purchaseOrdersApproved      PurchaseOrder[] @relation("PurchaseOrderApprovedBy")
+  purchaseReceiptsCreated     PurchaseReceipt[] @relation("PurchaseReceiptCreatedBy")
 
   @@index([username])
   @@map("users")
@@ -398,6 +411,7 @@ model Medication {
   prescriptions Prescription[]
   batches       MedicationBatch[]
   movements     StockMovement[]
+  purchaseItems PurchaseOrderItem[]
 
   @@map("medications")
 }
@@ -409,6 +423,7 @@ model Supplier {
   phone   String?
   note    String?
   batches MedicationBatch[]
+  purchaseOrders PurchaseOrder[]
 
   @@map("suppliers")
 }
@@ -426,9 +441,17 @@ model MedicationBatch {
   receivedAt   DateTime   @default(now()) // تاريخ الاستلام/الإدخال
   note         String?
   createdAt    DateTime   @default(now())
+  purchaseOrderId String?
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  purchaseItemId String?
+  purchaseItem PurchaseOrderItem? @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
+  purchaseReceiptId String?
+  purchaseReceipt PurchaseReceipt? @relation(fields: [purchaseReceiptId], references: [id], onDelete: SetNull)
 
   @@index([medicationId])
   @@index([expiryDate])
+  @@index([purchaseOrderId])
+  @@index([purchaseReceiptId])
   @@map("medication_batches")
 }
 
@@ -445,12 +468,117 @@ model StockMovement {
   patientId      String? // للصرف
   patientName    String? // اسم المريض (لقطة للسجل)
   prescriptionId String? // الوصفة المرتبطة (للصرف)
+  purchaseReceiptId String?
+  purchaseReceipt PurchaseReceipt? @relation(fields: [purchaseReceiptId], references: [id], onDelete: SetNull)
   createdAt      DateTime          @default(now())
 
   @@index([medicationId])
   @@index([type])
   @@index([createdAt])
+  @@index([purchaseReceiptId])
   @@map("stock_movements")
+}
+
+model PurchaseOrder {
+  id              String @id @default(cuid())
+  orderNo         String @unique
+  supplierId      Int
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  orderDate       DateTime @default(now())
+  expectedDeliveryDate DateTime?
+  status          PurchaseOrderStatus @default(DRAFT)
+  createdById     String
+  createdBy       User @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedById    String?
+  approvedBy      User? @relation("PurchaseOrderApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt      DateTime?
+  notes           String?
+  cancellationReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  items           PurchaseOrderItem[]
+  receipts        PurchaseReceipt[]
+  attachments     PurchaseOrderAttachment[]
+  batches         MedicationBatch[]
+
+  @@index([status, expectedDeliveryDate])
+  @@index([supplierId, orderDate])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  medicationId    Int?
+  medication      Medication? @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+  materialName    String?
+  unit            String
+  orderedQuantity Int
+  receivedQuantity Int @default(0)
+  rejectedQuantity Int @default(0)
+  damagedQuantity Int @default(0)
+  unitPrice       Decimal? @db.Decimal(12, 2)
+  batchNo         String?
+  expiryDate      DateTime?
+  createdAt       DateTime @default(now())
+  receiptItems    PurchaseReceiptItem[]
+  batches         MedicationBatch[]
+
+  @@index([purchaseOrderId])
+  @@index([medicationId])
+  @@map("purchase_order_items")
+}
+
+model PurchaseReceipt {
+  id              String @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  receiptNo       String @unique
+  idempotencyKey  String @unique
+  receivedAt      DateTime @default(now())
+  createdById     String
+  createdBy       User @relation("PurchaseReceiptCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  notes           String?
+  overrideReason  String?
+  createdAt       DateTime @default(now())
+  items           PurchaseReceiptItem[]
+  batches         MedicationBatch[]
+  movements       StockMovement[]
+
+  @@index([purchaseOrderId, receivedAt])
+  @@map("purchase_receipts")
+}
+
+model PurchaseReceiptItem {
+  id              String @id @default(cuid())
+  receiptId       String
+  receipt         PurchaseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  purchaseItemId  String
+  purchaseItem    PurchaseOrderItem @relation(fields: [purchaseItemId], references: [id], onDelete: Restrict)
+  acceptedQuantity Int @default(0)
+  rejectedQuantity Int @default(0)
+  damagedQuantity Int @default(0)
+  batchNo         String?
+  expiryDate      DateTime?
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+
+  @@unique([receiptId, purchaseItemId])
+  @@index([purchaseItemId])
+  @@map("purchase_receipt_items")
+}
+
+model PurchaseOrderAttachment {
+  id              String @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  fileName        String
+  fileUrl         String
+  createdAt       DateTime @default(now())
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_attachments")
 }
 
 // =====================================================================
