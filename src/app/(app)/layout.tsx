@@ -27,7 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     prisma.admission.findMany({ where: { status: "ADMITTED" }, select: { admissionDate: true, durationDays: true } }),
     prisma.device.count({ where: { nextMaintenanceAt: { lte: now }, status: { not: "REPLACED" } } }),
     prisma.medication.findMany({ select: { quantity: true, minQuantity: true } }),
-    prisma.prescription.count({ where: { isDispensed: false, status: { not: "REJECTED" } } }),
+    prisma.prescription.count({ where: { isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" } }),
     prisma.medicationBatch.count({ where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: soon } } }),
     prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, OR: [{ assignedToId: uid }, { assignedRole: role }] } }),
     prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, dueDate: { lt: now }, OR: [{ assignedToId: uid }, { assignedRole: role }] } }),

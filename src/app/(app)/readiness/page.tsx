@@ -25,7 +25,7 @@ export default async function Readiness() {
     getReadinessChecks(),
     prisma.patient.count({ where: { archivedAt: null, OR: [{ phone: null }, { governorateId: null }, { injuryTypeId: null }] } }),
     prisma.device.count({ where: { nextMaintenanceAt: { lte: now }, status: { not: "REPLACED" } } }),
-    prisma.prescription.count({ where: { isDispensed: false } }),
+    prisma.prescription.count({ where: { isDispensed: false, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" } }),
     prisma.medicationBatch.count({ where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: soon } } }),
     prisma.medication.findMany({ select: { quantity: true, minQuantity: true } }),
     prisma.leave.count({ where: { status: "PENDING" } }),

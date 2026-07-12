@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/pharmacy", label: "قائمة التجهيز", exact: true },
   { href: "/pharmacy/stock", label: "المخزون والدفعات" },
+  { href: "/pharmacy/purchases", label: "أوامر الشراء" },
   { href: "/pharmacy/log", label: "سجل الحركة" },
   { href: "/pharmacy/reports", label: "التقارير" },
 ];

@@ -18,7 +18,7 @@ export default async function PatientPrescriptionsPrint({ params }: { params: Pr
   if (!patient) notFound();
 
   const rxs = await prisma.prescription.findMany({
-    where: { patientId: id, isDispensed: false, status: { not: "REJECTED" } },
+    where: { patientId: id, isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" },
     include: { medication: true },
     orderBy: { prescribedAt: "asc" },
   });

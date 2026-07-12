@@ -42,51 +42,48 @@ export async function dispensePrescription(prescriptionId: string, fd: FormData)
   await assertPerm("pharmacy.dispense");
   const who = await pharmacistInfo();
   const partial = fd.get("partial")?.toString() === "1";
-  const rx = await prisma.prescription.findUnique({ where: { id: prescriptionId }, include: { patient: { select: { fullName: true } } } });
-  if (!rx || rx.isDispensed) return;
-
-  let want = Number(fd.get("qty") ?? 0);
-  if (!want || want <= 0) want = rxCount(rx);
-  const targetTotal = Math.max(rxCount(rx), want);
-  const remainingNeed = Math.max(0, targetTotal - (rx.dispensedQty ?? 0));
-  want = Math.min(want, remainingNeed || want);
-
-  let dispensedNow = 0;
-  if (rx.medicationId && want > 0) {
-    let remaining = want;
-    const batches = await prisma.medicationBatch.findMany({
-      where: { medicationId: rx.medicationId, quantity: { gt: 0 } },
-      orderBy: [{ expiryDate: { sort: "asc", nulls: "last" } }, { id: "asc" }],
-    });
-    for (const b of batches) {
-      if (remaining <= 0) break;
-      const take = Math.min(b.quantity, remaining);
-      await prisma.medicationBatch.update({ where: { id: b.id }, data: { quantity: b.quantity - take } });
-      await logMovement({ type: "DISPENSE", medicationId: rx.medicationId, batchId: b.id, quantity: take, byName: who.name, patientId: rx.patientId, patientName: rx.patient?.fullName ?? null, prescriptionId: rx.id });
-      remaining -= take;
-      dispensedNow += take;
+  if (partial) await assertPerm("pharmacy.dispense.partial");
+  const result = await prisma.$transaction(async (tx) => {
+    const rx = await tx.prescription.findUnique({ where: { id: prescriptionId }, include: { patient: { select: { fullName: true } } } });
+    if (!rx || rx.isDispensed || rx.status === "DISPENSED") return { patientId: rx?.patientId, repeated: true };
+    if (rx.prescriptionType !== "INTERNAL" || rx.eligibilityDecision !== "ELIGIBLE") throw new Error("الوصفة ليست وصفة داخلية مؤهلة للصرف");
+    if (!rx.medicationId) throw new Error("اربط الوصفة بمادة مخزنية قبل الصرف");
+    const targetTotal = rxCount(rx);
+    const remainingNeed = Math.max(0, targetTotal - rx.dispensedQty);
+    if (remainingNeed <= 0) return { patientId: rx.patientId, repeated: true };
+    const requested = Math.max(1, Number(fd.get("qty")) || remainingNeed);
+    const want = partial ? Math.min(requested, remainingNeed) : remainingNeed;
+    const now = new Date();
+    const batches = await tx.medicationBatch.findMany({ where: { medicationId: rx.medicationId, quantity: { gt: 0 }, OR: [{ expiryDate: null }, { expiryDate: { gt: now } }] }, orderBy: [{ expiryDate: { sort: "asc", nulls: "last" } }, { id: "asc" }] });
+    const available = batches.reduce((sum, batch) => sum + batch.quantity, 0);
+    if (available < want) throw new Error(partial ? "الكمية المطلوبة غير متوفرة" : "المخزون غير كافٍ للصرف الكامل");
+    let left = want;
+    for (const batch of batches) {
+      if (left <= 0) break;
+      const take = Math.min(batch.quantity, left);
+      await tx.medicationBatch.update({ where: { id: batch.id }, data: { quantity: { decrement: take } } });
+      await tx.stockMovement.create({ data: { type: "DISPENSE", medicationId: rx.medicationId, batchId: batch.id, quantity: take, byName: who.name, patientId: rx.patientId, patientName: rx.patient.fullName, prescriptionId: rx.id } });
+      left -= take;
     }
-    await recomputeMedicationQuantity(rx.medicationId);
-  }
-
-  const totalDispensed = (rx.dispensedQty ?? 0) + dispensedNow;
-  const isFull = rx.medicationId ? (targetTotal > 0 && totalDispensed >= targetTotal) : !partial;
-  await prisma.prescription.update({ where: { id: prescriptionId }, data: {
-    dispensedQty: totalDispensed,
-    isDispensed: isFull,
-    status: isFull ? "DISPENSED" : (dispensedNow > 0 || partial ? "PARTIAL" : "PENDING"),
-    dispensedAt: dispensedNow > 0 ? new Date() : rx.dispensedAt,
-    dispensedBy: dispensedNow > 0 ? who.name : rx.dispensedBy,
-  }});
-  await logAudit({ userId: who.id, action: "UPDATE", tableName: "prescriptions", recordId: prescriptionId, newValue: { status: isFull ? "DISPENSED" : "PARTIAL", qty: dispensedNow, requested: want, targetTotal } });
+    const totalDispensed = rx.dispensedQty + want;
+    const isFull = totalDispensed >= targetTotal;
+    await tx.prescription.update({ where: { id: prescriptionId }, data: { dispensedQty: totalDispensed, isDispensed: isFull, status: isFull ? "DISPENSED" : "PARTIAL", dispensedAt: new Date(), dispensedBy: who.name } });
+    const stock = await tx.medicationBatch.aggregate({ where: { medicationId: rx.medicationId }, _sum: { quantity: true } });
+    const medication = await tx.medication.update({ where: { id: rx.medicationId }, data: { quantity: Math.max(0, stock._sum.quantity || 0) } });
+    await tx.auditLog.create({ data: { userId: who.id, action: "UPDATE", tableName: "prescriptions", recordId: prescriptionId, newValue: { status: isFull ? "DISPENSED" : "PARTIAL", dispensedNow: want, remaining: Math.max(0, targetTotal - totalDispensed) } } });
+    if (medication.quantity <= medication.minQuantity) await tx.notification.create({ data: { targetRole: "PHARMACIST", title: medication.quantity <= 0 ? "نفاد مادة مخزنية" : "انخفاض مادة مخزنية", body: "راجع شاشة المخزون لإعادة التزويد.", link: "/pharmacy/stock" } });
+    return { patientId: rx.patientId, repeated: false };
+  }, { isolationLevel: "Serializable" });
   revalidatePath("/pharmacy");
-  if (rx.patientId) revalidatePath(`/patients/${rx.patientId}`);
+  if (result.patientId) revalidatePath(`/patients/${result.patientId}`);
 }
 
 // رفض وصفة مع سبب
 export async function rejectPrescription(prescriptionId: string, fd: FormData) {
   await assertPerm("pharmacy.dispense");
   const who = await pharmacistInfo();
+  const current = await prisma.prescription.findUniqueOrThrow({ where: { id: prescriptionId } });
+  if (current.dispensedQty > 0 || current.isDispensed) throw new Error("لا يمكن رفض وصفة بدأ صرفها");
   await prisma.prescription.update({ where: { id: prescriptionId }, data: {
     status: "REJECTED", isDispensed: false, rejectReason: fd.get("reason")?.toString() || "غير محدّد",
   }});
@@ -97,6 +94,8 @@ export async function rejectPrescription(prescriptionId: string, fd: FormData) {
 // إعادة وصفة للقائمة (تراجع عن رفض/تجهيز)
 export async function reopenPrescription(prescriptionId: string) {
   await assertPerm("pharmacy.dispense");
+  const current = await prisma.prescription.findUniqueOrThrow({ where: { id: prescriptionId } });
+  if (current.dispensedQty > 0 || current.isDispensed || current.status === "DISPENSED") throw new Error("لا يمكن إعادة فتح وصفة بعد الصرف");
   await prisma.prescription.update({ where: { id: prescriptionId }, data: { status: "PENDING", isDispensed: false, rejectReason: null } });
   revalidatePath("/pharmacy");
 }

@@ -89,7 +89,7 @@ export default async function Dashboard() {
   const wantFin = perms.has("finance.view");
   const soon60 = new Date(); soon60.setDate(soon60.getDate() + 60);
   const [rxPending, expiringSoon, unpaidInvoices, myOpenTasks, overdueTasks, appointmentSoon] = await Promise.all([
-    wantPharm ? prisma.prescription.count({ where: { isDispensed: false, status: { not: "REJECTED" } } }) : Promise.resolve(0),
+    wantPharm ? prisma.prescription.count({ where: { isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" } }) : Promise.resolve(0),
     wantPharm ? prisma.medicationBatch.count({ where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: soon60 } } }) : Promise.resolve(0),
     wantFin ? prisma.invoice.findMany({ where: { status: { not: "PAID" } }, select: { amount: true, paidAmount: true } }) : Promise.resolve([] as { amount: number; paidAmount: number }[]),
     perms.has("tasks.view") ? prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, OR: [{ assignedToId: uid }, { assignedRole: myRole }] } }) : Promise.resolve(0),

@@ -9,7 +9,7 @@ type Group = { patient: { id: string; fullName: string; fileNumber: string }; it
 
 const rxNeed = (rx: Rx) => (rx.count && rx.count > 0 ? rx.count : parseInt((rx.quantity || "").match(/\d+/)?.[0] || "0", 10) || 1);
 
-export function DispenseQueue({ groups, cDispense, cPrint }: { groups: Group[]; cDispense: boolean; cPrint: boolean }) {
+export function DispenseQueue({ groups, cDispense, cPartial, cPrint }: { groups: Group[]; cDispense: boolean; cPartial: boolean; cPrint: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = groups.find((g) => g.patient.id === openId) ?? null;
 
@@ -79,7 +79,7 @@ export function DispenseQueue({ groups, cDispense, cPrint }: { groups: Group[]; 
                           <label className="text-xs text-gray-500">الكمية الفعلية</label>
                           <input name="qty" type="number" min="1" defaultValue={remaining || need} className="input !w-20 !py-1 text-sm" />
                           <button name="partial" value="0" className="btn-primary !py-1.5 text-xs" type="submit">تجهيز كامل</button>
-                          <button name="partial" value="1" className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-200" type="submit">جزئي</button>
+                          {cPartial ? <button name="partial" value="1" className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-200" type="submit">صرف جزئي</button> : null}
                         </form>
                         <details className="relative mr-auto">
                           <summary className="cursor-pointer list-none rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">رفض</summary>

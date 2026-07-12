@@ -11,6 +11,7 @@ export default async function PharmacyPage() {
   await requirePerm("pharmacy.view");
   const perms = await currentPerms();
   const cDispense = perms.has("pharmacy.dispense");
+  const cPartial = perms.has("pharmacy.dispense.partial");
   const cPrint = perms.has("pharmacy.print");
 
   const now = new Date();
@@ -19,7 +20,7 @@ export default async function PharmacyPage() {
 
   const [pending, expiring, lowMeds] = await Promise.all([
     prisma.prescription.findMany({
-      where: { isDispensed: false, status: { not: "REJECTED" }, OR: [{ prescriptionType: "INTERNAL" }, { prescriptionType: null }] },
+      where: { isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" },
       include: { patient: { select: { id: true, fullName: true, fileNumber: true } }, medication: true },
       orderBy: { prescribedAt: "asc" },
     }),
@@ -73,7 +74,7 @@ export default async function PharmacyPage() {
           <h2 className="font-semibold text-gray-700">قائمة التجهيز</h2>
           <span className="badge-brand">{groups.length} مريض · {pending.length} وصفة</span>
         </div>
-        <DispenseQueue groups={JSON.parse(JSON.stringify(groups))} cDispense={cDispense} cPrint={cPrint} />
+        <DispenseQueue groups={JSON.parse(JSON.stringify(groups))} cDispense={cDispense} cPartial={cPartial} cPrint={cPrint} />
       </div>
     </div>
   );

@@ -1,0 +1,18 @@
+import Link from "next/link";
+import { prisma } from "@/lib/db";
+import { requirePerm, currentPerms } from "@/lib/access";
+import { PageHeader } from "@/components/PageHeader";
+import { PharmacyNav } from "@/components/PharmacyNav";
+import { fmtDate } from "@/lib/labels";
+import { createPurchaseOrder } from "./actions";
+
+export const dynamic = "force-dynamic";
+const STATUS: Record<string,string> = { DRAFT:"مسودة",PENDING_APPROVAL:"بانتظار الاعتماد",APPROVED:"معتمد",ORDERED:"مطلوب من المورد",PARTIALLY_RECEIVED:"مستلم جزئياً",FULLY_RECEIVED:"مستلم بالكامل",CANCELLED:"ملغى" };
+
+export default async function PurchasesPage() {
+  await requirePerm("pharmacy.purchase.view"); const perms = await currentPerms();
+  const [orders, suppliers] = await Promise.all([prisma.purchaseOrder.findMany({ include: { supplier: true, createdBy: true, _count: { select: { items: true, receipts: true } } }, orderBy: { createdAt: "desc" }, take: 150 }), prisma.supplier.findMany({ orderBy: { name: "asc" } })]);
+  const delayed = orders.filter((order)=>order.expectedDeliveryDate && order.expectedDeliveryDate < new Date() && !["FULLY_RECEIVED","CANCELLED"].includes(order.status)).length;
+  return <div className="space-y-5"><PageHeader title="أوامر شراء الصيدلية" subtitle="الطلب والاعتماد والتوريد والاستلام" icon="🧾"><Link href="/pharmacy/purchases/reports" className="btn-ghost bg-white text-brand-700">تقارير الشراء</Link></PageHeader><PharmacyNav /><div className="grid gap-3 md:grid-cols-3"><Metric label="بانتظار الاعتماد" value={orders.filter((o)=>o.status==="PENDING_APPROVAL").length} /><Metric label="استلام جزئي" value={orders.filter((o)=>o.status==="PARTIALLY_RECEIVED").length} /><Metric label="متأخر" value={delayed} /></div>{perms.has("pharmacy.purchase.create") ? <form action={createPurchaseOrder} className="card grid gap-3 p-5 md:grid-cols-2" encType="multipart/form-data" autoComplete="off"><h2 className="font-bold md:col-span-2">إنشاء أمر شراء</h2><label className="label">المورد<select name="supplierId" className="input mt-1" required><option value="">اختر المورد</option>{suppliers.map((supplier)=><option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label><label className="label">التسليم المتوقع<input name="expectedDeliveryDate" type="date" className="input mt-1" /></label><label className="label md:col-span-2">الملاحظات<textarea name="notes" className="input mt-1" rows={2} /></label><label className="label">مرفق<input name="attachment" type="file" className="input mt-1" /></label><div className="self-end"><button className="btn-primary">إنشاء المسودة</button></div></form> : null}<section className="card overflow-hidden"><table className="w-full text-sm"><thead><tr><th className="th">رقم الأمر</th><th className="th">المورد</th><th className="th">التاريخ</th><th className="th">التسليم المتوقع</th><th className="th">الحالة</th><th className="th">البنود</th></tr></thead><tbody>{orders.map((order)=><tr key={order.id}><td className="td"><Link href={`/pharmacy/purchases/${order.id}`} className="font-medium text-brand-700 hover:underline">{order.orderNo}</Link></td><td className="td">{order.supplier.name}</td><td className="td">{fmtDate(order.orderDate)}</td><td className="td">{fmtDate(order.expectedDeliveryDate)}</td><td className="td">{STATUS[order.status]}</td><td className="td">{order._count.items}</td></tr>)}</tbody></table></section></div>;
+}
+function Metric({label,value}:{label:string;value:number}) { return <div className="card p-4"><div className="text-2xl font-bold text-brand-700">{value}</div><div className="text-sm text-gray-600">{label}</div></div>; }

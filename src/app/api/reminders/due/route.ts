@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { fmtDate, fmtTime } from "@/lib/labels";
+import { notifyRole, notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,22 @@ export async function GET(req: Request) {
     where: { status: "SCHEDULED", scheduledAt: { gte: startTomorrow, lt: startDayAfter } },
     include: { patient: true }, orderBy: { scheduledAt: "asc" },
   });
+  const now = new Date();
+  const soon = new Date(now.getTime() + 60 * dayMs);
+  const [lowStock, expired, expiring, delayed, partial] = await Promise.all([
+    prisma.medication.count({ where: { quantity: { lte: 0 } } }),
+    prisma.medicationBatch.count({ where: { quantity: { gt: 0 }, expiryDate: { lt: now } } }),
+    prisma.medicationBatch.count({ where: { quantity: { gt: 0 }, expiryDate: { gte: now, lte: soon } } }),
+    prisma.purchaseOrder.findMany({ where: { expectedDeliveryDate: { lt: now }, status: { in: ["APPROVED","ORDERED","PARTIALLY_RECEIVED"] } }, select: { createdById: true }, distinct: ["createdById"] }),
+    prisma.purchaseOrder.findMany({ where: { status: "PARTIALLY_RECEIVED" }, select: { createdById: true }, distinct: ["createdById"] }),
+  ]);
+  await Promise.all([
+    lowStock ? notifyRole("PHARMACIST", "انخفاض أو نفاد مخزون", { body: "راجع شاشة المخزون وإجراءات إعادة التزويد.", link: "/pharmacy/stock" }) : Promise.resolve(),
+    expired ? notifyRole("PHARMACIST", "دفعات منتهية الصلاحية", { body: "راجع شاشة الدفعات قبل أي صرف.", link: "/pharmacy/stock" }) : Promise.resolve(),
+    expiring ? notifyRole("PHARMACIST", "دفعات قريبة الانتهاء", { body: "راجع تقرير النفاذية وخطة الاستخدام.", link: "/pharmacy/reports" }) : Promise.resolve(),
+    ...delayed.map((row) => notifyUser(row.createdById, "تأخر توريد أمر شراء", { body: "يوجد أمر شراء تجاوز موعد التسليم المتوقع.", link: "/pharmacy/purchases" })),
+    ...partial.map((row) => notifyUser(row.createdById, "استلام جزئي يحتاج متابعة", { body: "توجد كمية متبقية في أمر شراء.", link: "/pharmacy/purchases" })),
+  ]);
   const reminders = appts
     .filter((a) => a.patient.phone)
     .map((a) => ({
