@@ -242,8 +242,10 @@ export async function addTreatmentPlan(patientId: string, fd: FormData) {
 }
 export async function setTreatmentPlanStatus(patientId: string, id: string, status: any) {
   const s = await guard("clinical.plan");
+  const before = await prisma.treatmentPlan.findUniqueOrThrow({ where: { id } });
+  if (before.closedAt || before.evaluatedAt) await assertPerm("therapy.admin.override");
   await prisma.treatmentPlan.update({ where: { id }, data: { status } });
-  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "patients", recordId: id });
+  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "TreatmentPlan", recordId: id, oldValue: { status: before.status }, newValue: { status, administrativeOverride: Boolean(before.closedAt || before.evaluatedAt) } });
   revalidatePath(`/patients/${patientId}`);
 }
 export async function deleteTreatmentPlan(patientId: string, id: string) {
@@ -781,6 +783,8 @@ export async function updateDiagnosis(patientId: string, id: string, fd: FormDat
 
 export async function updateSessionRecord(patientId: string, id: string, fd: FormData) {
   const s = await guard("clinical.session");
+  const before = await prisma.therapySession.findUniqueOrThrow({ where: { id }, include: { plan: true } });
+  if (before.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
   await prisma.therapySession.update({ where: { id }, data: {
     treatmentPlan: fd.get("treatmentPlan")?.toString() || null,
     totalSessions: fd.get("totalSessions") ? Number(fd.get("totalSessions")) : null,
@@ -789,12 +793,17 @@ export async function updateSessionRecord(patientId: string, id: string, fd: For
     hall: fd.get("hall")?.toString() || null,
     notes: fd.get("notes")?.toString() || null,
   }});
-  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "therapy_sessions", recordId: id });
+  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "therapy_sessions", recordId: id, newValue: { administrativeOverride: before.plan?.status === "COMPLETED" } });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function addTherapySessionLog(patientId: string, fd: FormData) {
   const s = await guard("clinical.session");
+  const linkedSessionId = fd.get("sessionId")?.toString() || null;
+  if (linkedSessionId) {
+    const linked = await prisma.therapySession.findUnique({ where: { id: linkedSessionId }, include: { plan: true } });
+    if (linked?.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
+  }
   const n = (key: string) => {
     const raw = fd.get(key)?.toString().trim();
     if (!raw) return null;
@@ -804,7 +813,7 @@ export async function addTherapySessionLog(patientId: string, fd: FormData) {
   const rec = await prisma.therapySessionLog.create({
     data: {
       patientId,
-      sessionId: fd.get("sessionId")?.toString() || null,
+      sessionId: linkedSessionId,
       appointmentId: fd.get("appointmentId")?.toString() || null,
       therapist: fd.get("therapist")?.toString().trim() || s?.user?.name || null,
       performedAt: fd.get("performedAt")?.toString() ? new Date(fd.get("performedAt")!.toString()) : new Date(),

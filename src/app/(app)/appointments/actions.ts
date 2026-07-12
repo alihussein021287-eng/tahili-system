@@ -38,6 +38,10 @@ async function appointmentConflict(params: { patientId: string; assignedTo?: str
   return null;
 }
 
+async function linkedPlan(id: string) {
+  return prisma.appointment.findUnique({ where: { id }, select: { session: { select: { treatmentPlanId: true, plan: { select: { status: true } } } } } });
+}
+
 export async function createAppointment(fd: FormData) {
   await assertPerm("appointments.create");
   const v = parseOrThrow(appointmentCreateSchema, {
@@ -68,6 +72,9 @@ export async function createAppointment(fd: FormData) {
 export async function setAppointmentStatus(id: string, status: string) {
   await assertPerm("appointments.edit");
   const validStatus = parseOrThrow(appointmentStatusSchema, status);
+  const linked = await linkedPlan(id);
+  if (linked?.session?.treatmentPlanId && validStatus === "COMPLETED") await assertPerm("therapy.admin.override");
+  if (linked?.session?.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
   await prisma.appointment.update({ where: { id }, data: { status: validStatus as any } });
   await logAudit({ action: "UPDATE", tableName: "appointments", recordId: id, newValue: { status } });
   revalidatePath("/appointments"); revalidatePath("/appointments/calendar"); revalidatePath("/");
@@ -86,8 +93,9 @@ export async function rescheduleAppointment(id: string, fd: FormData) {
   const t = fd.get("scheduledAt")?.toString();
   if (!t) return;
   if (Number.isNaN(Date.parse(t))) throw new Error("تاريخ/وقت غير صحيح");
-  const current = await prisma.appointment.findUnique({ where: { id }, select: { patientId: true, assignedTo: true } });
+  const current = await prisma.appointment.findUnique({ where: { id }, select: { patientId: true, assignedTo: true, session: { select: { plan: { select: { status: true } } } } } });
   if (!current) redirect(withSaved("/appointments", "الموعد غير موجود"));
+  if (current.session?.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
   const when = normalizeDateTime(new Date(t));
   const conflict = await appointmentConflict({ patientId: current.patientId, assignedTo: current.assignedTo, scheduledAt: when, excludeId: id });
   if (conflict) redirect(withSaved("/appointments", conflict));

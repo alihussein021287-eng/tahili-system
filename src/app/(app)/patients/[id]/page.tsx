@@ -28,6 +28,8 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         medicalReports: { orderBy: { date: "desc" } },
         visits: { orderBy: { visitDate: "desc" }, take: 5 },
         therapySessions: { include: { center: true }, orderBy: { createdAt: "desc" } },
+        treatmentPlans: { include: { therapist: true, hall: true, sessions: true, referralRequest: true }, orderBy: { createdAt: "desc" } },
+        referralRequests: { where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { treatmentPlan: true }, orderBy: { acceptedAt: "desc" } },
         therapySessionLogs: { include: { session: true, appointment: true }, orderBy: { performedAt: "desc" }, take: 25 },
         prescriptions: { include: { medication: true }, orderBy: { prescribedAt: "desc" } },
         admissions: { include: { center: true, room: true, bed: true }, orderBy: { admissionDate: "desc" } },
@@ -44,6 +46,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
   ]);
   const taskUsers = await prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true }, orderBy: { fullName: "asc" } });
+  const therapyStaff = await prisma.user.findMany({ where: { isActive: true, role: "THERAPIST" }, include: { _count: { select: { therapyPlansAssigned: { where: { status: "ACTIVE" } }, therapyAppointmentsAssigned: { where: { status: "SCHEDULED", scheduledAt: { gte: new Date(new Date().setHours(0,0,0,0)), lt: new Date(new Date().setHours(24,0,0,0)) } } } } } }, orderBy: { fullName: "asc" } });
   if (!patient) notFound();
   const perms = await currentPerms();
   const slApprovals = patient?.sickLeaves?.length
@@ -253,7 +256,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
       </div>
 
       <PatientTabs patient={JSON.parse(JSON.stringify(patient))} editable={cEdit} perms={Array.from(perms)} role={myRole} slApprovals={JSON.parse(JSON.stringify(slApprovals))}
-        centers={centers} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
+        centers={centers} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} therapyStaff={therapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
     </div>
   );
 }
