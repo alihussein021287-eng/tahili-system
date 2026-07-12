@@ -1,8 +1,7 @@
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
 import { requirePerm } from "@/lib/access";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/labels";
@@ -16,7 +15,7 @@ export const dynamic = "force-dynamic";
 const MONTHS = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"];
 
 export default async function OfficialReport({ searchParams }: { searchParams: Promise<{ year?: string; month?: string }> }) {
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   await requirePerm("reports.official");
   const sp = await searchParams;
   const now = new Date();

@@ -1,12 +1,11 @@
-import { getServerSession } from "next-auth";
+import { requireSession } from "@/lib/access";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import QueueDisplayClient from "./QueueDisplayClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function DisplayPage() {
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   if (!session) redirect("/login");
   return <QueueDisplayClient />;
 }

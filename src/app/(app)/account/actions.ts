@@ -1,14 +1,14 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { passwordError } from "@/lib/security";
 import { logAudit } from "@/lib/audit";
+import { incrementAuthVersion } from "@/lib/auth-version";
 
 export async function changeOwnPassword(fd: FormData) {
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   const uid = (session?.user as any)?.id;
   if (!uid) throw new Error("غير مصرّح");
 
@@ -25,7 +25,10 @@ export async function changeOwnPassword(fd: FormData) {
   const ok = await bcrypt.compare(current, user.passwordHash);
   if (!ok) redirect("/account?saved=" + encodeURIComponent("كلمة السر الحالية غير صحيحة"));
 
-  await prisma.user.update({ where: { id: uid }, data: { passwordHash: await bcrypt.hash(next, 10) } });
+  await prisma.user.update({
+    where: { id: uid },
+    data: { passwordHash: await bcrypt.hash(next, 10), ...incrementAuthVersion() },
+  });
   await logAudit({ userId: uid, action: "UPDATE", tableName: "users", recordId: uid, newValue: { selfPasswordChange: true } });
   redirect("/account?saved=" + encodeURIComponent("تم تغيير كلمة السر بنجاح ✅"));
 }

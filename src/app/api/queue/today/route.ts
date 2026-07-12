@@ -1,6 +1,5 @@
+import { getApiSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { fmtTime } from "@/lib/labels";
 import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
@@ -8,8 +7,8 @@ import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const { session, response } = await getApiSession();
+  if (response || !session) return response!;
   const uid = (session.user as any)?.id;
   const role = (session.user as any)?.role;
   const permission = await checkApiPermission(uid, role, "queue.view");

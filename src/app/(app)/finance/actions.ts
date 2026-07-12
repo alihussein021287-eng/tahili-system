@@ -1,7 +1,6 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { canManageFinance } from "@/lib/permissions";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { revalidatePath } from "next/cache";
@@ -9,7 +8,7 @@ import { redirect } from "next/navigation";
 import { logAudit } from "@/lib/audit";
 
 async function requireFinance() {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   if (!canManageFinance((s?.user as any)?.role)) throw new Error("غير مصرّح");
   return s;
 }

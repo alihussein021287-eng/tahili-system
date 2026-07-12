@@ -43,9 +43,9 @@ export default function LoginPage() {
   const router = useRouter();
   const [step, setStep] = useState<"user" | "password" | "activate">("user");
   const [username, setUsername] = useState("");
+  const [temporaryPassword, setTemporaryPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [name, setName] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -57,7 +57,6 @@ export default function LoginPage() {
     const r = await checkUsername(username.trim());
     setLoading(false);
     if (r.state === "invalid") { setError("اسم المستخدم غير موجود أو الحساب معطّل"); return; }
-    setName(r.name || "");
     setStep(r.state === "activate" ? "activate" : "password");
   }
 
@@ -74,7 +73,7 @@ export default function LoginPage() {
     if (loading) return;
     if (password !== confirm) { setError("كلمتا السر غير متطابقتين"); return; }
     setLoading(true); setError("");
-    const r = await activateAccount(username.trim(), password, confirm);
+    const r = await activateAccount(username.trim(), temporaryPassword, password, confirm);
     if (!r.ok) { setLoading(false); setError(r.error || "تعذّر التفعيل"); return; }
     const res = await signIn("credentials", { username, password, redirect: false });
     setLoading(false);
@@ -82,7 +81,7 @@ export default function LoginPage() {
     else router.push("/");
   }
 
-  function back() { setStep("user"); setPassword(""); setConfirm(""); setError(""); }
+  function back() { setStep("user"); setTemporaryPassword(""); setPassword(""); setConfirm(""); setError(""); }
 
   return (
     <div className="lp-root">
@@ -190,8 +189,8 @@ export default function LoginPage() {
             <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#0a4f49", margin: 0 }}>تسجيل الدخول</h1>
             <p style={{ fontSize: ".9rem", color: "#64748b", marginTop: ".3rem" }}>
               {step === "user" && "اكتب اسم المستخدم للمتابعة."}
-              {step === "password" && `مرحباً ${name || ""} — ادخل كلمة السر.`}
-              {step === "activate" && `أهلاً ${name || ""} — عيّن كلمة سر جديدة لتفعيل حسابك.`}
+              {step === "password" && "أدخل كلمة السر للمتابعة."}
+              {step === "activate" && "أثبت كلمة المرور المؤقتة ثم عيّن كلمة سر جديدة."}
             </p>
           </div>
 
@@ -221,13 +220,20 @@ export default function LoginPage() {
           {step === "activate" && (
             <>
               <div className="lp-field">
+                <label className="lp-label" htmlFor="pt">كلمة المرور المؤقتة</label>
+                <input id="pt" className="lp-input" type={show ? "text" : "password"} value={temporaryPassword} autoFocus
+                  autoComplete="current-password" onChange={(e) => setTemporaryPassword(e.target.value)} />
+              </div>
+              <div className="lp-field">
                 <label className="lp-label" htmlFor="p1">كلمة السر الجديدة</label>
-                <input id="p1" className="lp-input" type={show ? "text" : "password"} value={password} autoFocus
+                <input id="p1" className="lp-input" type={show ? "text" : "password"} value={password}
+                  autoComplete="new-password"
                   onChange={(e) => setPassword(e.target.value)} />
               </div>
               <div className="lp-field">
                 <label className="lp-label" htmlFor="p2">تأكيد كلمة السر</label>
                 <input id="p2" className="lp-input" type={show ? "text" : "password"} value={confirm}
+                  autoComplete="new-password"
                   onChange={(e) => setConfirm(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && activate()} />
               </div>

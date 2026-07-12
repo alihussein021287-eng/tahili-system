@@ -1,7 +1,6 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
@@ -13,7 +12,7 @@ async function recomputeMedicationQuantity(medicationId: number) {
 }
 
 async function pharmacistInfo() {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   return { id: (s?.user as any)?.id as string | undefined, name: (s?.user?.name as string | undefined) ?? null };
 }
 

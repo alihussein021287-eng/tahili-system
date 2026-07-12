@@ -1,9 +1,8 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
-import { authOptions } from "@/lib/auth";
 import { canDelete, ROLE_LABELS } from "@/lib/permissions";
 import { notifyRole } from "@/lib/notify";
 import { logAudit } from "@/lib/audit";
@@ -24,11 +23,11 @@ const patientSchema = z.object({
 });
 
 async function uid() {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   return (s?.user as any)?.id as string | undefined;
 }
 async function guard(key: string) {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   await assertPerm(key);
   return s;
 }
@@ -115,7 +114,7 @@ export async function updatePatient(id: string, fd: FormData) {
 
 export async function deletePatient(id: string) {
   await assertAdminDelete();
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   await assertPerm("patients.delete");
   if (!canDelete((s?.user as any)?.role)) throw new Error("لا تملك صلاحية الحذف");
   await prisma.patient.delete({ where: { id } });
@@ -960,7 +959,7 @@ export async function deleteResidentReview(patientId: string, id: string) {
 
 // حارس خاص: رئيس المعالجين أو الأدمن فقط
 async function guardScheduler() {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   const role = (s?.user as any)?.role;
   if (role !== "HEAD_THERAPIST" && role !== "ADMIN") throw new Error("غير مصرّح — الجدولة لرئيس المعالجين أو الأدمن فقط");
   return s;

@@ -1,5 +1,4 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getApiSession } from "@/lib/access";
 import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 import { getPatientDataQuality } from "@/lib/data-quality";
 import { fmtDate } from "@/lib/labels";
@@ -12,8 +11,8 @@ function esc(v: unknown) {
 }
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) return new Response("غير مصرّح", { status: 401 });
+  const { session, response } = await getApiSession();
+  if (response || !session) return response!;
   const permission = await checkApiPermission((session.user as any)?.id, (session.user as any)?.role, "patients.view");
   if (permission.allowed === false) return apiPermissionResponse(permission);
 

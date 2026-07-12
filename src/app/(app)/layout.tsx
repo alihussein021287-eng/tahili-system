@@ -1,6 +1,5 @@
-import { getServerSession } from "next-auth";
+import { requireSession } from "@/lib/access";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import { AppShell } from "@/components/AppShell";
 import { prisma } from "@/lib/db";
 import { getBackupOverview, maybeAutoBackup } from "@/lib/backup";
@@ -10,7 +9,7 @@ import { canOpenNotification } from "@/lib/notifications";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await getServerSession(authOptions);
+  const session = await requireSession();
   if (!session) redirect("/login");
   const uid = (session.user as any)?.id;
   // قراءة المستخدم الحيّ من القاعدة: طرد المعطّل فوراً + اعتماد الدور المحدّث (لا ننتظر انتهاء التوكن)

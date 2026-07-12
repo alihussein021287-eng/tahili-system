@@ -1,10 +1,10 @@
 "use server";
 import { prisma } from "./db";
-import { getSession } from "./access";
+import { requireSession } from "./access";
 import { revalidatePath } from "next/cache";
 
 export async function markAllNotificationsRead() {
-  const s = await getSession();
+  const s = await requireSession();
   const uid = (s?.user as any)?.id ?? null;
   const role = (s?.user as any)?.role ?? null;
   if (!uid || !role) throw new Error("غير مصرّح");
@@ -17,7 +17,7 @@ export async function markAllNotificationsRead() {
 }
 
 export async function markNotificationRead(id: string) {
-  const s = await getSession();
+  const s = await requireSession();
   const uid = (s?.user as any)?.id ?? null;
   const role = (s?.user as any)?.role ?? null;
   if (!uid || !role) throw new Error("غير مصرّح");

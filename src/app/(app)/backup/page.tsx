@@ -1,4 +1,4 @@
-import { getSession } from "@/lib/access";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
@@ -27,7 +27,7 @@ function backupAge(b: BackupFile | null) {
 }
 
 export default async function Backup({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
-  const s = await getSession();
+  const s = await requireSession();
   if ((s?.user as any)?.role !== "ADMIN") notFound();
   const sp = await searchParams;
   const [overview, org] = await Promise.all([

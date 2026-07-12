@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { passwordError } from "@/lib/security";
 import { assertInitialSetupAllowed } from "@/lib/setup-security";
+import { incrementAuthVersion } from "@/lib/auth-version";
 
 export async function completeSetup(fd: FormData) {
   assertInitialSetupAllowed();
@@ -26,7 +27,14 @@ export async function completeSetup(fd: FormData) {
     if (existing) {
       await tx.user.update({
         where: { id: existing.id },
-        data: { fullName, passwordHash, role: "ADMIN", isActive: true, needsActivation: false },
+        data: {
+          fullName,
+          passwordHash,
+          role: "ADMIN",
+          isActive: true,
+          needsActivation: false,
+          ...incrementAuthVersion(),
+        },
       });
     } else {
       await tx.user.create({

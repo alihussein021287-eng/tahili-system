@@ -1,14 +1,13 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { assertPerm } from "@/lib/access";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 
 export async function approveStatReport(refKey: string, fd: FormData) {
   await assertPerm("reports.approve");
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   const data = { approvedBy: s?.user?.name ?? "—", title: fd.get("title")?.toString() || null, note: fd.get("note")?.toString() || null, approvedById: (s?.user as any)?.id };
   await prisma.reportApproval.upsert({
     where: { kind_refKey: { kind: "official-stat", refKey } },

@@ -1,13 +1,13 @@
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
-import { getSession } from "@/lib/access";
+import { requireSession } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { fmtDateTime } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginLog({ searchParams }: { searchParams: Promise<{ f?: string }> }) {
-  const s = await getSession();
+  const s = await requireSession();
   if ((s?.user as any)?.role !== "ADMIN") notFound();
   const sp = await searchParams;
   const filter = sp.f || "all";

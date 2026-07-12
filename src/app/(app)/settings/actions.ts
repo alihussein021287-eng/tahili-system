@@ -1,15 +1,14 @@
 "use server";
+import { requireSession } from "@/lib/access";
 import { assertAdminDelete } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { canManageUsers } from "@/lib/permissions";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { logAudit } from "@/lib/audit";
 
 async function requireAdmin() {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   if (!canManageUsers((s?.user as any)?.role)) throw new Error("غير مصرّح");
 }
 export async function addMobilityAid(fd: FormData) { await requireAdmin(); await prisma.mobilityAid.create({ data: { name: fd.get("name")?.toString() || "" } }); revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 }); }
@@ -139,7 +138,7 @@ export async function saveOrg(fd: FormData) {
 }
 
 export async function setMaintenanceMode(on: boolean) {
-  const s = await getServerSession(authOptions);
+  const s = await requireSession();
   if ((s?.user as any)?.role !== "ADMIN") throw new Error("غير مصرّح — الأدمن فقط");
   await prisma.orgSetting.upsert({ where: { id: 1 }, update: { maintenanceMode: on }, create: { id: 1, maintenanceMode: on } });
   await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "maintenanceMode", newValue: { on } });
