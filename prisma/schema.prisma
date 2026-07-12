@@ -208,6 +208,61 @@ enum TherapyProgramDecision {
   END
 }
 
+enum CenterMembershipRole {
+  CENTER_MANAGEMENT
+  HEAD_THERAPIST
+  THERAPIST
+  DEVICE_OPERATOR
+}
+
+enum CenterMembershipStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum CenterServiceType {
+  PSYCHOLOGICAL
+  OCCUPATIONAL_MEDICAL
+  OCCUPATIONAL_ART
+  ULCER_CARE
+  PAIN_MEDICINE
+  HYPERBARIC
+  OZONE
+}
+
+enum CenterProgramStatus {
+  ASSESSMENT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum CenterSessionMode {
+  INDIVIDUAL
+  GROUP
+}
+
+enum CenterSessionStatus {
+  SCHEDULED
+  ATTENDED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum CenterResourceType {
+  DEVICE
+  ROOM
+  HALL
+}
+
+enum CenterResourceStatus {
+  AVAILABLE
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
 // =====================================================================
 //  المستخدمون والصلاحيات
 // =====================================================================
@@ -249,6 +304,9 @@ model User {
   therapyPlansAssigned       TreatmentPlan[]    @relation("TreatmentPlanTherapist")
   therapySessionsAssigned    TherapySession[]   @relation("TherapySessionTherapist")
   therapyAppointmentsAssigned Appointment[]     @relation("AppointmentAssignedUser")
+  centerMemberships           CenterMembership[]
+  centerProgramsAssigned      CenterProgram[] @relation("CenterProgramAssignee")
+  centerSessionsAssigned      CenterSession[] @relation("CenterSessionAssignee")
 
   @@index([username])
   @@map("users")
@@ -304,6 +362,10 @@ model Center {
   sessions         TherapySession[]
   admissions       Admission[]
   referralRequests ReferralRequest[]
+  memberships CenterMembership[]
+  resources CenterResource[]
+  programs CenterProgram[]
+  centerSessions CenterSession[]
 
   @@map("centers")
 }
@@ -492,6 +554,9 @@ model Patient {
   residentReviews    ResidentReview[]
   dressingRecords    DressingRecord[]
   referralRequests   ReferralRequest[]
+  centerPrograms     CenterProgram[]
+  centerSessions     CenterSession[]
+  centerAssessments  CenterAssessment[]
 
   @@index([fullName])
   @@index([fileNumber])
@@ -750,6 +815,7 @@ model Appointment {
   session            TherapySession?     @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   therapySessionLogs TherapySessionLog[]
   followUpPlans      TreatmentPlan[] @relation("TreatmentPlanFollowUpAppointment")
+  centerSession      CenterSession?
 
   @@index([patientId])
   @@index([scheduledAt])
@@ -950,6 +1016,7 @@ model TherapyHall {
   createdAt DateTime @default(now())
   treatmentPlans TreatmentPlan[]
   therapySessions TherapySession[]
+  centerResources CenterResource[]
 
   @@map("therapy_halls")
 }
@@ -961,6 +1028,144 @@ model Room {
   notes      String?
   admissions Admission[]
   beds       Bed[]
+  centerResources CenterResource[]
+}
+
+model CenterMembership {
+  id         String @id @default(cuid())
+  centerId   Int
+  center     Center @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       CenterMembershipRole
+  specialty  String?
+  status     CenterMembershipStatus @default(ACTIVE)
+  startDate  DateTime @default(now())
+  endDate    DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([centerId, userId, role])
+  @@index([userId, status])
+  @@index([centerId, status])
+  @@map("center_memberships")
+}
+
+model CenterResource {
+  id            String @id @default(cuid())
+  centerId      Int
+  center        Center @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  type          CenterResourceType
+  name          String
+  serviceType   CenterServiceType?
+  capacity      Int @default(1)
+  status        CenterResourceStatus @default(AVAILABLE)
+  roomId        Int?
+  room          Room? @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  therapyHallId Int?
+  therapyHall   TherapyHall? @relation(fields: [therapyHallId], references: [id], onDelete: SetNull)
+  unavailableFrom DateTime?
+  unavailableTo DateTime?
+  maintenanceNote String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  sessions      CenterSession[]
+
+  @@unique([centerId, name])
+  @@index([centerId, serviceType, status])
+  @@map("center_resources")
+}
+
+model CenterProgram {
+  id            String @id @default(cuid())
+  centerId      Int
+  center        Center @relation(fields: [centerId], references: [id], onDelete: Restrict)
+  patientId     String
+  patient       Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  referralRequestId String? @unique
+  referralRequest ReferralRequest? @relation(fields: [referralRequestId], references: [id], onDelete: SetNull)
+  serviceType   CenterServiceType
+  track         String?
+  mode          CenterSessionMode @default(INDIVIDUAL)
+  assignedToId  String?
+  assignedTo    User? @relation("CenterProgramAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  status        CenterProgramStatus @default(ASSESSMENT)
+  goals         String?
+  protocol      String?
+  plannedSessions Int?
+  startDate     DateTime?
+  expectedEndDate DateTime?
+  initialSummary String?
+  finalSummary  String?
+  improvementLevel String?
+  recommendation String?
+  returnToConsultancy Boolean @default(false)
+  closedAt      DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  assessments   CenterAssessment[]
+  sessions      CenterSession[]
+
+  @@index([centerId, status])
+  @@index([assignedToId, status])
+  @@index([patientId, centerId])
+  @@map("center_programs")
+}
+
+model CenterAssessment {
+  id            String @id @default(cuid())
+  programId     String
+  program       CenterProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  kind          String
+  functionalCapacity String?
+  summary       String?
+  sensitiveNotes String?
+  improvementLevel String?
+  recommendation String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  @@index([programId, kind])
+  @@index([patientId, createdAt])
+  @@map("center_assessments")
+}
+
+model CenterSession {
+  id            String @id @default(cuid())
+  centerId      Int
+  center        Center @relation(fields: [centerId], references: [id], onDelete: Restrict)
+  programId     String
+  program       CenterProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  assignedToId  String?
+  assignedTo    User? @relation("CenterSessionAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  resourceId    String?
+  resource      CenterResource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  appointmentId String? @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  scheduledAt   DateTime
+  endsAt        DateTime
+  mode          CenterSessionMode @default(INDIVIDUAL)
+  status        CenterSessionStatus @default(SCHEDULED)
+  attended      Boolean?
+  procedure     String?
+  result        String?
+  progress      String?
+  notes         String?
+  sensitiveNotes String?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([programId, scheduledAt])
+  @@index([centerId, scheduledAt])
+  @@index([assignedToId, scheduledAt])
+  @@index([resourceId, scheduledAt, endsAt])
+  @@index([patientId, scheduledAt])
+  @@map("center_sessions")
 }
 
 model Bed {
@@ -1164,6 +1369,7 @@ model ReferralRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   treatmentPlan TreatmentPlan?
+  centerProgram CenterProgram?
 
   @@index([patientId, createdAt])
   @@index([status, createdAt])
