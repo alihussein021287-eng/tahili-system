@@ -195,6 +195,19 @@ enum AppointmentStatus {
   NOSHOW // لم يحضر
 }
 
+enum TherapySessionStatus {
+  SCHEDULED
+  ATTENDED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum TherapyProgramDecision {
+  EXTEND
+  END
+}
+
 // =====================================================================
 //  المستخدمون والصلاحيات
 // =====================================================================
@@ -233,6 +246,9 @@ model User {
   referralsReviewed          ReferralRequest[] @relation("ReferralReviewedBy")
   referralsAccepted          ReferralRequest[] @relation("ReferralAcceptedBy")
   referralsCancelled         ReferralRequest[] @relation("ReferralCancelledBy")
+  therapyPlansAssigned       TreatmentPlan[]    @relation("TreatmentPlanTherapist")
+  therapySessionsAssigned    TherapySession[]   @relation("TherapySessionTherapist")
+  therapyAppointmentsAssigned Appointment[]     @relation("AppointmentAssignedUser")
 
   @@index([username])
   @@map("users")
@@ -548,12 +564,20 @@ model TherapySession {
   weekdays      String? // أيام المراجعة بالأسبوع (CSV: 0=الأحد..6=السبت) مثال: "0,3"
   sessionTime   String? // وقت الجلسة (HH:mm)
   scheduledById String? // منشئ الجدولة (رئيس المعالجين/الأدمن)
+  treatmentPlanId String?
+  plan            TreatmentPlan? @relation(fields: [treatmentPlanId], references: [id], onDelete: SetNull)
+  therapistId     String?
+  therapistUser   User? @relation("TherapySessionTherapist", fields: [therapistId], references: [id], onDelete: SetNull)
+  hallId           Int?
+  therapyHall      TherapyHall? @relation(fields: [hallId], references: [id], onDelete: SetNull)
   appointments  Appointment[] // المواعيد المولّدة لكل جلسة
   logs          TherapySessionLog[]
 
   @@index([patientId])
   @@index([therapyType])
   @@index([therapist])
+  @@index([treatmentPlanId])
+  @@index([therapistId])
   @@map("therapy_sessions")
 }
 
@@ -715,6 +739,8 @@ model Appointment {
   type            String? // نوع الموعد (جلسة/فحص/متابعة)
   therapyType     TherapyType? // المسار العلاجي إن وُجد
   assignedTo      String? // المعالج/الطبيب المسؤول
+  assignedToId    String?
+  assignedToUser  User? @relation("AppointmentAssignedUser", fields: [assignedToId], references: [id], onDelete: SetNull)
   status          AppointmentStatus @default(SCHEDULED)
   patientResponse ConfirmStatus? // رد المريض من البوابة
   notes           String?
@@ -723,10 +749,12 @@ model Appointment {
   sessionId          String? // مرتبط بجلسة علاجية مجدولة (إن وُجد)
   session            TherapySession?     @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   therapySessionLogs TherapySessionLog[]
+  followUpPlans      TreatmentPlan[] @relation("TreatmentPlanFollowUpAppointment")
 
   @@index([patientId])
   @@index([scheduledAt])
   @@index([status])
+  @@index([assignedToId, scheduledAt])
   @@map("appointments")
 }
 
@@ -746,6 +774,10 @@ model TherapySessionLog {
   painAfter          Int?
   notes              String?
   nextRecommendation String?
+  attended            Boolean?
+  progress            String?
+  status              TherapySessionStatus?
+  completedAt         DateTime?
   createdById        String?
   createdAt          DateTime        @default(now())
 
@@ -880,11 +912,35 @@ model TreatmentPlan {
   goals           String?
   plannedSessions Int?
   startDate       DateTime?
+  expectedEndDate DateTime?
   status          PlanStatus @default(ACTIVE)
+  therapyType     TherapyType?
+  weekdays        String?
+  sessionTime     String?
+  hallId          Int?
+  hall            TherapyHall? @relation(fields: [hallId], references: [id], onDelete: SetNull)
+  therapistId     String?
+  therapist       User? @relation("TreatmentPlanTherapist", fields: [therapistId], references: [id], onDelete: SetNull)
+  referralRequestId String? @unique
+  referralRequest ReferralRequest? @relation(fields: [referralRequestId], references: [id], onDelete: SetNull)
+  closedAt        DateTime?
+  beforeCondition String?
+  afterCondition  String?
+  improvementLevel String?
+  achievedGoals   String?
+  finalRecommendation String?
+  finalDecision   TherapyProgramDecision?
+  evaluatedAt     DateTime?
+  evaluatedById   String?
+  followUpAppointmentId String?
+  followUpAppointment Appointment? @relation("TreatmentPlanFollowUpAppointment", fields: [followUpAppointmentId], references: [id], onDelete: SetNull)
   notes           String?
   createdAt       DateTime   @default(now())
+  sessions        TherapySession[]
 
   @@index([patientId])
+  @@index([therapistId, status])
+  @@index([hallId, status])
 }
 
 model TherapyHall {
@@ -892,6 +948,8 @@ model TherapyHall {
   name      String   @unique
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
+  treatmentPlans TreatmentPlan[]
+  therapySessions TherapySession[]
 
   @@map("therapy_halls")
 }
@@ -1105,6 +1163,7 @@ model ReferralRequest {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  treatmentPlan TreatmentPlan?
 
   @@index([patientId, createdAt])
   @@index([status, createdAt])
