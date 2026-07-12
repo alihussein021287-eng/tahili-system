@@ -6,7 +6,7 @@ import { getOrg } from "@/lib/org";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { addCenter, addInjuryType, addDistrict, addFormation,
-  addRank, deleteRank, deleteCenter, deleteInjuryType, deleteFormation, deleteDistrict, saveOrg, saveRetention, setMaintenanceMode, addBranch, deleteBranch, toggleBranch, addMobilityAid, deleteMobilityAid, addProstheticType, deleteProstheticType } from "./actions";
+  addRank, deleteRank, deleteCenter, deleteInjuryType, deleteFormation, deleteDistrict, saveOrg, saveRetention, saveExpenseApprovalLevels, setMaintenanceMode, addBranch, deleteBranch, toggleBranch, addMobilityAid, deleteMobilityAid, addProstheticType, deleteProstheticType } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export default async function Settings() {
   const session = await getSession();
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   const maint = await maintenanceOn();
-  const retention = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, loginLogRetentionDays: true } });
+  const retention = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, loginLogRetentionDays: true, expenseApprovalLevels: true } });
   const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks] = await Promise.all([
     prisma.branch.findMany({ include: { _count: { select: { users: true, patients: true } } }, orderBy: [{ isActive: "desc" }, { name: "asc" }] }),
     prisma.mobilityAid.findMany({ orderBy: { name: "asc" } }),
@@ -93,6 +93,8 @@ export default async function Settings() {
           </form>
         </div>
       )}
+
+      {isAdmin && <div className="card p-5"><h2 className="font-semibold text-gray-700">سياسة اعتماد صرفيات الجرحى</h2><p className="mt-1 text-sm text-gray-500">حدد عدد مستويات الاعتماد المطلوبة قبل تجهيز السند للصرف.</p><form action={saveExpenseApprovalLevels} className="mt-3 flex items-end gap-3"><label className="label">عدد المستويات<input name="expenseApprovalLevels" type="number" min="1" max="5" className="input mt-1 !w-28" defaultValue={retention?.expenseApprovalLevels||1}/></label><button className="btn-primary">حفظ السياسة</button></form></div>}
 
       <h2 className="text-lg font-bold text-gray-800">القوائم الثابتة</h2>
       <p className="text-sm text-gray-500">القوائم تُستخدم لتوحيد الإدخال في بطاقة المريض والجلسات والوصفات.</p>

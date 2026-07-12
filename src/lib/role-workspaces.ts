@@ -70,6 +70,7 @@ export const roleWorkspaces: RoleWorkspace[] = [
     description: "الفواتير، الدفعات، الصندوق، والتقارير.",
     cards: [
       { title: "المالية", description: "الفواتير والمدفوعات.", href: "/finance", permission: "finance.view", priority: 10 },
+      { title: "صرفيات الجرحى", description: "طلبات الصرف والاعتماد والسندات.", href: "/finance/expenses", permission: "expenses.view", priority: 11 },
       { title: "محطة المالية", description: "المراجعين المحولين للمالية.", href: "/care-board", permission: "journey.view", priority: 15 },
       { title: "التقارير", description: "تقارير مالية وإدارية.", href: "/reports", permission: "reports.view", priority: 20 },
       { title: "المراجعين", description: "مراجعة ملف المراجع المالي.", href: "/patients", permission: "patients.view", priority: 30 },

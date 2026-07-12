@@ -56,6 +56,7 @@ const ALL_ITEMS: Item[] = [
   { href: "/reports/official", label: "التقرير الرسمي", icon: "📄", perm: "reports.official" },
   { href: "/official-docs", label: "أرشيف الوثائق الرسمية", icon: "📄", perm: "officialdocs.view" },
   { href: "/finance", label: "المالية", icon: "₪", perm: "finance.view" },
+  { href: "/finance/expenses", label: "صرفيات الجرحى", icon: "💳", perm: "expenses.view" },
   { href: "/login-log", label: "سجل الدخول", icon: "🔐", perm: "settings.view" },
   { href: "/audit", label: "سجل التدقيق", icon: "▣", perm: "audit.view" },
   { href: "/permissions", label: "الصلاحيات", icon: "🔐", perm: "users.permissions" },
@@ -70,7 +71,7 @@ const STANDALONE = ["/", "/notifications"]; // روابط عامة تبقى مف
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
   { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/therapy", "/therapy/today", "/centers", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
   { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy", "/pharmacy/stock", "/pharmacy/purchases", "/pharmacy/reports", "/inventory", "/devices"] },
-  { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports", "/reports/official", "/reports/statistical", "/centers/reports", "/official-docs", "/station-kpis", "/analytics", "/finance"] },
+  { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports", "/reports/official", "/reports/statistical", "/centers/reports", "/official-docs", "/station-kpis", "/analytics", "/finance", "/finance/expenses"] },
   { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/tasks", "/approvals", "/workload", "/attendance", "/shifts"] },
   { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/users", "/permissions", "/audit", "/login-log", "/settings", "/backup", "/readiness"] },
 ];

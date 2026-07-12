@@ -159,3 +159,10 @@ export async function saveRetention(fd: FormData) {
   await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "retention", newValue: { notif, login } });
   revalidatePath("/settings");
 }
+export async function saveExpenseApprovalLevels(fd: FormData) {
+  await requireAdmin();
+  const levels = Math.max(1, Math.min(5, Number(fd.get("expenseApprovalLevels")) || 1));
+  await prisma.orgSetting.upsert({ where: { id: 1 }, update: { expenseApprovalLevels: levels }, create: { id: 1, expenseApprovalLevels: levels } });
+  await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "expenseApprovalLevels", newValue: { levels } });
+  revalidatePath("/settings");
+}

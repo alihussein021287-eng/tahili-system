@@ -61,6 +61,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     : [];
   const _sess = await getSession();
   const myRole = (_sess?.user as any)?.role ?? "";
+  const expenseRows = perms.has("expenses.view") ? await prisma.woundedExpense.findMany({ where: { patientId: id }, select: { id: true, voucherNo: true, expenseType: true, status: true, requestDate: true, ...(perms.has("expenses.amounts") ? { amount: true, currency: true } : {}) }, orderBy: { requestDate: "desc" } }) : [];
   const cEdit = perms.has("patients.edit");
   const cArchive = perms.has("patients.archive");
   const cPrint = perms.has("patients.print");
@@ -263,7 +264,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
       </div>
 
       <PatientTabs patient={JSON.parse(JSON.stringify(patient))} editable={cEdit} perms={Array.from(perms)} role={myRole} slApprovals={JSON.parse(JSON.stringify(slApprovals))}
-        centers={centers} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} therapyStaff={therapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
+        centers={centers} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} therapyStaff={therapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} expenseRows={JSON.parse(JSON.stringify(expenseRows))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
     </div>
   );
 }

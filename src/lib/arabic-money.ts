@@ -1,0 +1,5 @@
+const ones = ["صفر","واحد","اثنان","ثلاثة","أربعة","خمسة","ستة","سبعة","ثمانية","تسعة","عشرة","أحد عشر","اثنا عشر","ثلاثة عشر","أربعة عشر","خمسة عشر","ستة عشر","سبعة عشر","ثمانية عشر","تسعة عشر"];
+const tens = ["","","عشرون","ثلاثون","أربعون","خمسون","ستون","سبعون","ثمانون","تسعون"];
+const hundreds = ["","مائة","مائتان","ثلاثمائة","أربعمائة","خمسمائة","ستمائة","سبعمائة","ثمانمائة","تسعمائة"];
+function under1000(value:number){const parts:string[]=[];const h=Math.floor(value/100);const rest=value%100;if(h)parts.push(hundreds[h]);if(rest<20&&rest)parts.push(ones[rest]);else if(rest){const unit=rest%10;if(unit)parts.push(ones[unit]);parts.push(tens[Math.floor(rest/10)])}return parts.join(" و ")}
+export function amountInArabic(value:number,currency="IQD"){const n=Math.floor(Math.abs(value));if(n===0)return `صفر ${currency}`;const parts:string[]=[];const millions=Math.floor(n/1_000_000);const thousands=Math.floor((n%1_000_000)/1000);const rest=n%1000;if(millions)parts.push(`${under1000(millions)} مليون`);if(thousands)parts.push(`${under1000(thousands)} ألف`);if(rest)parts.push(under1000(rest));return `${value<0?"سالب ":""}${parts.join(" و ")} ${currency}`}

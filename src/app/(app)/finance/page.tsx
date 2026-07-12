@@ -45,6 +45,7 @@ export default async function Finance({ searchParams }: { searchParams: Promise<
     <div className="space-y-5">
       <PageHeader title="المالية" subtitle="الفواتير والمدفوعات" icon="💰" />
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {perms.has("expenses.view") && <Link href="/finance/expenses" className="btn-ghost">صرفيات الجرحى</Link>}
         <Link href="/finance/report" className="btn-ghost">📊 التقرير المالي السنوي</Link>
         <Link href="/finance/payments" className="btn-ghost">📋 سجل المدفوعات</Link>
       </div>
