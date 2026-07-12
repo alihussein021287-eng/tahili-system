@@ -67,6 +67,33 @@ enum AttachmentType {
   OTHER    // أخرى
 }
 
+enum ReferralRequestType {
+  LAB
+  RADIOLOGY
+  IMAGING
+  SPECIALIST
+  TREATMENT_CENTER
+  HOSPITAL
+  OTHER
+}
+
+enum ReferralDestinationScope {
+  INTERNAL_SPECIALIST
+  INTERNAL_CENTER
+  EXTERNAL
+}
+
+enum ReferralRequestStatus {
+  DRAFT
+  PENDING_PRINT
+  READY
+  SENT
+  RESULT_RECEIVED
+  REVIEWED
+  ACCEPTED
+  CANCELLED
+}
+
 enum UserRole {
   ADMIN     // مدير النظام
   MANAGER   // مدير إداري
@@ -176,6 +203,12 @@ model User {
   tasksAssigned    Task[]            @relation("TaskAssignee")
   tasksCreated     Task[]            @relation("TaskCreator")
   woundAssessments WoundAssessment[] @relation("AssessedBy")
+  referralsCreated ReferralRequest[] @relation("ReferralCreatedBy")
+  referralsAssignedForReview ReferralRequest[] @relation("ReferralAssignedReviewer")
+  referralStatusChanges ReferralRequest[] @relation("ReferralStatusChangedBy")
+  referralsReviewed ReferralRequest[] @relation("ReferralReviewedBy")
+  referralsAccepted ReferralRequest[] @relation("ReferralAcceptedBy")
+  referralsCancelled ReferralRequest[] @relation("ReferralCancelledBy")
 
   @@index([username])
   @@map("users")
@@ -228,6 +261,7 @@ model Center {
   type          String? // نوع المركز
   sessions      TherapySession[]
   admissions    Admission[]
+  referralRequests ReferralRequest[]
   @@map("centers")
 }
 
@@ -408,6 +442,7 @@ model Patient {
   vitalSigns       VitalSign[]
   residentReviews  ResidentReview[]
   dressingRecords  DressingRecord[]
+  referralRequests ReferralRequest[]
 
   @@index([fullName])
   @@index([fileNumber])
@@ -942,9 +977,77 @@ model ResidentReview {
 
   generalNotes String?  // ملاحظات عامة للطبيب المقيم
   createdAt  DateTime @default(now())
+  referralRequests ReferralRequest[]
 
   @@index([patientId])
   @@map("resident_reviews")
+}
+
+model ReferralRequest {
+  id String @id @default(cuid())
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  residentReviewId String?
+  residentReview   ResidentReview? @relation(fields: [residentReviewId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User @relation("ReferralCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  assignedReviewerId String?
+  assignedReviewer   User? @relation("ReferralAssignedReviewer", fields: [assignedReviewerId], references: [id], onDelete: SetNull)
+
+  destinationCenterId Int?
+  destinationCenter   Center? @relation(fields: [destinationCenterId], references: [id], onDelete: SetNull)
+
+  type             ReferralRequestType
+  destinationScope ReferralDestinationScope
+  externalEntity   String?
+  requestedService String
+  clinicalReason   String
+
+  status ReferralRequestStatus @default(DRAFT)
+
+  statusChangedById String?
+  statusChangedBy   User? @relation("ReferralStatusChangedBy", fields: [statusChangedById], references: [id], onDelete: SetNull)
+  statusChangedAt DateTime @default(now())
+
+  officialDocumentId String? @unique
+  officialDocument   OfficialDocument? @relation("ReferralOfficialDocument", fields: [officialDocumentId], references: [id], onDelete: SetNull)
+
+  careStageId String? @unique
+  careStage   CareStage? @relation("ReferralCareStage", fields: [careStageId], references: [id], onDelete: SetNull)
+
+  resultSummary       String?
+  resultAttachmentUrl String?
+
+  sentAt           DateTime?
+  resultReceivedAt DateTime?
+
+  reviewedAt   DateTime?
+  reviewedById String?
+  reviewedBy   User? @relation("ReferralReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  acceptedAt   DateTime?
+  acceptedById String?
+  acceptedBy   User? @relation("ReferralAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  cancellationReason String?
+  cancelledById      String?
+  cancelledBy        User? @relation("ReferralCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId, createdAt])
+  @@index([status, createdAt])
+  @@index([destinationScope, status])
+  @@index([createdById, createdAt])
+  @@index([assignedReviewerId, status])
+  @@index([destinationCenterId, status])
+  @@index([residentReviewId])
+  @@map("referral_requests")
 }
 
 // ===== المهام والتحويلات الداخلية =====
@@ -1083,6 +1186,7 @@ model CareStage {
   createdById   String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+  referralRequest ReferralRequest? @relation("ReferralCareStage")
 
   @@index([patientId, sequence])
   @@index([status])
@@ -1115,6 +1219,7 @@ model OfficialDocument {
   attachmentUrl String?
   createdById   String?
   createdAt     DateTime     @default(now())
+  referralRequest ReferralRequest? @relation("ReferralOfficialDocument")
 
   @@index([patientId])
   @@index([number])
