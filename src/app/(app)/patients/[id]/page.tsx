@@ -30,7 +30,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         therapySessions: { include: { center: true }, orderBy: { createdAt: "desc" } },
         therapySessionLogs: { include: { session: true, appointment: true }, orderBy: { performedAt: "desc" }, take: 25 },
         prescriptions: { include: { medication: true }, orderBy: { prescribedAt: "desc" } },
-        admissions: { include: { center: true, room: true }, orderBy: { admissionDate: "desc" } },
+        admissions: { include: { center: true, room: true, bed: true }, orderBy: { admissionDate: "desc" } },
         woundAssessments: { include: { photos: true }, orderBy: { assessmentDate: "desc" } },
         residentReviews: { orderBy: { date: "desc" }, take: 25 },
         correspondence: { orderBy: { bookDate: "desc" } },

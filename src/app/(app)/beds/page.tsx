@@ -8,7 +8,7 @@ import { authOptions } from "@/lib/auth";
 
 import Link from "next/link";
 import { fmtDate } from "@/lib/labels";
-import { addRoom, updateRoom, deleteRoom, assignBed } from "./actions";
+import { addRoom, addBed, updateRoom, deleteRoom, assignBed } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +21,8 @@ export default async function Beds() {
   const cAssign = perms.has("beds.assign");
 
   const [rooms, active] = await Promise.all([
-    prisma.room.findMany({ orderBy: { name: "asc" } }),
-    prisma.admission.findMany({ where: { status: "ADMITTED" }, include: { patient: true } }),
+    prisma.room.findMany({ include: { beds: { orderBy: { label: "asc" } } }, orderBy: { name: "asc" } }),
+    prisma.admission.findMany({ where: { status: "ADMITTED" }, include: { patient: true, bed: true } }),
   ]);
 
   const totalBeds = rooms.reduce((a, r) => a + r.capacity, 0);
@@ -55,8 +55,8 @@ export default async function Beds() {
                 <Link href={`/patients/${a.patientId}`} className="font-medium text-brand-700 hover:underline">{a.patient.fullName}</Link>
                 {cAssign && (
                   <form action={assignBed.bind(null, a.id)} className="flex items-center gap-1">
-                    <div className="w-44"><Combobox name="roomId" allowFree={false} placeholder="اختر غرفة"
-                      options={rooms.map((r: any) => ({ value: String(r.id), label: r.name }))} /></div>
+                    <div className="w-52"><Combobox name="bedId" allowFree={false} placeholder="اختر سريراً"
+                      options={rooms.flatMap((r: any) => r.beds.filter((b:any)=>!b.occupied).map((b:any) => ({ value: String(b.id), label: `${r.name} / ${b.label}` })))} /></div>
                     <button className="text-xs text-brand-700 hover:underline">تخصيص</button>
                   </form>
                 )}
@@ -102,6 +102,10 @@ export default async function Beds() {
               </div>
               {cManage && (
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2">
+                  <form action={addBed.bind(null, room.id)} className="flex items-center gap-1">
+                    <input name="label" className="input !w-24 !py-0.5 text-xs" placeholder="رقم السرير…" aria-label="رقم السرير" />
+                    <button className="text-xs text-brand-700 hover:underline">إضافة سرير</button>
+                  </form>
                   <form action={updateRoom.bind(null, room.id)} className="flex items-center gap-1">
                     <input name="capacity" type="number" min="1" defaultValue={room.capacity} className="input !w-16 !py-0.5 text-xs" title="عدد الأسرّة" />
                     <button className="text-xs text-brand-700 hover:underline">حفظ السعة</button>

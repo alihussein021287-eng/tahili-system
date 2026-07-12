@@ -2,7 +2,7 @@
 import React from "react";
 import { useState } from "react";
 import {
-  addDiagnosis, addReport, addSession, addPrescription, addAdmission,
+  addDiagnosis, addReport, setReportStatus, addSession, addPrescription, addAdmission,
   dischargeAdmission, updateAdmissionDuration, addCorrespondence, addRelative, addWound, addAttachment,
   deleteDiagnosis, deleteReport, deleteSession, deletePrescription, deleteCorrespondence,
   deleteRelative, deleteAdmission, deleteWound, deleteAttachment,
@@ -141,8 +141,10 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         )}
         {tab === "reports" && (
           <Section rows={patient.medicalReports} editable={can("clinical.report")} canDel={canDel} del={deleteReport.bind(null, id)} action={addReport.bind(null, id)}
-            cols={[["التقرير", (r: any) => r.content], ["الطبيب", (r: any) => r.doctor], ["التاريخ", (r: any) => fmtDate(r.date)]]}
+            cols={[["النوع", (r: any) => r.reportType === "FINAL" ? "نهائي" : r.reportType === "PRELIMINARY" ? "أولي" : "قديم"], ["التقرير", (r: any) => r.content], ["الطبيب", (r: any) => r.doctor], ["الحالة", (r: any) => <div className="flex flex-wrap items-center gap-2"><span>{({DRAFT:"مسودة",READY_TO_PRINT:"جاهز للطباعة",PRINTED_APPROVED:"مطبوع/معتمد",CANCELLED:"ملغى"} as any)[r.status] || "قديم"}</span>{r.status === "READY_TO_PRINT" && <a className="text-brand-700 hover:underline" href={`/patients/${id}/medical-report/${r.id}`}>طباعة رسمية</a>}{r.status === "DRAFT" && <form action={setReportStatus.bind(null,id,r.id,"READY_TO_PRINT")}><button className="text-brand-700 hover:underline">تجهيز للطباعة</button></form>}{r.status === "READY_TO_PRINT" && can("reports.print") && <form action={setReportStatus.bind(null,id,r.id,"PRINTED_APPROVED")}><button className="text-emerald-700 hover:underline">تأشير مطبوع/معتمد</button></form>}</div>], ["التاريخ", (r: any) => fmtDate(r.date)]]}
             fields={<>
+              <Combobox name="reportType" allowFree={false} defaultValue="PRELIMINARY" options={[{value:"PRELIMINARY",label:"أولي"},{value:"FINAL",label:"نهائي"}]} />
+              <Combobox name="status" allowFree={false} defaultValue="DRAFT" options={[{value:"DRAFT",label:"مسودة"},{value:"READY_TO_PRINT",label:"جاهز للطباعة"}]} />
               <input name="content" className="input min-w-[280px]" placeholder="نص التقرير الطبي" />
               <input name="doctor" className="input" placeholder="الطبيب" />
             </>} />
@@ -184,8 +186,9 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         )}
         {tab === "rx" && (
           <Section rows={patient.prescriptions} editable={can("clinical.prescription")} canDel={canDel} del={deletePrescription.bind(null, id)} action={addPrescription.bind(null, id)}
-            cols={[["المادة/العلاج", (r: any) => r.medication?.name ?? r.materialName], ["الاستخدام", (r: any) => r.usage], ["الكمية", (r: any) => r.quantity], ["المدة", (r: any) => r.duration], ["التاريخ", (r: any) => fmtDate(r.prescribedAt)], ["التجهيز", (r: any) => rxStatusBadge(r)]]}
+            cols={[["النوع", (r: any) => r.prescriptionType === "INTERNAL" ? "داخلية" : r.prescriptionType === "EXTERNAL" ? <a className="text-brand-700 hover:underline" href={`/pharmacy/rx/${r.id}`}>خارجية للطباعة</a> : "قديمة"], ["المادة/العلاج", (r: any) => r.medication?.name ?? r.materialName], ["الاستخدام", (r: any) => r.usage], ["الكمية", (r: any) => r.quantity], ["المدة", (r: any) => r.duration], ["الأهلية", (r: any) => ({ELIGIBLE:"مؤهل",NOT_ELIGIBLE:"غير مؤهل",DOCTOR_REVIEW:"قرار الطبيب"} as any)[r.eligibilityDecision] || "—"], ["التاريخ", (r: any) => fmtDate(r.prescribedAt)], ["التجهيز", (r: any) => rxStatusBadge(r)]]}
             fields={<>
+              <Combobox name="prescriptionType" allowFree={false} defaultValue="EXTERNAL" options={[{value:"INTERNAL",label:"داخلية من صيدلية المجمع"},{value:"EXTERNAL",label:"خارجية للطباعة"}]} />
               {(() => {
                 const low = medications.filter((m: any) => (m.quantity ?? 0) <= (m.minQuantity ?? 0));
                 if (!low.length) return null;
@@ -202,6 +205,8 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
               <input name="quantity" className="input w-24" placeholder="الكمية" />
               <input name="duration" className="input w-24" placeholder="المدة" />
               <input name="doctor" className="input" placeholder="الطبيب" />
+              <Combobox name="eligibilityDecision" allowFree={false} defaultValue="DOCTOR_REVIEW" options={[{value:"DOCTOR_REVIEW",label:"قرار الطبيب عند نقص البيانات"},{value:"ELIGIBLE",label:"مؤهل"},{value:"NOT_ELIGIBLE",label:"غير مؤهل"}]} />
+              <input name="eligibilityReason" className="input min-w-[220px]" placeholder="سبب القرار عند نقص بيانات الأهلية…" />
             </>} />
         )}
         {tab === "adm" && (
@@ -334,6 +339,9 @@ function SectionAdm({ rows, editable, patientId, centers = [], rooms = [], role 
           <input name="durationDays" type="number" min="1" className="input !w-32" placeholder="المدة (أيام)" />
           <Combobox name="centerId" allowFree={false} placeholder="المركز" options={centers.map((c:any)=>({value:String(c.id),label:c.name}))} />
           <Combobox name="roomId" allowFree={false} placeholder="الغرفة/السرير" options={rooms.map((r:any)=>({value:String(r.id),label:r.name}))} />
+          <Combobox name="bedId" allowFree={false} placeholder="السرير" options={rooms.flatMap((r:any)=>(r.beds || []).filter((b:any)=>!b.occupied).map((b:any)=>({value:String(b.id),label:`${r.name} / ${b.label}`})))} />
+          <input name="recommendingDoctor" className="input" placeholder="الطبيب الموصي" />
+          <input name="admissionReason" className="input min-w-[200px]" placeholder="سبب الرقود" required />
           <input name="notes" className="input" placeholder="ملاحظات" />
           <button className="btn-primary" type="submit">تسجيل رقود</button>
         </form>
@@ -351,9 +359,9 @@ function SectionAdm({ rows, editable, patientId, centers = [], rooms = [], role 
               <td className={`td ${over ? "font-bold text-red-700" : ""}`}>{end ? fmtDate(end) : "—"}{over ? " ⚠ انتهى" : ""}</td>
               <td className="td">{fmtDate(r.dischargeDate)}</td>
               <td className="td">{r.center?.name || "—"}</td>
-              <td className="td">{r.room?.name || "—"}</td>
+              <td className="td">{r.room?.name || "—"}{r.bed?.label ? ` / ${r.bed.label}` : ""}</td>
               <td className="td">{r.status === "ADMITTED" ? <span className="badge-warning">راقد</span> : <span className="badge-neutral">خرج</span>}</td>
-              <td className="td">{r.notes || "—"}</td>
+              <td className="td"><div>{r.admissionReason || r.notes || "—"}</div>{r.recommendingDoctor && <div className="text-xs text-gray-500">الطبيب: {r.recommendingDoctor}</div>}{<a className="text-xs text-brand-700 hover:underline" href={`/patients/${patientId}/admission/${r.id}`}>استمارة الرقود</a>}</td>
               <td className="td">{editable && (
                 <div className="flex flex-wrap items-center gap-2">
                   <form action={updateAdmissionDuration.bind(null, patientId, r.id)} className="flex items-center gap-1">

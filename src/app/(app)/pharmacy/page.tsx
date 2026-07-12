@@ -19,7 +19,7 @@ export default async function PharmacyPage() {
 
   const [pending, expiring, lowMeds] = await Promise.all([
     prisma.prescription.findMany({
-      where: { isDispensed: false, status: { not: "REJECTED" } },
+      where: { isDispensed: false, status: { not: "REJECTED" }, OR: [{ prescriptionType: "INTERNAL" }, { prescriptionType: null }] },
       include: { patient: { select: { id: true, fullName: true, fileNumber: true } }, medication: true },
       orderBy: { prescribedAt: "asc" },
     }),

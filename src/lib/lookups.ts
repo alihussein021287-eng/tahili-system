@@ -45,7 +45,7 @@ export const getMedicationsList = unstable_cache(
   ["lookups-medications"], { revalidate: TTL, tags: TAG }
 );
 export const getRooms = unstable_cache(
-  async () => prisma.room.findMany({ orderBy: { name: "asc" } }),
+  async () => prisma.room.findMany({ include: { beds: { orderBy: { label: "asc" } } }, orderBy: { name: "asc" } }),
   ["lookups-rooms"], { revalidate: TTL, tags: TAG }
 );
 export const getEmployees = unstable_cache(

@@ -136,10 +136,28 @@ export async function addDiagnosis(patientId: string, fd: FormData) {
 
 export async function addReport(patientId: string, fd: FormData) {
   const s = await guard("clinical.report");
-  const rec = await prisma.medicalReport.create({ data: {
-    patientId, content: fd.get("content")?.toString() || "", doctor: fd.get("doctor")?.toString() || null,
-  }});
-  await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "medical_reports", recordId: rec.id });
+  const status = (fd.get("status")?.toString() || "DRAFT") as "DRAFT" | "READY_TO_PRINT";
+  await prisma.$transaction(async (tx) => {
+    const rec = await tx.medicalReport.create({ data: {
+      patientId, content: fd.get("content")?.toString() || "", doctor: fd.get("doctor")?.toString() || s?.user?.name || null,
+      doctorId: (s?.user as any)?.id, reportType: (fd.get("reportType")?.toString() as any) || "PRELIMINARY",
+      status, readyAt: status === "READY_TO_PRINT" ? new Date() : null,
+    }});
+    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "CREATE", tableName: "medical_reports", recordId: rec.id, newValue: { reportType: rec.reportType, status: rec.status } } });
+    if (status === "READY_TO_PRINT") await tx.notification.create({ data: { targetRole: "MANAGER", title: "تقرير طبي جاهز للطباعة", body: "راجع قائمة تقارير المراجع الجاهزة.", link: `/patients/${patientId}?tab=reports` } });
+  });
+  revalidatePath(`/patients/${patientId}`);
+}
+
+export async function setReportStatus(patientId: string, reportId: string, status: "DRAFT" | "READY_TO_PRINT" | "PRINTED_APPROVED" | "CANCELLED") {
+  const s = await guard(status === "PRINTED_APPROVED" ? "reports.print" : "clinical.report");
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.medicalReport.findUniqueOrThrow({ where: { id: reportId } });
+    if (before.status === "PRINTED_APPROVED" || before.status === "CANCELLED") throw new Error("لا يمكن تعديل التقرير بعد اعتماده أو إلغائه");
+    const rec = await tx.medicalReport.update({ where: { id: reportId }, data: { status, readyAt: status === "READY_TO_PRINT" ? new Date() : before.readyAt, printedAt: status === "PRINTED_APPROVED" ? new Date() : null } });
+    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "UPDATE", tableName: "medical_reports", recordId: reportId, oldValue: { status: before.status }, newValue: { status: rec.status } } });
+    if (status === "READY_TO_PRINT") await tx.notification.create({ data: { targetRole: "MANAGER", title: "تقرير طبي جاهز للطباعة", body: "راجع قائمة تقارير المراجع الجاهزة.", link: `/patients/${patientId}?tab=reports` } });
+  });
   revalidatePath(`/patients/${patientId}`);
 }
 
@@ -160,29 +178,52 @@ export async function addPrescription(patientId: string, fd: FormData) {
   const s = await guard("clinical.prescription");
   const medicationId = fd.get("medicationId") ? Number(fd.get("medicationId")) : null;
   const qtyStr = fd.get("quantity")?.toString() || null;
-  const rec = await prisma.prescription.create({ data: {
-    patientId, materialName: fd.get("materialName")?.toString() || null,
-    medicationId,
-    usage: fd.get("usage")?.toString() || null, doctor: fd.get("doctor")?.toString() || null,
-    quantity: qtyStr, duration: fd.get("duration")?.toString() || null,
-  }});
-  // الخصم من المخزون لم يعد هنا — يتم عند تجهيز الصيدلي (FEFO) في قسم الصيدلية
-  await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "prescriptions", recordId: rec.id });
+  const prescriptionType = (fd.get("prescriptionType")?.toString() || "EXTERNAL") as "INTERNAL" | "EXTERNAL";
+  const patient = await prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { caseType: true, inMobilization: true, kinshipDegree: true, referralSource: true } });
+  const enough = patient.caseType != null && (patient.inMobilization != null || Boolean(patient.kinshipDegree));
+  const eligible = patient.caseType === "WOUNDED" && (patient.inMobilization === true || Boolean(patient.kinshipDegree));
+  const eligibilityDecision = prescriptionType === "INTERNAL" ? (enough ? (eligible ? "ELIGIBLE" : "NOT_ELIGIBLE") : ((fd.get("eligibilityDecision")?.toString() as any) || "DOCTOR_REVIEW")) : null;
+  const eligibilityReason = prescriptionType === "INTERNAL" ? (enough ? (eligible ? "بيانات المراجع الحالية تثبت أهلية الصرف الداخلي" : "بيانات المراجع الحالية لا تثبت فئة الصرف الداخلي") : (fd.get("eligibilityReason")?.toString().trim() || "بيانات الأهلية غير مكتملة، وسُجّل قرار الطبيب")) : null;
+  await prisma.$transaction(async (tx) => {
+    const rec = await tx.prescription.create({ data: {
+      patientId, materialName: fd.get("materialName")?.toString() || null, medicationId,
+      usage: fd.get("usage")?.toString() || null, doctor: fd.get("doctor")?.toString() || s?.user?.name || null,
+      quantity: qtyStr, duration: fd.get("duration")?.toString() || null, prescriptionType,
+      eligibilityDecision, eligibilityReason, eligibilityRecordedAt: prescriptionType === "INTERNAL" ? new Date() : null,
+      createdById: (s?.user as any)?.id,
+    }});
+    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "CREATE", tableName: "prescriptions", recordId: rec.id, newValue: { prescriptionType, eligibilityDecision } } });
+    await tx.notification.create({ data: prescriptionType === "INTERNAL"
+      ? { targetRole: "PHARMACIST", title: "وصفة داخلية جديدة", body: "وصفة جديدة بانتظار إجراء الصيدلية.", link: "/pharmacy" }
+      : { targetRole: "MANAGER", title: "وصفة خارجية جاهزة للطباعة", body: "وصفة خارجية جديدة بانتظار إدارة الطباعة.", link: `/pharmacy/rx/${rec.id}` } });
+  });
   revalidatePath(`/patients/${patientId}`);
   revalidatePath("/pharmacy");
 }
 
 export async function addAdmission(patientId: string, fd: FormData) {
   const s = await guard("clinical.admission");
-  const rec = await prisma.admission.create({ data: {
-    patientId, admissionDate: new Date(fd.get("admissionDate")?.toString() || Date.now()),
-    centerId: fd.get("centerId") ? Number(fd.get("centerId")) : null,
-    roomId: fd.get("roomId") ? Number(fd.get("roomId")) : null,
-    durationDays: fd.get("durationDays") ? Number(fd.get("durationDays")) : null,
-    notes: fd.get("notes")?.toString() || null,
-  }});
-  await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "admissions", recordId: rec.id });
+  const admissionDate = new Date(fd.get("admissionDate")?.toString() || Date.now());
+  const durationDays = fd.get("durationDays") ? Number(fd.get("durationDays")) : null;
+  const expectedDischargeDate = durationDays ? new Date(admissionDate.getTime() + durationDays * 86400000) : null;
+  const bedId = fd.get("bedId") ? Number(fd.get("bedId")) : null;
+  await prisma.$transaction(async (tx) => {
+    if (bedId) {
+      const overlap = await tx.admission.findFirst({ where: { bedId, admissionDate: { lte: expectedDischargeDate || new Date("9999-12-31") }, OR: [{ dischargeDate: null }, { dischargeDate: { gte: admissionDate } }] }, select: { id: true } });
+      if (overlap) throw new Error("السرير مشغول خلال الفترة المحددة");
+    }
+    const rec = await tx.admission.create({ data: {
+      patientId, admissionDate, centerId: fd.get("centerId") ? Number(fd.get("centerId")) : null,
+      roomId: fd.get("roomId") ? Number(fd.get("roomId")) : null, bedId, durationDays, expectedDischargeDate,
+      recommendingDoctor: fd.get("recommendingDoctor")?.toString() || s?.user?.name || null,
+      admissionReason: fd.get("admissionReason")?.toString() || null, notes: fd.get("notes")?.toString() || null,
+    }});
+    if (bedId) await tx.bed.update({ where: { id: bedId }, data: { occupied: true } });
+    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "CREATE", tableName: "admissions", recordId: rec.id, newValue: { centerId: rec.centerId, roomId: rec.roomId, bedId: rec.bedId, durationDays } } });
+    await tx.notification.create({ data: { targetRole: "MANAGER", title: "تسجيل رقود جديد", body: "سُجل قرار رقود جديد ويحتاج متابعة التخصيص.", link: "/beds" } });
+  });
   revalidatePath(`/patients/${patientId}`);
+  revalidatePath("/beds");
 }
 
 export async function addTreatmentPlan(patientId: string, fd: FormData) {
@@ -412,16 +453,24 @@ export async function restorePatient(id: string) {
 export async function updateAdmissionDuration(patientId: string, admissionId: string, fd: FormData) {
   const s = await guard("clinical.admission");
   const d = fd.get("durationDays")?.toString();
-  await prisma.admission.update({ where: { id: admissionId }, data: { durationDays: d ? Number(d) : null } });
+  const before = await prisma.admission.findUniqueOrThrow({ where: { id: admissionId } });
+  const durationDays = d ? Number(d) : null;
+  await prisma.admission.update({ where: { id: admissionId }, data: { durationDays, expectedDischargeDate: durationDays ? new Date(before.admissionDate.getTime() + durationDays * 86400000) : null } });
   await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "admissions", recordId: admissionId });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function dischargeAdmission(patientId: string, admissionId: string, fd?: FormData) {
-  await guard("clinical.admission");
+  const s = await guard("clinical.admission");
   const dd = fd?.get("dischargeDate")?.toString();
-  await prisma.admission.update({ where: { id: admissionId }, data: { status: "DISCHARGED", dischargeDate: dd ? new Date(dd) : new Date() } });
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.admission.findUniqueOrThrow({ where: { id: admissionId } });
+    await tx.admission.update({ where: { id: admissionId }, data: { status: "DISCHARGED", dischargeDate: dd ? new Date(dd) : new Date() } });
+    if (before.bedId) await tx.bed.update({ where: { id: before.bedId }, data: { occupied: false } });
+    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "UPDATE", tableName: "admissions", recordId: admissionId, oldValue: { status: before.status }, newValue: { status: "DISCHARGED" } } });
+  });
   revalidatePath(`/patients/${patientId}`);
+  revalidatePath("/beds");
 }
 
 export async function addCorrespondence(patientId: string, fd: FormData) {
@@ -500,13 +549,13 @@ export async function revokePortalToken(patientId: string) {
 export async function deleteDiagnosis(patientId: string, id: string) {
   await assertAdminDelete(); const s = await guard("clinical.diagnosis"); await prisma.diagnosis.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "diagnoses", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteReport(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.report"); await prisma.medicalReport.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "medical_reports", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guard("clinical.report"); const report = await prisma.medicalReport.findUniqueOrThrow({ where: { id } }); if (report.status === "PRINTED_APPROVED") throw new Error("لا يمكن حذف تقرير مطبوع ومعتمد"); await prisma.medicalReport.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "medical_reports", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteSession(patientId: string, id: string) {
   await assertAdminDelete(); const s = await guard("clinical.session"); await prisma.therapySession.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "therapy_sessions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deletePrescription(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.prescription"); await prisma.prescription.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "prescriptions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guard("clinical.prescription"); const rx = await prisma.prescription.findUniqueOrThrow({ where: { id } }); if (rx.isDispensed || rx.status === "DISPENSED") throw new Error("لا يمكن حذف وصفة بعد الصرف"); await prisma.prescription.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "prescriptions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteAdmission(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.admission"); await prisma.admission.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "admissions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guard("clinical.admission"); await prisma.$transaction(async (tx) => { const admission = await tx.admission.findUniqueOrThrow({ where: { id } }); await tx.admission.delete({ where: { id } }); if (admission.bedId) await tx.bed.update({ where: { id: admission.bedId }, data: { occupied: false } }); await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "DELETE", tableName: "admissions", recordId: id } }); }); revalidatePath(`/patients/${patientId}`); revalidatePath("/beds"); }
 export async function deleteWound(patientId: string, id: string) {
   await assertAdminDelete(); const s = await guard("clinical.wound"); await prisma.woundAssessment.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "wound_assessments", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteCorrespondence(patientId: string, id: string) {
