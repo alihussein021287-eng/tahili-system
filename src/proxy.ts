@@ -1,7 +1,18 @@
 import authMiddleware from "next-auth/middleware";
 
-export function proxy(...args: Parameters<typeof authMiddleware>) {
-  return authMiddleware(...args);
+const authProxy = authMiddleware({
+  pages: { signIn: "/login" },
+  cookies: {
+    sessionToken: {
+      name: process.env.NEXTAUTH_ALLOW_HTTP_LOGIN === "true"
+        ? "next-auth.session-token"
+        : "__Secure-next-auth.session-token",
+    },
+  },
+});
+
+export function proxy(...args: Parameters<typeof authProxy>) {
+  return authProxy(...args);
 }
 
 export const config = {
