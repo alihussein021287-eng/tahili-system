@@ -51,3 +51,44 @@ export async function admissionResource(label: string) {
   const bed = await prisma.bed.create({ data: { roomId: room.id, label: `سرير ${RUN_ID} ${label}` } });
   return { center, room, bed };
 }
+
+export async function acceptanceUser(username: string) {
+  return prisma.user.findUniqueOrThrow({ where: { username } });
+}
+
+export async function centerByNamePart(part: string) {
+  return prisma.center.findFirstOrThrow({ where: { name: { contains: part } } });
+}
+
+export async function ensureCenterMembership(centerId: number, userId: string, role: "CENTER_MANAGEMENT" | "HEAD_THERAPIST" | "THERAPIST" | "DEVICE_OPERATOR", specialty: string) {
+  return prisma.centerMembership.upsert({
+    where: { centerId_userId_role: { centerId, userId, role } },
+    update: { status: "ACTIVE", specialty, endDate: null },
+    create: { centerId, userId, role, specialty, status: "ACTIVE" },
+  });
+}
+
+export async function acceptedCenterReferral(patientId: string, centerId: number, service: string) {
+  const creator = await acceptanceDoctor();
+  return prisma.referralRequest.create({
+    data: {
+      patientId,
+      createdById: creator.id,
+      assignedReviewerId: creator.id,
+      destinationCenterId: centerId,
+      type: "TREATMENT_CENTER",
+      destinationScope: "INTERNAL_CENTER",
+      requestedService: `ACCEPTANCE-20260713 ${RUN_ID} ${service}`,
+      clinicalReason: `ACCEPTANCE-20260713 ${RUN_ID} سبب إحالة مركزية`,
+      status: "READY",
+    },
+  });
+}
+
+export async function activeTherapyHall(label: string) {
+  return prisma.therapyHall.upsert({
+    where: { name: `ACCEPTANCE-20260713 ${RUN_ID} ${label}` },
+    update: { active: true },
+    create: { name: `ACCEPTANCE-20260713 ${RUN_ID} ${label}`, active: true },
+  });
+}
