@@ -17,6 +17,7 @@ export function applyUserClaims(token: Record<string, unknown>, user?: Record<st
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: { signIn: "/login" },
+  useSecureCookies: process.env.NEXTAUTH_ALLOW_HTTP_LOGIN === "true" ? false : undefined,
   providers: [
     CredentialsProvider({
       name: "credentials",
