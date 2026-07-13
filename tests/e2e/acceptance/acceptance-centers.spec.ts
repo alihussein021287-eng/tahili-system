@@ -8,7 +8,7 @@ import {
   clinicalPatient,
   ensureCenterMembership,
 } from "./fixture-factory";
-import { credential, pageFor, RUN_ID, screenshot, statePath } from "./helpers";
+import { credential, pageFor, RUN_ID, statePath } from "./helpers";
 import { submitServerAction } from "./resilient-action";
 
 test.describe.configure({ mode: "serial", timeout: 180_000 });
@@ -17,11 +17,19 @@ function todayDateTime(time = "11:20") {
   return `${new Date().toISOString().slice(0, 10)}T${time}`;
 }
 
-async function ensureResource(centerId: number, serviceType: "PSYCHOLOGICAL" | "OCCUPATIONAL_MEDICAL" | "OCCUPATIONAL_ART", label: string) {
+type CenterSlug = "psychological" | "occupational" | "naqaa";
+type ServiceType = "PSYCHOLOGICAL" | "OCCUPATIONAL_MEDICAL" | "OCCUPATIONAL_ART" | "ULCER_CARE" | "PAIN_MEDICINE" | "HYPERBARIC" | "OZONE";
+
+function datetimeLocalValue(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+async function ensureResource(centerId: number, serviceType: ServiceType, label: string, type: "DEVICE" | "ROOM" | "HALL" = "ROOM", available = true) {
   return prisma.centerResource.upsert({
     where: { centerId_name: { centerId, name: `ACCEPTANCE-20260713 ${RUN_ID} ${label}` } },
-    update: { status: "AVAILABLE", serviceType, capacity: 1 },
-    create: { centerId, name: `ACCEPTANCE-20260713 ${RUN_ID} ${label}`, type: "ROOM", serviceType, capacity: 1, status: "AVAILABLE" },
+    update: { status: available ? "AVAILABLE" : "MAINTENANCE", serviceType, capacity: 1, type },
+    create: { centerId, name: `ACCEPTANCE-20260713 ${RUN_ID} ${label}`, type, serviceType, capacity: 1, status: available ? "AVAILABLE" : "MAINTENANCE" },
   });
 }
 
@@ -34,13 +42,13 @@ async function prepareCenter(part: string, roleSpecialty: string) {
   return { center, head, therapist };
 }
 
-async function createProgramFromReferral(browser: Browser, slug: "psychological" | "occupational", opts: {
+async function createProgramFromReferral(browser: Browser, slug: CenterSlug, opts: {
   centerId: number;
   patientId: string;
   patientName: string;
   referralId: string;
   assigneeId: string;
-  serviceType: "PSYCHOLOGICAL" | "OCCUPATIONAL_MEDICAL" | "OCCUPATIONAL_ART";
+  serviceType: ServiceType;
   track: string;
   initial: string;
   capacity: string;
@@ -79,11 +87,43 @@ async function createProgramFromReferral(browser: Browser, slug: "psychological"
   return prisma.centerProgram.findFirstOrThrow({ where: { referralRequestId: opts.referralId } });
 }
 
-async function scheduleCenterSession(browser: Browser, slug: "psychological" | "occupational", centerId: number, programId: string, resourceId: string, label: string) {
+async function freeCenterDateTime(centerId: number, assigneeId: string | null, resourceId: string, preferredHour: number) {
+  const base = new Date(); base.setHours(0, 0, 0, 0);
+  for (let dayOffset = 0; dayOffset < 21; dayOffset += 1) {
+    for (let hourOffset = 0; hourOffset < 10; hourOffset += 1) {
+      const hour = 8 + ((preferredHour - 8 + hourOffset) % 10);
+      const scheduledAt = new Date(base);
+      scheduledAt.setDate(base.getDate() + dayOffset);
+      scheduledAt.setHours(hour, 20, 0, 0);
+      const endsAt = new Date(scheduledAt.getTime() + 45 * 60000);
+      const sessionConflict = await prisma.centerSession.findFirst({
+        where: {
+          centerId,
+          scheduledAt: { lt: endsAt },
+          endsAt: { gt: scheduledAt },
+          status: { in: ["SCHEDULED", "ATTENDED"] },
+          OR: [{ resourceId }, ...(assigneeId ? [{ assignedToId: assigneeId }] : [])],
+        },
+      });
+      const appointmentConflict = assigneeId
+        ? await prisma.appointment.findFirst({
+          where: { status: "SCHEDULED", scheduledAt: { gte: scheduledAt, lt: endsAt }, assignedToId: assigneeId },
+        })
+        : null;
+      if (!sessionConflict && !appointmentConflict) return datetimeLocalValue(scheduledAt);
+    }
+  }
+  throw new Error("No free center slot");
+}
+
+async function scheduleCenterSession(browser: Browser, slug: CenterSlug, centerId: number, programId: string, resourceId: string, label: string) {
   const actor = await pageFor(browser, "HEAD_THERAPIST");
   await actor.page.goto(`/centers/${slug}/programs/${programId}`, { waitUntil: "domcontentloaded" });
+  const program = await prisma.centerProgram.findUniqueOrThrow({ where: { id: programId }, select: { assignedToId: true } });
   const form = actor.page.locator('form:has(button:has-text("حجز الجلسة والموعد"))').first();
-  await form.locator('input[name="scheduledAt"]').fill(todayDateTime(label.includes("فن") ? "12:10" : label.includes("طبي") ? "11:50" : "11:20"));
+  const preferredHour = label.includes("فن") ? 12 : label.includes("طبي") ? 11 : label.includes("هايبر") ? 13 : label.includes("أوزون") ? 14 : label.includes("ألم") ? 10 : 9;
+  const scheduledAt = await freeCenterDateTime(centerId, program.assignedToId, resourceId, preferredHour);
+  await form.locator('input[name="scheduledAt"]').fill(scheduledAt);
   await form.locator('input[name="durationMinutes"]').fill("45");
   await form.locator('select[name="resourceId"]').selectOption(resourceId);
   await submitServerAction({
@@ -101,11 +141,33 @@ async function scheduleCenterSession(browser: Browser, slug: "psychological" | "
   return prisma.centerSession.findFirstOrThrow({ where: { programId, resourceId } });
 }
 
-async function recordCenterSession(browser: Browser, slug: "psychological" | "occupational", sessionId: string, patientName: string, procedure: string, progress: string, sensitive?: string) {
+async function expectResourceConflict(browser: Browser, slug: CenterSlug, centerId: number, programId: string, resourceId: string, scheduledAt: Date) {
+  const actor = await pageFor(browser, "HEAD_THERAPIST");
+  await actor.page.goto(`/centers/${slug}/programs/${programId}`, { waitUntil: "domcontentloaded" });
+  const form = actor.page.locator('form:has(button:has-text("حجز الجلسة والموعد"))').first();
+  await form.locator('input[name="scheduledAt"]').fill(datetimeLocalValue(scheduledAt));
+  await form.locator('input[name="durationMinutes"]').fill("45");
+  await form.locator('select[name="resourceId"]').selectOption(resourceId);
+  const result = await submitServerAction({
+    name: `center-conflict-${programId}`,
+    role: "HEAD_THERAPIST",
+    browser,
+    context: actor.context,
+    page: actor.page,
+    submit: form.getByRole("button", { name: "حجز الجلسة والموعد" }),
+    dbExpectation: async () => (await prisma.centerSession.count({ where: { programId, resourceId } })) > 0,
+    confirmation: async () => false,
+    recoveryUrl: `/centers/${slug}/programs/${programId}`,
+    roleState: statePath(credential("HEAD_THERAPIST")),
+  });
+  expect(result.status).toBe("FAIL");
+}
+
+async function recordCenterSession(browser: Browser, slug: CenterSlug, sessionId: string, patientName: string, procedure: string, progress: string, sensitive?: string) {
   const actor = await pageFor(browser, "THERAPIST");
   await actor.page.goto(`/centers/${slug}/today`, { waitUntil: "domcontentloaded" });
-  await expect(actor.page.getByText(patientName)).toBeVisible();
   const form = actor.page.locator(`article:has-text("${patientName}") form`).first();
+  await expect(form).toBeVisible();
   await form.locator('select[name="attended"]').selectOption("1");
   await form.locator('select[name="status"]').selectOption("COMPLETED");
   await form.locator('textarea[name="procedure"]').fill(procedure);
@@ -127,7 +189,7 @@ async function recordCenterSession(browser: Browser, slug: "psychological" | "oc
   });
 }
 
-async function finalizeProgram(browser: Browser, slug: "psychological" | "occupational", centerId: number, programId: string, serviceText: string, sensitive?: string) {
+async function finalizeProgram(browser: Browser, slug: CenterSlug, centerId: number, programId: string, serviceText: string, sensitive?: string) {
   const actor = await pageFor(browser, "HEAD_THERAPIST");
   await actor.page.goto(`/centers/${slug}/programs/${programId}`, { waitUntil: "domcontentloaded" });
   const form = actor.page.locator('form:has(button:has-text("إغلاق البرنامج وإصدار التقييم"))').first();
@@ -151,12 +213,13 @@ async function finalizeProgram(browser: Browser, slug: "psychological" | "occupa
   expect(await prisma.centerAssessment.count({ where: { programId, kind: "FINAL" } })).toBe(1);
 }
 
-async function runCenterCycle(browser: Browser, slug: "psychological" | "occupational", serviceType: "PSYCHOLOGICAL" | "OCCUPATIONAL_MEDICAL" | "OCCUPATIONAL_ART", label: string, sensitive?: string) {
-  const centerPart = slug === "psychological" ? "النفسي" : "الوظيفي";
+async function runCenterCycle(browser: Browser, slug: CenterSlug, serviceType: ServiceType, label: string, sensitive?: string, needsDeviceConflict = false) {
+  const centerPart = slug === "psychological" ? "النفسي" : slug === "occupational" ? "الوظيفي" : "النقاء";
   const { center, therapist } = await prepareCenter(centerPart, label);
   const patient = await clinicalPatient(label, true);
   const referral = await acceptedCenterReferral(patient.id, center.id, label);
-  const resource = await ensureResource(center.id, serviceType, `مورد ${label}`);
+  const resource = await ensureResource(center.id, serviceType, `مورد ${label}`, needsDeviceConflict ? "DEVICE" : "ROOM");
+  const unavailable = await ensureResource(center.id, serviceType, `مورد غير متاح ${label}`, "DEVICE", false);
   const program = await createProgramFromReferral(browser, slug, {
     centerId: center.id,
     patientId: patient.id,
@@ -173,6 +236,28 @@ async function runCenterCycle(browser: Browser, slug: "psychological" | "occupat
   });
   expect((await prisma.referralRequest.findUniqueOrThrow({ where: { id: referral.id } })).status).toBe("ACCEPTED");
   const session = await scheduleCenterSession(browser, slug, center.id, program.id, resource.id, label);
+  const details = await pageFor(browser, "HEAD_THERAPIST");
+  await details.page.goto(`/centers/${slug}/programs/${program.id}`, { waitUntil: "domcontentloaded" });
+  await expect(details.page.locator('select[name="resourceId"] option', { hasText: unavailable.name })).toHaveCount(0);
+  await details.context.close();
+  if (needsDeviceConflict) {
+    const otherPatient = await clinicalPatient(`${label} تعارض`, true);
+    const otherReferral = await acceptedCenterReferral(otherPatient.id, center.id, `${label} تعارض`);
+    const otherProgram = await createProgramFromReferral(browser, slug, {
+      centerId: center.id,
+      patientId: otherPatient.id,
+      patientName: otherPatient.fullName,
+      referralId: otherReferral.id,
+      assigneeId: therapist.id,
+      serviceType,
+      track: `ACCEPTANCE-20260713 ${RUN_ID} تعارض ${label}`,
+      initial: `ACCEPTANCE-20260713 ${RUN_ID} تقييم تعارض ${label}`,
+      capacity: "تجريبي",
+      goals: "تجريبي",
+      protocol: "تجريبي",
+    });
+    await expectResourceConflict(browser, slug, center.id, otherProgram.id, resource.id, session.scheduledAt);
+  }
   await recordCenterSession(browser, slug, session.id, patient.fullName, `ACCEPTANCE-20260713 إجراء ${label}`, `ACCEPTANCE-20260713 تقدم ${label}`, sensitive);
   await finalizeProgram(browser, slug, center.id, program.id, label, sensitive);
   if (sensitive) {
@@ -185,10 +270,6 @@ async function runCenterCycle(browser: Browser, slug: "psychological" | "occupat
     await expect(unauthorized.page.getByText(sensitive)).toHaveCount(0);
     await unauthorized.context.close();
   }
-  const evidence = await pageFor(browser, "HEAD_THERAPIST");
-  await evidence.page.goto(`/centers/${slug}/programs/${program.id}`, { waitUntil: "domcontentloaded" });
-  await screenshot(evidence.page, `center-${serviceType}`);
-  await evidence.context.close();
   return { patient, program };
 }
 
@@ -206,6 +287,20 @@ test("workflow 13: art occupational rehabilitation", async ({ browser }) => {
   expect(await prisma.centerProgram.count({ where: { id: program.id, serviceType: "OCCUPATIONAL_MEDICAL" } })).toBe(0);
 });
 
-for (const name of ["workflow 14: ulcer treatment","workflow 15: pain medicine","workflow 16: hyperbaric oxygen","workflow 17: ozone treatment"]) test.skip(name, async()=>{});
+test("workflow 14: ulcer treatment", async ({ browser }) => {
+  await runCenterCycle(browser, "naqaa", "ULCER_CARE", "علاج التقرحات");
+});
+
+test("workflow 15: pain medicine", async ({ browser }) => {
+  await runCenterCycle(browser, "naqaa", "PAIN_MEDICINE", "علاج الألم");
+});
+
+test("workflow 16: hyperbaric oxygen", async ({ browser }) => {
+  await runCenterCycle(browser, "naqaa", "HYPERBARIC", "هايبر أوكسجين", undefined, true);
+});
+
+test("workflow 17: ozone treatment", async ({ browser }) => {
+  await runCenterCycle(browser, "naqaa", "OZONE", "الأوزون", undefined, true);
+});
 
 test.afterAll(async () => prisma.$disconnect());

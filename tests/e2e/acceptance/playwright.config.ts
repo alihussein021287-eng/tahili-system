@@ -15,6 +15,7 @@ export default defineConfig({
   reporter: [["list"], ["json", { outputFile: "/tahili-system/test-results/acceptance-20260713/acceptance-results.json" }]],
   use: {
     baseURL: "http://localhost:3000",
+    launchOptions: { args: ["--disable-gpu", "--disable-software-rasterizer", "--mute-audio"] },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
