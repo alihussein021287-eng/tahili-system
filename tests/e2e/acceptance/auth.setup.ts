@@ -4,6 +4,7 @@ import { credentials, statePath, STATES } from "./helpers";
 
 export default async function globalSetup() {
   fs.mkdirSync(STATES, { recursive: true, mode: 0o700 });
+  if (credentials().every((user) => fs.existsSync(statePath(user)))) return;
   const browser = await chromium.launch({ headless: true });
   for (const user of credentials()) {
     const context = await browser.newContext({ baseURL: "http://localhost:3000" });
