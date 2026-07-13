@@ -202,7 +202,7 @@ export default function LoginPage() {
               <span><b>●</b> نسخ احتياطي يومي</span>
               <span><b>●</b> واجهة عربية على الهاتف</span>
             </div>
-            <div style={{ fontSize: ".72rem", color: "#7fcabf", marginTop: ".8rem" }}>الإصدار 2.0، يعمل محلياً داخل المركز</div>
+            <div style={{ fontSize: ".72rem", color: "#7fcabf", marginTop: ".8rem" }}>V3، يعمل محلياً داخل المركز</div>
           </div>
         </div>
       </aside>
