@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Feature Work"
+  short_description: "تنفيذ ميزات وتعديلات Tahili بأمان"
+  default_prompt: "Use $tahili-feature-work to implement the requested Tahili feature safely."

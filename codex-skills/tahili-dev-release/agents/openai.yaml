@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Dev Release"
+  short_description: "تطبيق إصدار Tahili على بيئة التطوير"
+  default_prompt: "Use $tahili-dev-release to release the specified commit to the Tahili development VM."

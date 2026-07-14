@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Quality Check"
+  short_description: "فحص تغييرات Tahili واختبارها بأمان"
+  default_prompt: "Use $tahili-quality-check to validate the requested Tahili change."
