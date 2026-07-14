@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { PERM_GROUPS } from "@/lib/perms";
 import { ROLE_LABELS } from "@/lib/permissions";
 import {
-  updateUser, resetPassword, toggleUser,
+  updateUser, resetPassword, toggleUser, deleteUnusedUser,
   setUserPerm, setUserPermsBulk, clearUserPerms, applyRoleTemplate, getUserActivity,
 } from "@/app/(app)/users/actions";
 import { fmtDate, fmtDateTime } from "@/lib/labels";
@@ -31,8 +31,8 @@ const PROFILE_SUBS = [
   { key: "edit", label: "تعديل البيانات" },
 ];
 
-export function UserTabs({ user, isAdmin, effective, overrides, activity, logins = [], branches = [], initialTab }: {
-  user: User; isAdmin: boolean; effective: string[]; overrides: Record<string, boolean>; activity?: any[]; logins?: any[]; branches?: any[]; initialTab?: string;
+export function UserTabs({ user, isAdmin, effective, overrides, activity, logins = [], branches = [], initialTab, deletionBlockers = [], isCurrentUser = false }: {
+  user: User; isAdmin: boolean; effective: string[]; overrides: Record<string, boolean>; activity?: any[]; logins?: any[]; branches?: any[]; initialTab?: string; deletionBlockers?: { table: string; count: number }[]; isCurrentUser?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -137,7 +137,7 @@ export function UserTabs({ user, isAdmin, effective, overrides, activity, logins
 
         {/* الأمان */}
         {main === "security" && (
-          <Security user={user} pending={pending} start={start} onChanged={() => router.refresh()} />
+          <Security user={user} pending={pending} start={start} onChanged={() => router.refresh()} deletionBlockers={deletionBlockers} isCurrentUser={isCurrentUser} />
         )}
 
         {/* النشاط */}
@@ -226,9 +226,10 @@ function PermToolbar({ onApply, onReset }: { onApply: (r: string) => void; onRes
   );
 }
 
-function Security({ user, pending, start, onChanged }: any) {
+function Security({ user, pending, start, onChanged, deletionBlockers, isCurrentUser }: any) {
   const doPw = (fd: FormData) => start(async () => { await resetPassword(user.id, fd); onChanged(); });
   const doToggle = () => start(async () => { await toggleUser(user.id, !user.isActive); onChanged(); });
+  const doDelete = (fd: FormData) => start(async () => { await deleteUnusedUser(user.id, fd); window.location.href = "/users"; });
   return (
     <div className="max-w-md space-y-4">
       <form action={doPw} className="space-y-2 rounded-lg border border-gray-200 p-4">
@@ -243,6 +244,21 @@ function Security({ user, pending, start, onChanged }: any) {
           className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${user.isActive ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>
           {user.isActive ? "تعطيل الحساب" : "تفعيل الحساب"}
         </button>
+      </div>
+      <div className="space-y-3 rounded-lg border border-red-200 p-4">
+        <div className="font-semibold text-red-700">الحذف النهائي للحساب غير المستخدم</div>
+        {isCurrentUser ? <p className="text-sm text-red-700">لا يمكن حذف حسابك الحالي.</p> : deletionBlockers.length > 0 ? (
+          <div className="text-sm text-gray-600">
+            <p>الحذف ممنوع لوجود {deletionBlockers.reduce((s: number, x: any) => s + x.count, 0)} سجل مرتبط. استخدم تعطيل الحساب.</p>
+            <div className="mt-2 flex flex-wrap gap-1">{deletionBlockers.map((x: any) => <span key={x.table} className="rounded bg-gray-100 px-2 py-1 text-xs">{x.table}: {x.count}</span>)}</div>
+          </div>
+        ) : (
+          <form action={doDelete} className="space-y-2">
+            <p className="text-sm text-gray-600">هذا الحساب غير مرتبط بأي سجل. التعطيل يبقى الخيار المفضل.</p>
+            <input name="confirm" className="input" placeholder="اكتب: حذف الحساب" autoComplete="off" />
+            <button type="submit" disabled={pending || user.role === "ADMIN"} className="btn-danger">حذف الحساب نهائياً</button>
+          </form>
+        )}
       </div>
     </div>
   );

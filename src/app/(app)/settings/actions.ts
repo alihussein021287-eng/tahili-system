@@ -166,3 +166,38 @@ export async function saveExpenseApprovalLevels(fd: FormData) {
   await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "expenseApprovalLevels", newValue: { levels } });
   revalidatePath("/settings");
 }
+
+const allowedTimezones = new Set(["Asia/Baghdad", "UTC"]);
+const allowedLocales = new Set(["ar-IQ", "en-US"]);
+const intRange = (fd: FormData, key: string, min: number, max: number) => {
+  const value = Number(fd.get(key));
+  if (!Number.isInteger(value) || value < min || value > max) throw new Error(`قيمة ${key} غير صالحة`);
+  return value;
+};
+
+export async function saveAdminConfig(fd: FormData) {
+  await requireAdmin();
+  const timezone = fd.get("timezone")?.toString() || "Asia/Baghdad";
+  const locale = fd.get("locale")?.toString() || "ar-IQ";
+  if (!allowedTimezones.has(timezone) || !allowedLocales.has(locale)) throw new Error("اللغة أو المنطقة الزمنية غير صالحة");
+  const fileTypes = (fd.get("fileTypes")?.toString() || "pdf,jpg,jpeg,png").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (!fileTypes.length || fileTypes.some((x) => !/^[a-z0-9]{2,10}$/.test(x))) throw new Error("أنواع الملفات غير صالحة");
+  const workDays = fd.getAll("workDays").map(String).filter((x) => /^[0-6]$/.test(x));
+  if (!workDays.length) throw new Error("اختر يوم دوام واحداً على الأقل");
+  const config = {
+    timezone, locale, dateFormat: fd.get("dateFormat")?.toString() || "yyyy/MM/dd", workDays,
+    workStart: fd.get("workStart")?.toString() || "08:00", workEnd: fd.get("workEnd")?.toString() || "15:00",
+    holidays: fd.get("holidays")?.toString().trim() || "",
+    appointmentMinutes: intRange(fd, "appointmentMinutes", 5, 480),
+    defaultSessions: intRange(fd, "defaultSessions", 1, 365), defaultPlanDays: intRange(fd, "defaultPlanDays", 1, 730),
+    evaluationEvery: intRange(fd, "evaluationEvery", 1, 365), weakImprovementThreshold: intRange(fd, "weakImprovementThreshold", 0, 100),
+    loginAttempts: intRange(fd, "loginAttempts", 1, 20), lockMinutes: intRange(fd, "lockMinutes", 1, 1440), sessionMinutes: intRange(fd, "sessionMinutes", 5, 10080),
+    fileTypes, maxUploadMb: intRange(fd, "maxUploadMb", 1, 100), backupRetentionDays: intRange(fd, "backupRetentionDays", 1, 3650),
+    fileNumberPrefix: fd.get("fileNumberPrefix")?.toString().trim().slice(0, 20) || "PAT",
+    reportNumberPrefix: fd.get("reportNumberPrefix")?.toString().trim().slice(0, 20) || "REP",
+  };
+  const old = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { adminConfig: true } });
+  await prisma.orgSetting.upsert({ where: { id: 1 }, update: { adminConfig: config }, create: { id: 1, adminConfig: config } });
+  await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "adminConfig", oldValue: old?.adminConfig as any, newValue: config });
+  revalidatePath("/settings"); revalidatePath("/readiness"); revalidatePath("/backup");
+}

@@ -6,6 +6,8 @@ import { maintenanceOn } from "@/lib/maintenance";
 import { PageHeader } from "@/components/PageHeader";
 import { wipeCategory, wipeAll } from "./actions";
 import { CATS } from "./cats";
+import { getBackupOverview } from "@/lib/backup";
+import { getReadinessChecks } from "@/lib/readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,12 @@ export default async function Maintenance({ searchParams }: { searchParams: Prom
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   if (!isAdmin || !(await maintenanceOn())) notFound();
   const sp = await searchParams;
+  const [technicalChecks, recentMaintenance] = await Promise.all([
+    getReadinessChecks(),
+    prisma.auditLog.findMany({ where: { tableName: { startsWith: "maintenance:" } }, include: { user: { select: { fullName: true } } }, orderBy: { createdAt: "desc" }, take: 8 }),
+  ]);
+  const latestBackup = getBackupOverview().latestDb;
+  const backupRecent = Boolean(latestBackup && Date.now() - latestBackup.mtime.getTime() <= 86400000);
 
   // عدّادات كل فئة
   const c = await prisma.$transaction([
@@ -67,10 +75,17 @@ export default async function Maintenance({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-5">
-      <PageHeader title="منطقة الصيانة" subtitle="مسح انتقائي للبيانات — للأدمن فقط أثناء ترتيب النظام" icon="🧹" />
+      <PageHeader title="مركز الصيانة الفني" subtitle="فحوص التشغيل منفصلة عن منطقة الخطر" icon="🧹" />
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {technicalChecks.map((check) => <div key={check.key} className="card p-4"><div className="text-sm font-semibold">{check.label}</div><div className={`mt-2 text-xs ${check.status === 'ok' ? 'text-emerald-700' : check.status === 'fail' ? 'text-red-700' : 'text-amber-700'}`}>{check.detail}</div></div>)}
+      </section>
+      <section className="card p-4"><h2 className="font-semibold">آخر عمليات الصيانة</h2><div className="mt-2 space-y-1 text-sm">{recentMaintenance.length ? recentMaintenance.map((x)=><div key={x.id}>{x.action} · {x.tableName} · {x.user?.fullName ?? 'النظام'} · {x.createdAt.toLocaleString('ar-IQ')}</div>) : <div className="text-gray-400">لا توجد عمليات صيانة مسجلة.</div>}</div></section>
+
+      <div className="border-t-4 border-red-500 pt-5"><h2 className="text-xl font-bold text-red-800">منطقة الخطر</h2><p className="text-sm text-gray-600">بعيدة عن الفحوص الآمنة وتتطلب وضع الصيانة ونسخة حديثة وتأكيداً متعدد الخطوات.</p></div>
 
       <div className="card-danger p-4 text-sm text-red-800">
-        ⚠️ <b>تحذير:</b> كل عملية هنا <b>حذف نهائي لا رجعة فيه</b>. خذ نسخة احتياطية قبل البدء. لإخفاء هذه الصفحة، أطفئ «وضع الصيانة» من الإعدادات بعد الانتهاء.
+        <b>تحذير:</b> كل عملية هنا حذف نهائي. حالة النسخة الحديثة: <b>{backupRecent ? `صالحة (${latestBackup?.name})` : "غير متوفرة؛ المسح محظور"}</b>.
         <Link href="/settings" className="mr-2 underline">→ الإعدادات</Link>
       </div>
 
@@ -88,12 +103,15 @@ export default async function Maintenance({ searchParams }: { searchParams: Prom
                 <span className={`badge ${empty ? "bg-gray-100 text-gray-500" : "bg-brand-50 text-brand-700"}`}>{card.count}</span>
               </div>
               {(meta.note || card.note) && <div className="mt-1 text-xs text-gray-400">{meta.note || card.note}</div>}
-              {!empty && (
+              {!empty && card.key !== "audit" && (
                 <form action={wipeCategory.bind(null, card.key)} className="mt-3 flex items-center gap-2">
+                  <input type="hidden" name="expectedCount" value={card.count} />
                   <input name="confirm" className="input !py-1 text-sm" placeholder="اكتب: امسح" autoComplete="off" />
-                  <button className="btn-danger btn-sm shrink-0" type="submit">مسح</button>
+                  <input name="count" inputMode="numeric" className="input !py-1 text-sm" placeholder={`العدد: ${card.count}`} autoComplete="off" />
+                  <button disabled={!backupRecent} className="btn-danger btn-sm shrink-0" type="submit">مسح</button>
                 </form>
               )}
+              {card.key === "audit" && <p className="mt-3 text-xs font-medium text-emerald-700">محفوظ دائماً لإثبات العمليات.</p>}
             </div>
           );
         })}
@@ -103,8 +121,10 @@ export default async function Maintenance({ searchParams }: { searchParams: Prom
         <div className="mb-1 font-bold text-red-700">تصفير شامل</div>
         <p className="mb-3 text-sm text-gray-600">يمسح <b>كل البيانات</b> ويُبقي فقط حساب الأدمن وإعدادات المركز. اكتب «تصفير شامل» للتأكيد.</p>
         <form action={wipeAll} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="expectedCount" value={c.reduce((sum, n, i) => i === 17 ? sum : sum + n, 0)} />
           <input name="confirm" className="input max-w-xs" placeholder="اكتب: تصفير شامل" autoComplete="off" />
-          <button className="btn-danger font-bold" type="submit">تصفير النظام بالكامل</button>
+          <input name="confirmCount" className="input max-w-xs" placeholder={`اكتب عدد السجلات: ${c.reduce((sum, n, i) => i === 17 ? sum : sum + n, 0)}`} autoComplete="off" />
+          <button disabled={!backupRecent} className="btn-danger font-bold" type="submit">تصفير النظام بالكامل</button>
         </form>
       </div>
     </div>

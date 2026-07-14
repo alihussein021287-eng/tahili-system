@@ -6,7 +6,7 @@ import { getOrg } from "@/lib/org";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { addCenter, addInjuryType, addDistrict, addFormation,
-  addRank, deleteRank, deleteCenter, deleteInjuryType, deleteFormation, deleteDistrict, saveOrg, saveRetention, saveExpenseApprovalLevels, setMaintenanceMode, addBranch, deleteBranch, toggleBranch, addMobilityAid, deleteMobilityAid, addProstheticType, deleteProstheticType } from "./actions";
+  addRank, deleteRank, deleteCenter, deleteInjuryType, deleteFormation, deleteDistrict, saveOrg, saveRetention, saveExpenseApprovalLevels, saveAdminConfig, setMaintenanceMode, addBranch, deleteBranch, toggleBranch, addMobilityAid, deleteMobilityAid, addProstheticType, deleteProstheticType } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,8 @@ export default async function Settings() {
   const session = await getSession();
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   const maint = await maintenanceOn();
-  const retention = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, loginLogRetentionDays: true, expenseApprovalLevels: true } });
+  const retention = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, loginLogRetentionDays: true, expenseApprovalLevels: true, adminConfig: true } });
+  const cfg = (retention?.adminConfig ?? {}) as Record<string, any>;
   const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks] = await Promise.all([
     prisma.branch.findMany({ include: { _count: { select: { users: true, patients: true } } }, orderBy: [{ isActive: "desc" }, { name: "asc" }] }),
     prisma.mobilityAid.findMany({ orderBy: { name: "asc" } }),
@@ -31,6 +32,25 @@ export default async function Settings() {
   return (
     <div className="space-y-6">
       <PageHeader title="الإعدادات" subtitle="هوية المركز والقوائم الثابتة" icon="🛠" />
+      <nav className="flex gap-2 overflow-x-auto rounded-lg border bg-white p-2 text-sm" aria-label="أقسام الإعدادات">
+        {["هوية النظام", "الدوام والمواعيد", "العلاج والمراكز", "الأمان والجلسات", "الإشعارات", "الملفات والطباعة", "النسخ والاحتفاظ", "القوائم والفروع"].map((x) => <a key={x} href={`#${x}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{x}</a>)}
+      </nav>
+
+      {isAdmin && <form id="الدوام والمواعيد" action={saveAdminConfig} className="card grid gap-4 p-5 md:grid-cols-3">
+        <div className="md:col-span-3"><h2 className="font-semibold text-gray-800">سياسات التشغيل والعلاج والأمان</h2><p className="text-sm text-gray-500">قيم افتراضية مركزية مع تحقق خادمي وسجل للقيمة السابقة والجديدة.</p></div>
+        <label className="label">المنطقة الزمنية<Combobox name="timezone" allowFree={false} defaultValue={cfg.timezone ?? "Asia/Baghdad"} options={[{value:"Asia/Baghdad",label:"بغداد"},{value:"UTC",label:"UTC"}]} /></label>
+        <label className="label">اللغة<Combobox name="locale" allowFree={false} defaultValue={cfg.locale ?? "ar-IQ"} options={[{value:"ar-IQ",label:"العربية - العراق"},{value:"en-US",label:"English"}]} /></label>
+        <label className="label">تنسيق التاريخ<input name="dateFormat" className="input" defaultValue={cfg.dateFormat ?? "yyyy/MM/dd"} /></label>
+        <div className="md:col-span-3"><span className="label">أيام الدوام</span><div className="flex flex-wrap gap-3">{["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"].map((d,i)=><label key={d} className="text-sm"><input type="checkbox" name="workDays" value={i} defaultChecked={(cfg.workDays ?? [0,1,2,3,4]).includes(String(i))} /> {d}</label>)}</div></div>
+        <label className="label">بداية الدوام<input type="time" name="workStart" className="input" defaultValue={cfg.workStart ?? "08:00"} /></label>
+        <label className="label">نهاية الدوام<input type="time" name="workEnd" className="input" defaultValue={cfg.workEnd ?? "15:00"} /></label>
+        <label className="label">العطل الرسمية<input name="holidays" className="input" defaultValue={cfg.holidays ?? ""} placeholder="2026-01-01, 2026-..." /></label>
+        {[['appointmentMinutes','مدة الموعد الافتراضية',30],['defaultSessions','عدد الجلسات الافتراضي',10],['defaultPlanDays','مدة الخطة الافتراضية',30],['evaluationEvery','دورية التقييم الافتراضية',5],['weakImprovementThreshold','تنبيه ضعف التحسن %',20],['loginAttempts','محاولات الدخول',5],['lockMinutes','مدة قفل الحساب',15],['sessionMinutes','مدة الجلسة',480],['maxUploadMb','أقصى رفع (MB)',10],['backupRetentionDays','احتفاظ النسخ (يوم)',30]].map(([key,label,def])=><label key={String(key)} className="label">{label}<input type="number" name={String(key)} className="input" defaultValue={cfg[String(key)] ?? def} /></label>)}
+        <label className="label">أنواع الملفات<input name="fileTypes" className="input" defaultValue={(cfg.fileTypes ?? ['pdf','jpg','jpeg','png']).join(',')} /></label>
+        <label className="label">بادئة الملفات<input name="fileNumberPrefix" className="input" defaultValue={cfg.fileNumberPrefix ?? "PAT"} /></label>
+        <label className="label">بادئة التقارير<input name="reportNumberPrefix" className="input" defaultValue={cfg.reportNumberPrefix ?? "REP"} /></label>
+        <div className="md:col-span-3"><button className="btn-primary">حفظ سياسات النظام</button></div>
+      </form>}
 
       {isAdmin && (
         <div className={`card border p-5 ${maint ? "border-red-300 bg-red-50" : "border-gray-200"}`}>

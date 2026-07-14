@@ -1465,6 +1465,7 @@ model OrgSetting {
   officialAddress       String? // العنوان (الفوتر)
   officialPhone         String? // الهاتف (الفوتر)
   officialToOffice      String? // جهة المخاطبة (الى / مكتب...)
+  adminConfig           Json      @default("{}")
 }
 
 model MedDose {

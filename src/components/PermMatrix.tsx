@@ -4,7 +4,7 @@ import { Combobox } from "@/components/Combobox";
 import { useRouter } from "next/navigation";
 import { PERM_GROUPS, ROLE_DEFAULTS } from "@/lib/perms";
 import { ROLE_LABELS } from "@/lib/permissions";
-import { setRolePerm, setUserPerm, clearUserPerms, resetRolePerms } from "@/app/(app)/permissions/actions";
+import { setRolePerm, setUserPerm, clearUserPerms, resetRolePerms, copyUserPerms } from "@/app/(app)/permissions/actions";
 
 const ROLES = ["MANAGER", "DOCTOR", "HEAD_THERAPIST", "THERAPIST", "PHARMACIST", "ACCOUNTANT", "RECEPTION", "RESIDENT", "DATA_ENTRY", "LAB", "RADIOLOGY", "DRESSING", "PROSTHETICS", "VIEWER"];
 const SENSITIVE = new Set(["users.manage", "users.permissions", "settings.edit", "settings.backup", "reports.approve", "finance.delete", "patients.delete", "appointments.delete", "devices.delete", "tasks.delete", "audit.view"]);
@@ -21,6 +21,7 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
   const [role, setRole] = useState("MANAGER");
   const [userId, setUserId] = useState(users[0]?.id ?? "");
   const [pending, start] = useTransition();
+  const [query, setQuery] = useState("");
 
   const roleSet = new Set(roleSets[role] ?? []);
   const defaultRoleSet = new Set((ROLE_DEFAULTS as any)[role] ?? []);
@@ -28,12 +29,13 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
   const baseForUser = new Set(roleSets[selUser?.role ?? ""] ?? []);
   const ov = userOverrides[userId] ?? {};
 
-  const toggleRole = (key: string, checked: boolean) => start(async () => { await setRolePerm(role, key, checked); router.refresh(); });
+  const approveSensitive = (key: string, checked: boolean) => !SENSITIVE.has(key) || confirm(`${checked ? "منح" : "إزالة"} صلاحية حساسة: ${key}؟`);
+  const toggleRole = (key: string, checked: boolean) => { if (approveSensitive(key, checked)) start(async () => { await setRolePerm(role, key, checked); router.refresh(); }); };
   const resetRole = () => {
     if (!confirm(`إرجاع صلاحيات هذا الدور للقالب الافتراضي؟ سيتم حذف كل التخصيصات المحفوظة له.`)) return;
     start(async () => { await resetRolePerms(role); router.refresh(); });
   };
-  const toggleUser = (key: string, checked: boolean) => start(async () => { await setUserPerm(userId, key, checked); router.refresh(); });
+  const toggleUser = (key: string, checked: boolean) => { if (approveSensitive(key, checked)) start(async () => { await setUserPerm(userId, key, checked); router.refresh(); }); };
   const resetUser = () => start(async () => { await clearUserPerms(userId); router.refresh(); });
 
   return (
@@ -43,6 +45,7 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
         <button onClick={() => setTab("users")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === "users" ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-600"}`}>استثناءات المستخدمين</button>
         {pending && <span className="self-center text-xs text-gray-400">يحفظ...</span>}
       </div>
+      <input className="input max-w-lg" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="بحث في المجموعات والصلاحيات والمفاتيح" />
 
       {tab === "roles" && (
         <>
@@ -65,7 +68,7 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
             <div className="card p-3"><div className="text-xl font-bold text-brand-700">{defaultRoleSet.size}</div><div className="text-xs text-gray-500">قالب الدور</div></div>
             <div className="card p-3"><div className="text-xl font-bold text-amber-700">{[...SENSITIVE].filter((k) => roleSet.has(k)).length}</div><div className="text-xs text-gray-500">صلاحيات حساسة</div></div>
           </div>
-          <Groups checkedOf={(k) => roleSet.has(k)} onToggle={toggleRole} baselineOf={(k) => defaultRoleSet.has(k)} />
+          <Groups query={query} checkedOf={(k) => roleSet.has(k)} onToggle={toggleRole} baselineOf={(k) => defaultRoleSet.has(k)} />
         </>
       )}
 
@@ -76,6 +79,11 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
             <button onClick={() => { if (confirm("حذف كل استثناءات هذا المستخدم والعودة لافتراضي دوره؟")) resetUser(); }} className="btn-ghost text-sm">إرجاع لافتراضي الدور</button>
             <span className="text-xs text-gray-400">العلامة الزرقاء = استثناء خاص بهذا المستخدم</span>
           </div>
+          <form action={(fd) => start(async()=>{ await copyUserPerms(userId, fd); router.refresh(); })} className="card grid gap-2 p-3 md:grid-cols-3">
+            <Combobox name="sourceUserId" allowFree={false} placeholder="نسخ من مستخدم" options={users.filter(u=>u.id!==userId).map(u=>({value:u.id,label:u.fullName}))} />
+            <input name="confirm" className="input" placeholder="اكتب: نسخ الصلاحيات" />
+            <button className="btn-primary">نسخ بعد التأكيد</button>
+          </form>
           {selUser && (
             <div className="grid grid-cols-3 gap-3">
               <div className="card p-3"><div className="text-xl font-bold text-gray-800">{baseForUser.size}</div><div className="text-xs text-gray-500">افتراضي الدور</div></div>
@@ -84,6 +92,7 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
             </div>
           )}
           <Groups
+            query={query}
             checkedOf={(k) => (ov[k] !== undefined ? ov[k] : baseForUser.has(k))}
             overriddenOf={(k) => ov[k] !== undefined}
             onToggle={toggleUser}
@@ -94,10 +103,12 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
   );
 }
 
-function Groups({ checkedOf, onToggle, overriddenOf, baselineOf }: { checkedOf: (k: string) => boolean; onToggle: (k: string, c: boolean) => void; overriddenOf?: (k: string) => boolean; baselineOf?: (k: string) => boolean }) {
+function Groups({ checkedOf, onToggle, overriddenOf, baselineOf, query = "" }: { checkedOf: (k: string) => boolean; onToggle: (k: string, c: boolean) => void; overriddenOf?: (k: string) => boolean; baselineOf?: (k: string) => boolean; query?: string }) {
+  const q = query.trim().toLowerCase();
+  const groups = PERM_GROUPS.map(g => ({ ...g, items: g.items.filter(it => !q || g.title.includes(q) || it.label.includes(q) || it.key.toLowerCase().includes(q)) })).filter(g => g.items.length);
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {PERM_GROUPS.map((g) => (
+      {groups.map((g) => (
         <div key={g.section} className="card p-4">
           <div className="mb-2 flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
             <div className="font-semibold text-gray-700">{g.title}</div>

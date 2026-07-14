@@ -46,6 +46,17 @@ export async function runBackup(prefix = "backup"): Promise<string> {
   return name;
 }
 
+export function verifyBackup(name: string) {
+  const base = path.basename(name);
+  const file = path.join(BACKUP_DIR, base);
+  if (!base.endsWith(".sql") || !fs.existsSync(file)) return { ok: false, detail: "ملف النسخة غير موجود أو نوعه غير مدعوم" };
+  const stat = fs.statSync(file);
+  if (stat.size < 1024) return { ok: false, detail: "حجم النسخة أصغر من المتوقع" };
+  const sample = fs.readFileSync(file, { encoding: "utf8", flag: "r" }).slice(0, 65536);
+  const ok = sample.includes("PostgreSQL database dump") && sample.includes("SET");
+  return { ok, detail: ok ? `بنية SQL سليمة مبدئياً (${stat.size} بايت)` : "لم تُكتشف ترويسة pg_dump السليمة" };
+}
+
 export async function restoreBackup(name: string): Promise<void> {
   const base = path.basename(name);
   if (!base.endsWith(".sql")) throw new Error("الاستعادة من الواجهة تقبل ملفات SQL غير المضغوطة فقط");

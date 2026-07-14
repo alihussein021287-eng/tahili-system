@@ -5,6 +5,7 @@ import { getReadinessChecks, type ReadinessCheck } from "@/lib/readiness";
 import { getBackupOverview } from "@/lib/backup";
 import { fmtDateTime } from "@/lib/labels";
 import Link from "next/link";
+import { getSystemStatus } from "@/lib/system-status";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function Readiness() {
   const last24h = new Date(now.getTime() - 24 * 3600000);
   const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
   const backupOverview = getBackupOverview();
+  const systemStatus = await getSystemStatus();
 
   const [systemChecks, incompletePatients, devicesDue, rxPending, expiringSoon, lowStock, pendingLeaves, urgentTasks, admissions, officialApproval, org, failedLogins24h, successLogins24h, recentAudits] = await Promise.all([
     getReadinessChecks(),
@@ -95,6 +97,16 @@ export default async function Readiness() {
   return (
     <div className="space-y-5">
       <PageHeader title="جاهزية النظام" subtitle="فحص بنية التشغيل والبيانات المعلّقة" icon="✅" />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-3 text-sm">
+        <div>آخر فحص: {new Date(systemStatus.checkedAt).toLocaleString("ar-IQ")} · commit: <span className="font-mono">{systemStatus.commit}</span> · image: <span className="font-mono">{systemStatus.image}</span></div>
+        <div className="flex gap-2"><Link href="/readiness" className="btn-ghost">إعادة الفحص</Link><a href="/api/readiness/report" className="btn-primary">تنزيل تقرير الجاهزية</a></div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <HealthCard title="migrations" value={systemStatus.migrations.pendingOrFailed ? "غير متطابقة" : "متطابقة"} detail={`${systemStatus.migrations.count} · ${systemStatus.migrations.latest}`} tone={systemStatus.migrations.pendingOrFailed ? "fail" : "ok"} />
+        <HealthCard title="مساحة القرص" value={`${Math.round(systemStatus.disk.free / 1073741824)} GB متاح`} detail={`من ${Math.round(systemStatus.disk.total / 1073741824)} GB`} tone={systemStatus.disk.free / systemStatus.disk.total < .1 ? "fail" : "ok"} />
+        <HealthCard title="الذاكرة" value={`${Math.round(systemStatus.memory.free / 1048576)} MB متاح`} detail={`وقت التشغيل ${Math.round(systemStatus.uptimeSeconds / 60)} دقيقة`} tone="neutral" />
+        <HealthCard title="الخدمات" value="app + PostgreSQL" detail={`MinIO: ${systemStatus.services.minio} · Caddy: ${systemStatus.services.caddy}`} tone="neutral" />
+      </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <HealthCard title="قاعدة البيانات" value={dbCheck?.status === "ok" ? "متصلة" : "تحتاج متابعة"} detail={dbCheck?.detail ?? "غير مفحوصة"} tone={dbCheck?.status === "ok" ? "ok" : "fail"} />

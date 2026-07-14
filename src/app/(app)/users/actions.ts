@@ -11,10 +11,31 @@ import { userCreateSchema, userUpdateSchema, parseOrThrow } from "@/lib/validate
 import { assertCanApplyAdminChange } from "@/lib/admin-security";
 import { incrementAuthVersion, incrementAuthVersionIf } from "@/lib/auth-version";
 import { initialCredentialError } from "@/lib/account-activation";
+import { userDeletionBlockers } from "@/lib/user-deletion";
 
 async function requireAdmin() {
   const s = await requireSession();
   if (!canManageUsers((s?.user as any)?.role)) throw new Error("غير مصرّح");
+}
+
+export async function deleteUnusedUser(id: string, fd: FormData) {
+  const session = await requireSession();
+  if (!canManageUsers((session?.user as any)?.role)) throw new Error("غير مصرّح");
+  if ((session?.user as any)?.id === id) throw new Error("لا يمكن حذف حسابك الحالي");
+  if (fd.get("confirm")?.toString().trim() !== "حذف الحساب") throw new Error("اكتب «حذف الحساب» للتأكيد");
+  await prisma.$transaction(async (tx) => {
+    const target = await tx.user.findUniqueOrThrow({ where: { id }, select: { role: true, isActive: true } });
+    const activeAdminCount = await tx.user.count({ where: { role: "ADMIN", isActive: true } });
+    assertCanApplyAdminChange(activeAdminCount, target, { ...target, isActive: false });
+    const blockers = await userDeletionBlockers(tx as any, id);
+    if (blockers.length) {
+      const total = blockers.reduce((sum, item) => sum + item.count, 0);
+      throw new Error(`لا يمكن حذف الحساب لارتباطه بـ ${total} سجل. عطّل الحساب للحفاظ على تاريخ الأعمال.`);
+    }
+    await tx.user.delete({ where: { id } });
+  }, { isolationLevel: "Serializable" });
+  await logAudit({ action: "DELETE", tableName: "users", recordId: id, newValue: { safelyDeleted: true } });
+  revalidatePath("/users");
 }
 
 export async function createUser(fd: FormData) {

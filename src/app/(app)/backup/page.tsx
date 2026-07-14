@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { getBackupOverview, type BackupFile } from "@/lib/backup";
 import { fmtDateTime } from "@/lib/labels";
-import { createBackup, deleteBackup, restoreBackupAction, toggleAutoBackup } from "./actions";
+import { createBackup, deleteBackup, restoreBackupAction, testBackupIntegrity, toggleAutoBackup } from "./actions";
+import { maintenanceOn } from "@/lib/maintenance";
+import { verifyBackup } from "@/lib/backup";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -30,9 +32,10 @@ export default async function Backup({ searchParams }: { searchParams: Promise<{
   const s = await requireSession();
   if ((s?.user as any)?.role !== "ADMIN") notFound();
   const sp = await searchParams;
-  const [overview, org] = await Promise.all([
+  const [overview, org, maint] = await Promise.all([
     Promise.resolve(getBackupOverview()),
     prisma.orgSetting.findUnique({ where: { id: 1 }, select: { autoBackup: true, lastAutoBackupAt: true } }),
+    maintenanceOn(),
   ]);
   const backups = overview.app;
   const serverBackups = overview.server.slice(0, 8);
@@ -63,7 +66,7 @@ export default async function Backup({ searchParams }: { searchParams: Promise<{
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
         <div className="font-semibold">تحذير الاستعادة</div>
         <div className="mt-1 text-xs leading-6">
-          الاستعادة من الواجهة تستبدل قاعدة البيانات الحالية فقط، ولا تستعيد مرفقات uploads. نسخ المرفقات تُنشأ عبر <span className="font-mono">backup.sh</span> داخل <span className="font-mono">/tahili-system/backups</span> وتُستعاد يدوياً حسب توثيق التشغيل.
+          الاستعادة {maint ? "متاحة في وضع الصيانة" : "محظورة حالياً لأن وضع الصيانة متوقف"}. ينشئ النظام نسخة أمان تلقائية قبل الاستعادة. اختبار السلامة لا يغير قاعدة البيانات العاملة.
         </div>
       </div>
 
@@ -86,9 +89,11 @@ export default async function Backup({ searchParams }: { searchParams: Promise<{
                 <td className="p-3 text-gray-600">{fmtSize(b.size)}</td>
                 <td className="p-3">
                   <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded px-2 py-1 text-xs ${verifyBackup(b.name).ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{verifyBackup(b.name).ok ? 'سلامة ناجحة' : 'فحص مطلوب'}</span>
+                    <form action={testBackupIntegrity.bind(null, b.name)}><button className="rounded bg-sky-50 px-3 py-1 text-xs text-sky-700">اختبار معزول</button></form>
                     <a href={`/api/backup-download?f=${encodeURIComponent(b.name)}`} className="rounded bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100">⬇ تنزيل</a>
                     <details className="relative">
-                      <summary className="cursor-pointer rounded bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">استعادة…</summary>
+                      <summary className={`cursor-pointer rounded px-3 py-1 text-xs font-medium ${maint ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>استعادة…</summary>
                       <form action={restoreBackupAction.bind(null, b.name)} className="mt-1 flex items-center gap-1">
                         <input name="confirm" className="input !py-1 text-xs" placeholder="اكتب: استعادة" autoComplete="off" />
                         <button className="shrink-0 rounded bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700" type="submit">تنفيذ</button>

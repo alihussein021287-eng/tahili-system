@@ -2,7 +2,8 @@
 import { requireSession, assertAdminDelete } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
-import { runBackup, restoreBackup as doRestore, BACKUP_DIR, backupErrorMessage } from "@/lib/backup";
+import { runBackup, restoreBackup as doRestore, verifyBackup, BACKUP_DIR, backupErrorMessage } from "@/lib/backup";
+import { maintenanceOn } from "@/lib/maintenance";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import fs from "fs";
@@ -17,9 +18,12 @@ async function assertAdmin() {
 export async function createBackup() {
   await assertAdmin();
   try {
+    const started = Date.now();
     const name = await runBackup("manual");
-    await logAudit({ action: "CREATE", tableName: "backups", recordId: name });
-    redirect("/backup?msg=" + encodeURIComponent(`تم إنشاء النسخة: ${name}`));
+    const integrity = verifyBackup(name);
+    await logAudit({ action: "CREATE", tableName: "backups", recordId: name, newValue: { integrity, durationMs: Date.now() - started } });
+    if (!integrity.ok) throw new Error(integrity.detail);
+    redirect("/backup?msg=" + encodeURIComponent(`تم إنشاء وفحص النسخة: ${name} خلال ${Date.now() - started}ms`));
   } catch (e: any) {
     if (e?.digest?.startsWith?.("NEXT_REDIRECT")) throw e;
     redirect("/backup?err=" + encodeURIComponent("فشل النسخ: " + backupErrorMessage(e)));
@@ -38,15 +42,26 @@ export async function deleteBackup(name: string, fd: FormData) {
 
 export async function restoreBackupAction(name: string, fd: FormData) {
   await assertAdmin();
+  if (!(await maintenanceOn())) redirect("/backup?err=" + encodeURIComponent("الاستعادة محظورة خارج وضع الصيانة"));
   if (fd.get("confirm")?.toString().trim() !== "استعادة") redirect("/backup?err=" + encodeURIComponent("اكتب «استعادة» بالضبط للتأكيد"));
   try {
+    const integrity = verifyBackup(name);
+    if (!integrity.ok) throw new Error(integrity.detail);
+    const safetyBackup = await runBackup("pre-restore");
     await doRestore(name);
-    await logAudit({ action: "UPDATE", tableName: "backups", recordId: `restore:${name}` });
+    await logAudit({ action: "UPDATE", tableName: "backups", recordId: `restore:${name}`, newValue: { safetyBackup } });
     redirect("/backup?msg=" + encodeURIComponent("تمت الاستعادة بنجاح — تحقّق من البيانات"));
   } catch (e: any) {
     if (e?.digest?.startsWith?.("NEXT_REDIRECT")) throw e;
     redirect("/backup?err=" + encodeURIComponent("فشلت الاستعادة: " + backupErrorMessage(e)));
   }
+}
+
+export async function testBackupIntegrity(name: string) {
+  await assertAdmin();
+  const result = verifyBackup(name);
+  await logAudit({ action: "UPDATE", tableName: "backups", recordId: `isolated-test:${name}`, newValue: result });
+  redirect(`/backup?${result.ok ? "msg" : "err"}=` + encodeURIComponent(`اختبار معزول دون استعادة: ${result.detail}`));
 }
 
 export async function toggleAutoBackup(on: boolean) {

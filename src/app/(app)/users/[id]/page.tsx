@@ -6,6 +6,7 @@ import { canManageUsers, ROLE_LABELS } from "@/lib/permissions";
 import { loadPerms } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
 import { UserTabs } from "@/components/UserTabs";
+import { userDeletionBlockers } from "@/lib/user-deletion";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +20,13 @@ export default async function UserDetail({ params, searchParams }: { params: Pro
   if (!user) notFound();
 
   const isAdmin = user.role === "ADMIN";
-  const [effectiveSet, overrides, activity, logins, branches] = await Promise.all([
+  const [effectiveSet, overrides, activity, logins, branches, deletionBlockers] = await Promise.all([
     loadPerms(user.id, user.role),
     prisma.userPermission.findMany({ where: { userId: id }, select: { permKey: true, allowed: true } }),
     prisma.auditLog.findMany({ where: { userId: id }, orderBy: { createdAt: "desc" }, take: 12 }),
     prisma.loginLog.findMany({ where: { userId: id }, orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.branch.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    userDeletionBlockers(prisma, id),
   ]);
   const ov: Record<string, boolean> = {};
   for (const o of overrides) ov[o.permKey] = o.allowed;
@@ -49,6 +51,8 @@ export default async function UserDetail({ params, searchParams }: { params: Pro
         logins={JSON.parse(JSON.stringify(logins))}
         branches={JSON.parse(JSON.stringify(branches))}
         initialTab={sp.tab}
+        deletionBlockers={deletionBlockers}
+        isCurrentUser={(session?.user as any)?.id === id}
       />
     </div>
   );
