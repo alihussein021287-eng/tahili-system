@@ -9,7 +9,10 @@ export async function addToQueue(fd: FormData) {
   await assertPerm("queue.manage");
   const patientId = fd.get("patientId")?.toString();
   if (!patientId) redirect("/queue?saved=" + encodeURIComponent("اختر المريض"));
-  const created = await prisma.queueEntry.create({ data: { patientId: patientId!, hall: fd.get("hall")?.toString() || null, note: fd.get("note")?.toString() || null } });
+  const centerIdRaw = Number(fd.get("centerId"));
+  const centerId = Number.isInteger(centerIdRaw) && centerIdRaw > 0 ? centerIdRaw : null;
+  if (centerId && !(await prisma.center.count({ where: { id: centerId } }))) throw new Error("المركز غير صالح");
+  const created = await prisma.queueEntry.create({ data: { patientId: patientId!, centerId, hall: fd.get("hall")?.toString() || null, note: fd.get("note")?.toString() || null } });
   await logAudit({ action: "CREATE", tableName: "queue_entries", recordId: created.id });
   revalidatePath("/queue");
 }

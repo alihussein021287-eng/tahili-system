@@ -26,13 +26,14 @@ export default async function Queue() {
   const canDeleteQueue = (session?.user as any)?.role === "ADMIN";
   const startToday = new Date(new Date().toDateString());
 
-  const [entries, patients] = await Promise.all([
+  const [entries, patients, centers] = await Promise.all([
     prisma.queueEntry.findMany({
       where: { createdAt: { gte: startToday } },
       include: { patient: { include: { careStages: { where: { status: { in: ["WAITING", "IN_PROGRESS"] } }, orderBy: { sequence: "asc" }, take: 1 } } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.patient.findMany({ where: { archivedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
+    prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
   return (
@@ -54,6 +55,10 @@ export default async function Queue() {
           <div className="min-w-[210px]">
             <label className="label">القاعة</label>
 <Combobox name="hall" required allowFree={false} placeholder="اختر القاعة" options={HALLS as any} />
+          </div>
+          <div className="min-w-[210px]">
+            <label className="label">المركز</label>
+<Combobox name="centerId" allowFree={false} placeholder="كل المراكز" options={centers.map((center) => ({ value: String(center.id), label: center.name }))} />
           </div>
           <div className="flex-1 min-w-[160px]"><label className="label">ملاحظة</label><input name="note" className="input" placeholder="اختياري" /></div>
           <button className="btn-primary" type="submit">➕ للطابور</button>

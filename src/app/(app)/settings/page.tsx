@@ -5,6 +5,7 @@ import { maintenanceOn } from "@/lib/maintenance";
 import { getOrg } from "@/lib/org";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
+import { DisplaySettings } from "./DisplaySettings";
 import { addCenter, addInjuryType, addDistrict, addFormation,
   addRank, deleteRank, deleteCenter, deleteInjuryType, deleteFormation, deleteDistrict, saveOrg, saveRetention, saveExpenseApprovalLevels, saveAdminConfig, setMaintenanceMode, addBranch, deleteBranch, toggleBranch, addMobilityAid, deleteMobilityAid, addProstheticType, deleteProstheticType } from "./actions";
 
@@ -19,7 +20,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const messages = await searchParams;
   const retention = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, loginLogRetentionDays: true, expenseApprovalLevels: true, adminConfig: true } });
   const cfg = (retention?.adminConfig ?? {}) as Record<string, any>;
-  const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks] = await Promise.all([
+  const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks, displayDevices, therapyHalls] = await Promise.all([
     prisma.branch.findMany({ include: { _count: { select: { users: true, patients: true } } }, orderBy: [{ isActive: "desc" }, { name: "asc" }] }),
     prisma.mobilityAid.findMany({ orderBy: { name: "asc" } }),
     prisma.prostheticType.findMany({ orderBy: { name: "asc" } }),
@@ -28,6 +29,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
     prisma.governorate.findMany({ include: { districts: { orderBy: { name: "asc" } } }, orderBy: { name: "asc" } }),
     prisma.formation.findMany({ orderBy: { name: "asc" } }),
     prisma.rank.findMany({ orderBy: { name: "asc" } }),
+    isAdmin ? prisma.displayDevice.findMany({ include: { center: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
+    isAdmin ? prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }) : Promise.resolve([]),
   ]);
 
   return (
@@ -36,8 +39,10 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {messages.saved && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{messages.saved}</div>}
       {messages.error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{messages.error}</div>}
       <nav className="flex gap-2 overflow-x-auto rounded-lg border bg-white p-2 text-sm" aria-label="أقسام الإعدادات">
-        {[["هوية النظام","هوية النظام"],["الدوام والمواعيد","سياسات النظام"],["العلاج والمراكز","سياسات النظام"],["الأمان والجلسات","الأمان والجلسات"],["الإشعارات","سياسات النظام"],["الملفات والطباعة","سياسات النظام"],["النسخ والاحتفاظ","النسخ والاحتفاظ"],["القوائم والفروع","القوائم والفروع"]].map(([label,target]) => <a key={label} href={`#${target}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{label}</a>)}
+        {[["هوية النظام","هوية النظام"],["شاشات الانتظار","شاشات الانتظار"],["الدوام والمواعيد","سياسات النظام"],["العلاج والمراكز","سياسات النظام"],["الأمان والجلسات","الأمان والجلسات"],["الإشعارات","سياسات النظام"],["الملفات والطباعة","سياسات النظام"],["النسخ والاحتفاظ","النسخ والاحتفاظ"],["القوائم والفروع","القوائم والفروع"]].map(([label,target]) => <a key={label} href={`#${target}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{label}</a>)}
       </nav>
+
+      {isAdmin && <DisplaySettings devices={JSON.parse(JSON.stringify(displayDevices))} centers={centers} halls={therapyHalls} />}
 
       {isAdmin && <form id="سياسات النظام" action={saveAdminConfig} className="card grid gap-4 p-5 md:grid-cols-3">
         <div className="md:col-span-3"><h2 className="font-semibold text-gray-800">سياسات التشغيل والعلاج والأمان</h2><p className="text-sm text-gray-500">قيم افتراضية مركزية مع تحقق خادمي وسجل للقيمة السابقة والجديدة.</p></div>

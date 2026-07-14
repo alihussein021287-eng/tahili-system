@@ -408,6 +408,8 @@ model Center {
   programs         CenterProgram[]
   centerSessions   CenterSession[]
   treatmentPlans   TreatmentPlan[]
+  queueEntries     QueueEntry[]
+  displayDevices   DisplayDevice[]
 
   @@map("centers")
 }
@@ -1173,6 +1175,19 @@ enum QueueStatus {
   DONE
 }
 
+enum DisplayDeviceStatus {
+  UNPAIRED
+  PAIRING
+  ACTIVE
+  REVOKED
+}
+
+enum DisplayNameMode {
+  FULL
+  INITIALS
+  QUEUE_NUMBER
+}
+
 enum PlanStatus {
   ACTIVE
   COMPLETED
@@ -1193,10 +1208,36 @@ model QueueEntry {
   note      String?
   createdAt DateTime    @default(now())
   calledAt  DateTime?
+  centerId  Int?
+  center    Center?     @relation(fields: [centerId], references: [id], onDelete: SetNull)
   updatedAt DateTime    @updatedAt
 
   @@index([status])
   @@index([createdAt])
+  @@index([centerId, createdAt])
+}
+
+model DisplayDevice {
+  id                 String              @id @default(cuid())
+  name               String
+  centerId           Int?
+  center             Center?             @relation(fields: [centerId], references: [id], onDelete: SetNull)
+  halls              String[]            @default([])
+  status             DisplayDeviceStatus @default(UNPAIRED)
+  nameMode           DisplayNameMode     @default(INITIALS)
+  callDisplaySeconds Int                 @default(45)
+  credentialHash     String?             @unique
+  pairedAt           DateTime?
+  pairingCodeHash    String?             @unique
+  pairingExpiresAt   DateTime?
+  lastSeenAt         DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([centerId, status])
+  @@index([status, lastSeenAt])
+  @@map("display_devices")
 }
 
 model TreatmentPlan {
