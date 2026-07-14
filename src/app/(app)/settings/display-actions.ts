@@ -59,7 +59,6 @@ export async function generateDisplayPairingCode(id: string, _: PairCodeState): 
   });
   if (updated.count !== 1) return { error: "الشاشة غير موجودة" };
   await logAudit({ userId, action: "UPDATE", tableName: "display_devices", recordId: id, newValue: { status: "PAIRING", pairingExpiresAt: expiresAt } });
-  revalidatePath("/settings");
   return { code, expiresAt: expiresAt.toISOString() };
 }
 
