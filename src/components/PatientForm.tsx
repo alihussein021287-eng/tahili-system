@@ -83,12 +83,6 @@ export function PatientForm({
           <Field label="الحركة" name="mobility" defaultValue={p.mobility} />
           <Combobox name="mobilityAid" label="مساعد الحركة" allowFree options={mobilityAids.map((x: any) => x.name)} defaultValue={p.mobilityAid ?? ""} placeholder="اكتب أو اختر (كرسي كهرباء...)" />
           <Combobox name="prosthetic" label="طرف صناعي" allowFree options={prostheticTypes.map((x: any) => x.name)} defaultValue={p.prosthetic ?? ""} placeholder="اكتب أو اختر (طرف سفلي...)" />
-          <Field label="جهة الإرسال" name="referralSource" defaultValue={p.referralSource} />
-          <Field label="رقم الكتاب" name="referralBookNo" defaultValue={p.referralBookNo} />
-          <div>
-            <label className="label">تاريخ الكتاب</label>
-            <input className="input" name="referralBookDate" type="date" defaultValue={p.referralBookDate ? new Date(p.referralBookDate).toISOString().slice(0, 10) : ""}  autoComplete="off" />
-          </div>
           <Combobox name="referredToCenter" label="المركز المُحال له" options={centers.map((c: any) => c.name)} defaultValue={p.referredToCenter ?? ""} />
           <Select label="الحالة" name="status" options={PATIENT_STATUS} defaultValue={p.status} />
         </div>

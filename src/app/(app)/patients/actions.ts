@@ -51,9 +51,7 @@ function parsePatient(fd: FormData) {
     injuryCause: s("injuryCause"), mobility: s("mobility"),
     injuryDate: s("injuryDate") ? new Date(s("injuryDate")!) : null,
     mobilityAid: s("mobilityAid"), prosthetic: s("prosthetic"),
-    formationText: s("formationText"), referralSource: s("referralSource"),
-    referralBookNo: s("referralBookNo"), referredToCenter: s("referredToCenter"),
-    referralBookDate: s("referralBookDate") ? new Date(s("referralBookDate")!) : null,
+    formationText: s("formationText"), referredToCenter: s("referredToCenter"),
     governorateId: n("governorateId"), branchId: n("branchId"), districtId: n("districtId"), injuryTypeId: n("injuryTypeId"), formationId: n("formationId"),
     status: (s("status") as any) || "ACTIVE", notes: s("notes"),
   };
