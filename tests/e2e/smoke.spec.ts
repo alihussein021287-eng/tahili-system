@@ -45,7 +45,9 @@ test("كلمة سر خاطئة ترجع رسالة واضحة ولا تدخل ا
 });
 
 test("المدير ينشئ حساباً مؤقتاً ثم يفعّله المستخدم وتفشل الكلمة المؤقتة", async ({ page, context }) => {
-  test.skip(!ACTIVATION_USER || !TEMPORARY_PASSWORD || !NEW_PASSWORD, "requires isolated activation credentials");
+  expect(ACTIVATION_USER, "ACTIVATION_E2E_USERNAME is required for this scenario").not.toBe("");
+  expect(TEMPORARY_PASSWORD, "ACTIVATION_E2E_TEMP_PASSWORD is required for this scenario").not.toBe("");
+  expect(NEW_PASSWORD, "ACTIVATION_E2E_NEW_PASSWORD is required for this scenario").not.toBe("");
 
   await login(page, USERNAME, PASSWORD);
   await page.goto("/users");

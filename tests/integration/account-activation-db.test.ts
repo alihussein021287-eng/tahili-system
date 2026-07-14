@@ -4,7 +4,6 @@ import bcrypt from "bcryptjs";
 import { randomBytes, randomUUID } from "node:crypto";
 import { activateAccount } from "@/app/login/actions";
 
-const run = process.env.AUTH_VERSION_INTEGRATION === "1" ? describe : describe.skip;
 const prisma = new PrismaClient();
 
 function credential() {
@@ -48,7 +47,7 @@ async function withActivationUser<T>(test: (fixture: {
   }
 }
 
-run("secure activation on PostgreSQL 16", () => {
+describe("secure activation on PostgreSQL 16", () => {
   afterAll(async () => prisma.$disconnect());
 
   it("rejects a wrong temporary password without changing the hash", async () => {

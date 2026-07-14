@@ -2,11 +2,10 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { incrementAuthVersion, incrementAuthVersionIf } from "@/lib/auth-version";
 
-const run = process.env.AUTH_VERSION_INTEGRATION === "1" ? describe : describe.skip;
 const prisma = new PrismaClient();
 const id = "auth-version-integration-user";
 
-run("authVersion on PostgreSQL 16", () => {
+describe("authVersion on PostgreSQL 16", () => {
   afterAll(async () => prisma.$disconnect());
   beforeEach(async () => {
     await prisma.user.deleteMany({ where: { id } });
