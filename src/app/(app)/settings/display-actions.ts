@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/access";
 import { generatePairingCode, hashPairingCode } from "@/lib/display-auth";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
+import { queueHallNames } from "@/lib/queue";
 
 async function requireAdmin() {
   const session = await requireSession();
@@ -19,7 +20,7 @@ async function readConfig(formData: FormData) {
   const centerIdRaw = Number(formData.get("centerId"));
   const centerId = Number.isInteger(centerIdRaw) && centerIdRaw > 0 ? centerIdRaw : null;
   if (centerId && !(await prisma.center.count({ where: { id: centerId } }))) throw new Error("المركز غير صالح");
-  const allowedHalls = new Set((await prisma.therapyHall.findMany({ where: { active: true }, select: { name: true } })).map((hall) => hall.name));
+  const allowedHalls = new Set(queueHallNames((await prisma.therapyHall.findMany({ where: { active: true }, select: { name: true } })).map((hall) => hall.name)));
   const halls = Array.from(new Set(formData.getAll("halls").map(String).filter((hall) => allowedHalls.has(hall)))).slice(0, 20);
   const seconds = Number(formData.get("callDisplaySeconds"));
   const callDisplaySeconds = Number.isInteger(seconds) && seconds >= 10 && seconds <= 300 ? seconds : 45;
@@ -68,5 +69,13 @@ export async function revokeDisplayDevice(id: string) {
     status: "REVOKED", credentialHash: null, pairingCodeHash: null, pairingExpiresAt: null, revokedAt: new Date(),
   } });
   await logAudit({ userId, action: "UPDATE", tableName: "display_devices", recordId: id, newValue: { status: "REVOKED" } });
+  revalidatePath("/settings");
+}
+
+export async function deleteDisplayDevice(id: string) {
+  const userId = await requireAdmin();
+  const deleted = await prisma.displayDevice.deleteMany({ where: { id } });
+  if (deleted.count !== 1) throw new Error("الشاشة غير موجودة");
+  await logAudit({ userId, action: "DELETE", tableName: "display_devices", recordId: id });
   revalidatePath("/settings");
 }

@@ -7,10 +7,10 @@ import Link from "next/link";
 import { fmtTime } from "@/lib/labels";
 import { addToQueue, setQueueStatus, removeQueue, clearDoneQueue } from "./actions";
 import { normalizeStationName } from "@/lib/stations";
+import { baghdadDayRange } from "@/lib/display-utils";
+import { queueHallNames } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
-
-const HALLS = ["قاعة التمارين الميكانيكية", "قاعة الأجهزة الفيزياوية", "قاعة العلاج المائي"];
 
 const SHARED_COLS = [
   { key: "CALLED", label: "تم الاستدعاء", clr: "border-sky-300", head: "bg-sky-100 text-sky-700", next: "IN_SESSION", nextLabel: "إدخال للجلسة" },
@@ -24,17 +24,19 @@ export default async function Queue() {
   const perms = await currentPerms();
   const editable = perms.has("queue.manage");
   const canDeleteQueue = (session?.user as any)?.role === "ADMIN";
-  const startToday = new Date(new Date().toDateString());
+  const { start: startToday, end: endToday } = baghdadDayRange(new Date());
 
-  const [entries, patients, centers] = await Promise.all([
+  const [entries, patients, centers, therapyHalls] = await Promise.all([
     prisma.queueEntry.findMany({
-      where: { createdAt: { gte: startToday } },
+      where: { createdAt: { gte: startToday, lt: endToday } },
       include: { patient: { include: { careStages: { where: { status: { in: ["WAITING", "IN_PROGRESS"] } }, orderBy: { sequence: "asc" }, take: 1 } } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.patient.findMany({ where: { archivedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
     prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { name: true } }),
   ]);
+  const halls = queueHallNames(therapyHalls.map((hall) => hall.name));
 
   return (
     <div className="space-y-5">
@@ -54,7 +56,7 @@ export default async function Queue() {
           </div>
           <div className="min-w-[210px]">
             <label className="label">القاعة</label>
-<Combobox name="hall" required allowFree={false} placeholder="اختر القاعة" options={HALLS as any} />
+<Combobox name="hall" required allowFree={false} placeholder="اختر القاعة" options={halls} />
           </div>
           <div className="min-w-[210px]">
             <label className="label">المركز</label>
@@ -67,7 +69,7 @@ export default async function Queue() {
 
       {/* الانتظار: مربع لكل قاعة */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {HALLS.map((hall) => {
+        {halls.map((hall) => {
           const list = entries.filter((e) => e.status === "WAITING" && e.hall === hall);
           return (
             <div key={hall} className="rounded-xl border-2 border-gray-300 bg-white">

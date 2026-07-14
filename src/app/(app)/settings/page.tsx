@@ -6,6 +6,7 @@ import { getOrg } from "@/lib/org";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { DisplaySettings } from "./DisplaySettings";
+import { queueHallNames } from "@/lib/queue";
 import { addCenter, addInjuryType, addDistrict, addFormation,
   addRank, deleteRank, deleteCenter, deleteInjuryType, deleteFormation, deleteDistrict, saveOrg, saveRetention, saveExpenseApprovalLevels, saveAdminConfig, setMaintenanceMode, addBranch, deleteBranch, toggleBranch, addMobilityAid, deleteMobilityAid, addProstheticType, deleteProstheticType } from "./actions";
 
@@ -42,7 +43,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         {[["هوية النظام","هوية النظام"],["شاشات الانتظار","شاشات الانتظار"],["الدوام والمواعيد","سياسات النظام"],["العلاج والمراكز","سياسات النظام"],["الأمان والجلسات","الأمان والجلسات"],["الإشعارات","سياسات النظام"],["الملفات والطباعة","سياسات النظام"],["النسخ والاحتفاظ","النسخ والاحتفاظ"],["القوائم والفروع","القوائم والفروع"]].map(([label,target]) => <a key={label} href={`#${target}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{label}</a>)}
       </nav>
 
-      {isAdmin && <DisplaySettings devices={JSON.parse(JSON.stringify(displayDevices))} centers={centers} halls={therapyHalls} />}
+      {isAdmin && <DisplaySettings devices={JSON.parse(JSON.stringify(displayDevices))} centers={centers} halls={queueHallNames(therapyHalls.map((hall) => hall.name))} />}
 
       {isAdmin && <form id="سياسات النظام" action={saveAdminConfig} className="card grid gap-4 p-5 md:grid-cols-3">
         <div className="md:col-span-3"><h2 className="font-semibold text-gray-800">سياسات التشغيل والعلاج والأمان</h2><p className="text-sm text-gray-500">قيم افتراضية مركزية مع تحقق خادمي وسجل للقيمة السابقة والجديدة.</p></div>
