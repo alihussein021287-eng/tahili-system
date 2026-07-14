@@ -27,6 +27,12 @@ function assertSameOrigin(request: NextRequest) {
   if (!origin && !referer && secFetchSite !== "same-origin") throw new Error("طلب رفع غير موثوق");
 }
 
+function safeUploadError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("Prisma") || message.includes("ConnectorError") || message.includes("Invalid `prisma")) return "تعذر رفع الملف أو فحصه";
+  return message || "تعذر رفع الملف";
+}
+
 export async function POST(request: NextRequest) {
   try {
     assertSameOrigin(request);
@@ -39,7 +45,6 @@ export async function POST(request: NextRequest) {
     for (const file of files) ids.push(await uploadCollaborationFileFromFile(file, formData));
     return Response.json({ ok: true, ids }, { headers: HEADERS });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "تعذر رفع الملف";
-    return Response.json({ error: message }, { status: 400, headers: HEADERS });
+    return Response.json({ error: safeUploadError(error) }, { status: 400, headers: HEADERS });
   }
 }

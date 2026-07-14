@@ -9,6 +9,10 @@ export type ScanResult = {
 const CLAMAV_HOST = process.env.CLAMAV_HOST || "clamav";
 const CLAMAV_PORT = Number(process.env.CLAMAV_PORT || 3310);
 
+function scanDetail(value: string) {
+  return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export async function scanBufferWithClamAv(buffer: Buffer): Promise<ScanResult> {
   if (!buffer.length) return { status: "FAILED", engine: "clamav", detail: "empty buffer" };
   return new Promise((resolve) => {
@@ -25,7 +29,7 @@ export async function scanBufferWithClamAv(buffer: Buffer): Promise<ScanResult> 
     socket.on("error", (error) => finish({ status: "PENDING_SCAN", engine: "clamav", detail: `scanner unavailable: ${error.message}` }));
     socket.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
     socket.on("end", () => {
-      const answer = Buffer.concat(chunks).toString("utf8");
+      const answer = scanDetail(Buffer.concat(chunks).toString("utf8"));
       if (answer.includes("FOUND")) finish({ status: "REJECTED", engine: "clamav", detail: answer.trim() });
       else if (answer.includes("OK")) finish({ status: "SAFE", engine: "clamav", detail: answer.trim() });
       else finish({ status: "PENDING_SCAN", engine: "clamav", detail: answer.trim() || "scanner unavailable: no response" });
