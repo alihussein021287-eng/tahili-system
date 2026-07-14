@@ -12,17 +12,22 @@ export default async function Workload() {
   await requirePerm("workload.view");
   const perms = await currentPerms();
   const canLogSession = perms.has("clinical.session");
+  const role = (session.user as any).role as string;
+  const userId = (session.user as any).id as string;
+  const centerIds = role === "ADMIN" ? [] : (await prisma.centerMembership.findMany({ where: { userId, role: "HEAD_THERAPIST", status: "ACTIVE" }, select: { centerId: true } })).map((membership) => membership.centerId);
+  const therapyScope: any = role === "ADMIN" ? {} : { centerId: { in: centerIds } };
+  const appointmentScope: any = role === "ADMIN" ? {} : { session: { centerId: { in: centerIds } } };
 
   const startToday = new Date(new Date().toDateString());
   const tomorrow = new Date(startToday.getTime() + 86400000);
 
   const [byTherapist, todayAppts, sessRows, apptByStatus, todayTherapyAppts] = await Promise.all([
-    prisma.therapySession.groupBy({ by: ["therapist"], _count: { _all: true }, _sum: { actualSessions: true, totalSessions: true } }),
-    prisma.appointment.findMany({ where: { scheduledAt: { gte: startToday, lt: tomorrow }, status: "SCHEDULED" }, select: { assignedTo: true } }),
-    prisma.therapySession.findMany({ select: { therapist: true, patientId: true, totalSessions: true, actualSessions: true, benefitRate: true } }),
-    prisma.appointment.groupBy({ by: ["assignedTo", "status"], _count: { _all: true } }),
+    prisma.therapySession.groupBy({ by: ["therapist"], where: therapyScope, _count: { _all: true }, _sum: { actualSessions: true, totalSessions: true } }),
+    prisma.appointment.findMany({ where: { ...appointmentScope, scheduledAt: { gte: startToday, lt: tomorrow }, status: "SCHEDULED" }, select: { assignedTo: true } }),
+    prisma.therapySession.findMany({ where: therapyScope, select: { therapist: true, patientId: true, totalSessions: true, actualSessions: true, benefitRate: true } }),
+    prisma.appointment.groupBy({ by: ["assignedTo", "status"], where: appointmentScope, _count: { _all: true } }),
     prisma.appointment.findMany({
-      where: { scheduledAt: { gte: startToday, lt: tomorrow }, sessionId: { not: null }, status: { in: ["SCHEDULED", "COMPLETED"] } },
+      where: { ...appointmentScope, scheduledAt: { gte: startToday, lt: tomorrow }, sessionId: { not: null }, status: { in: ["SCHEDULED", "COMPLETED"] } },
       include: { patient: { select: { id: true, fullName: true, fileNumber: true } }, session: { select: { therapyType: true, hall: true } } },
       orderBy: { scheduledAt: "asc" },
       take: 80,

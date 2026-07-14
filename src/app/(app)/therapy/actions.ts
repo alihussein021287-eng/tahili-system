@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { assertPerm, requireSession } from "@/lib/access";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { boundedSessionDates, expectedTreatmentEnd, positiveInt, recoveryPercent } from "@/lib/therapy-plan-rules";
 
 const DAY_MS = 86400000;
 
@@ -29,40 +30,59 @@ async function actor(permission: string) {
   return { id: (session.user as any).id as string, role: (session.user as any).role as string, name: session.user?.name || "" };
 }
 
+async function assertCenterManager(tx: any, who: { id: string; role: string }, centerId: number) {
+  if (who.role === "ADMIN") return;
+  const membership = await tx.centerMembership.findFirst({ where: { centerId, userId: who.id, role: "HEAD_THERAPIST", status: "ACTIVE" } });
+  if (!membership) throw new Error("لا يمكنك إدارة خطط مركز آخر");
+}
+
 export async function createPhysicalTherapyPlan(patientId: string, fd: FormData) {
   const who = await actor("therapy.plan.manage");
   const referralRequestId = fd.get("referralRequestId")?.toString() || "";
   const therapistId = fd.get("therapistId")?.toString() || "";
+  const specialistDoctorId = fd.get("specialistDoctorId")?.toString() || "";
   const hallId = Number(fd.get("hallId"));
-  const plannedSessions = Math.max(1, Math.min(60, Number(fd.get("plannedSessions")) || 1));
+  const plannedSessions = positiveInt(fd.get("plannedSessions"), "عدد الجلسات", 60);
+  const treatmentDays = positiveInt(fd.get("treatmentDays"), "عدد أيام العلاج", 365);
   const sessionTime = fd.get("sessionTime")?.toString() || "10:00";
   const startDate = new Date(fd.get("startDate")?.toString() || "");
   const weekdays = fd.getAll("weekdays").map(Number).filter((day) => day >= 0 && day <= 6);
-  if (!referralRequestId || !therapistId || !hallId || !weekdays.length || Number.isNaN(startDate.getTime())) throw new Error("أكمل الإحالة والمعالج والقاعة والجدولة");
-  const dates = sessionDates(startDate, weekdays, plannedSessions, sessionTime);
-  if (dates.length !== plannedSessions) throw new Error("تعذر إنشاء جميع تواريخ الجلسات");
+  const reviewMode = fd.get("reviewMode")?.toString();
+  const reviewInterval = positiveInt(fd.get("reviewInterval"), "دورية التقييم", 365);
+  if (!referralRequestId || !therapistId || !specialistDoctorId || !hallId || !weekdays.length || Number.isNaN(startDate.getTime())) throw new Error("أكمل الإحالة وطبيب الاختصاص والمعالج والقاعة والجدولة");
+  const expectedEndDate = expectedTreatmentEnd(startDate, treatmentDays);
+  const dates = boundedSessionDates(startDate, expectedEndDate, weekdays, plannedSessions, sessionTime);
 
   const plan = await prisma.$transaction(async (tx) => {
     const existing = await tx.treatmentPlan.findUnique({ where: { referralRequestId } });
     if (existing) return existing;
     const referral = await tx.referralRequest.findFirst({ where: { id: referralRequestId, patientId, status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { destinationCenter: true } });
     if (!referral) throw new Error("الإحالة الداخلية المقبولة غير متاحة");
-    const [therapist, hall] = await Promise.all([
-      tx.user.findFirst({ where: { id: therapistId, isActive: true, role: "THERAPIST" } }),
+    const centerId = referral.destinationCenterId;
+    if (!centerId) throw new Error("الإحالة غير مرتبطة بمركز داخلي");
+    await assertCenterManager(tx, who, centerId);
+    const [therapist, specialistDoctor, hall] = await Promise.all([
+      tx.user.findFirst({ where: { id: therapistId, isActive: true, role: "THERAPIST", centerMemberships: { some: { centerId, role: "THERAPIST", status: "ACTIVE" } } } }),
+      tx.user.findFirst({ where: { id: specialistDoctorId, isActive: true, role: "DOCTOR" } }),
       tx.therapyHall.findFirst({ where: { id: hallId, active: true } }),
     ]);
-    if (!therapist || !hall) throw new Error("المعالج أو القاعة غير متاح");
+    const hallMappings = await tx.centerResource.findMany({ where: { therapyHallId: hallId }, select: { centerId: true, status: true } });
+    const hallAvailable = hallMappings.length === 0 || hallMappings.some((resource: any) => resource.centerId === centerId && resource.status === "AVAILABLE");
+    if (!therapist || !specialistDoctor || !hall || !hallAvailable) throw new Error("طبيب الاختصاص أو المعالج أو القاعة غير متاح في هذا المركز");
     const conflict = await tx.appointment.findFirst({ where: { scheduledAt: { in: dates }, status: "SCHEDULED", OR: [{ patientId }, { assignedToId: therapistId }, { session: { is: { hallId } } }] }, include: { patient: { select: { fullName: true } } } });
     if (conflict) throw new Error(`تعارض في الموعد مع ${conflict.patient.fullName}`);
     const created = await tx.treatmentPlan.create({ data: {
       patientId, referralRequestId, title: fd.get("title")?.toString().trim() || "خطة العلاج الطبيعي",
       therapyType: (fd.get("therapyType")?.toString() as any) || "PHYSICAL", goals: fd.get("goals")?.toString().trim() || null,
-      plannedSessions, startDate: dates[0], expectedEndDate: dates.at(-1), weekdays: weekdays.sort().join(","), sessionTime,
-      hallId, therapistId, notes: fd.get("notes")?.toString().trim() || null,
+      plannedSessions, treatmentDays, startDate, expectedEndDate, weekdays: weekdays.sort().join(","), sessionTime,
+      hallId, therapistId, centerId, createdById: who.id, specialistDoctorId,
+      reviewEverySessions: reviewMode === "SESSIONS" ? reviewInterval : null,
+      reviewEveryDays: reviewMode === "DAYS" ? reviewInterval : null,
+      notes: fd.get("notes")?.toString().trim() || null,
     } });
     const session = await tx.therapySession.create({ data: {
-      patientId, treatmentPlanId: created.id, therapyType: created.therapyType || "PHYSICAL", centerId: referral.destinationCenterId,
-      treatmentPlan: created.title, totalSessions: plannedSessions, actualSessions: 0, startDate: dates[0], endDate: dates.at(-1),
+      patientId, treatmentPlanId: created.id, therapyType: created.therapyType || "PHYSICAL", centerId,
+      treatmentPlan: created.title, totalSessions: plannedSessions, actualSessions: 0, startDate, endDate: expectedEndDate,
       weekdays: created.weekdays, sessionTime, hallId, hall: hall.name, therapistId, therapist: therapist.fullName, scheduledById: who.id,
     } });
     await tx.appointment.createMany({ data: dates.map((scheduledAt) => ({ patientId, scheduledAt, type: "جلسة علاج طبيعي", therapyType: created.therapyType, assignedToId: therapistId, assignedTo: therapist.fullName, sessionId: session.id, status: "SCHEDULED", notes: `القاعة: ${hall.name}` })) });
@@ -74,12 +94,50 @@ export async function createPhysicalTherapyPlan(patientId: string, fd: FormData)
   redirect(`/patients/${patientId}?therapyPlan=${plan.id}`);
 }
 
+export async function updatePhysicalTherapyPlan(planId: string, fd: FormData) {
+  const who = await actor("therapy.plan.manage");
+  await prisma.$transaction(async (tx) => {
+    const plan = await tx.treatmentPlan.findUniqueOrThrow({ where: { id: planId }, include: { sessions: { include: { appointments: true } } } });
+    if (!plan.centerId) throw new Error("الخطة القديمة غير مرتبطة بمركز");
+    await assertCenterManager(tx, who, plan.centerId);
+    const specialistDoctorId = fd.get("specialistDoctorId")?.toString() || "";
+    const doctor = await tx.user.findFirst({ where: { id: specialistDoctorId, role: "DOCTOR", isActive: true } });
+    if (!doctor) throw new Error("اختر طبيب اختصاص فعالاً");
+    const treatmentDays = positiveInt(fd.get("treatmentDays"), "عدد أيام العلاج", 365);
+    const startDate = plan.startDate || new Date();
+    const expectedEndDate = expectedTreatmentEnd(startDate, treatmentDays);
+    if (plan.sessions.some((session: any) => session.appointments.some((appointment: any) => appointment.scheduledAt > expectedEndDate))) throw new Error("توجد مواعيد بعد نهاية المدة الجديدة. عدّل المواعيد أولاً");
+    const reviewMode = fd.get("reviewMode")?.toString();
+    const reviewInterval = positiveInt(fd.get("reviewInterval"), "دورية التقييم", 365);
+    await tx.treatmentPlan.update({ where: { id: planId }, data: { specialistDoctorId, treatmentDays, expectedEndDate, reviewEverySessions: reviewMode === "SESSIONS" ? reviewInterval : null, reviewEveryDays: reviewMode === "DAYS" ? reviewInterval : null } });
+    await tx.auditLog.create({ data: { userId: who.id, action: "UPDATE", tableName: "TreatmentPlan", recordId: planId, newValue: { specialistDoctorId, treatmentDays, reviewMode, reviewInterval } } });
+  });
+  revalidatePath("/therapy");
+}
+
+export async function addPeriodicTherapyEvaluation(planId: string, fd: FormData) {
+  const who = await actor("therapy.plan.manage");
+  const percent = recoveryPercent(fd.get("recoveryPercent"));
+  await prisma.$transaction(async (tx) => {
+    const plan = await tx.treatmentPlan.findUniqueOrThrow({ where: { id: planId } });
+    if (!plan.centerId) throw new Error("الخطة غير مرتبطة بمركز");
+    await assertCenterManager(tx, who, plan.centerId);
+    await tx.therapyPeriodicEvaluation.create({ data: { treatmentPlanId: planId, currentCondition: fd.get("currentCondition")?.toString().trim() || "", achievedProgress: fd.get("achievedProgress")?.toString().trim() || "", obstacles: fd.get("obstacles")?.toString().trim() || null, recommendations: fd.get("recommendations")?.toString().trim() || null, decision: fd.get("decision")?.toString() || "CONTINUE", recoveryPercent: percent, evaluatedAt: fd.get("evaluatedAt") ? new Date(fd.get("evaluatedAt")!.toString()) : new Date(), evaluatedById: who.id } });
+    await tx.auditLog.create({ data: { userId: who.id, action: "CREATE", tableName: "therapy_periodic_evaluations", recordId: planId, newValue: { recoveryPercent: percent } } });
+  });
+  revalidatePath("/therapy");
+}
+
 export async function recordTherapyAppointment(appointmentId: string, fd: FormData) {
   const who = await actor("therapy.session.record");
   const completed = fd.get("status")?.toString() === "COMPLETED";
   const result = await prisma.$transaction(async (tx) => {
     const appointment = await tx.appointment.findUnique({ where: { id: appointmentId }, include: { session: { include: { plan: true } } } });
     if (!appointment?.session || appointment.assignedToId !== who.id) throw new Error("المعالج المسند فقط يستطيع تسجيل الجلسة");
+    if (appointment.session.centerId && who.role !== "ADMIN") {
+      const member = await tx.centerMembership.findFirst({ where: { centerId: appointment.session.centerId, userId: who.id, role: "THERAPIST", status: "ACTIVE" } });
+      if (!member) throw new Error("لا يمكنك تسجيل جلسة خارج مركز عضويتك");
+    }
     if (appointment.session.plan?.status === "COMPLETED") throw new Error("الخطة مغلقة");
     const existing = await tx.therapySessionLog.findFirst({ where: { appointmentId }, orderBy: { createdAt: "desc" } });
     if (appointment.status === "COMPLETED" && existing?.status === "COMPLETED") return { patientId: appointment.patientId, repeated: true };
@@ -109,9 +167,11 @@ export async function recordTherapyAppointment(appointmentId: string, fd: FormDa
 
 export async function finalizeTherapyPlan(planId: string, fd: FormData) {
   const who = await actor("therapy.plan.finalize");
+  const finalRecoveryPercent = recoveryPercent(fd.get("finalRecoveryPercent"));
   const decision = fd.get("finalDecision")?.toString() as "EXTEND" | "END";
   await prisma.$transaction(async (tx) => {
     const plan = await tx.treatmentPlan.findUniqueOrThrow({ where: { id: planId }, include: { patient: true, therapist: true, hall: true, sessions: true } });
+    if (plan.centerId) await assertCenterManager(tx, who, plan.centerId);
     if (plan.status !== "COMPLETED") throw new Error("يُفتح التقييم النهائي بعد اكتمال البرنامج");
     const program = plan.sessions[0];
     if (!program) throw new Error("الخطة غير مرتبطة ببرنامج جلسات");
@@ -133,6 +193,7 @@ export async function finalizeTherapyPlan(planId: string, fd: FormData) {
     await tx.treatmentPlan.update({ where: { id: planId }, data: {
       beforeCondition: fd.get("beforeCondition")?.toString().trim(), afterCondition: fd.get("afterCondition")?.toString().trim(),
       improvementLevel: fd.get("improvementLevel")?.toString().trim(), achievedGoals: fd.get("achievedGoals")?.toString().trim(),
+      finalRecoveryPercent,
       finalRecommendation: fd.get("finalRecommendation")?.toString().trim(), finalDecision: decision, evaluatedAt: new Date(), evaluatedById: who.id,
       status: decision === "END" ? "COMPLETED" : "ACTIVE", closedAt: decision === "END" ? new Date() : null, followUpAppointmentId: nextAppointment?.id,
       plannedSessions: decision === "EXTEND" ? { increment: extendedCount } : undefined, expectedEndDate: extendedEnd,

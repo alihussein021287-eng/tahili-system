@@ -37,7 +37,9 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
   const perms = await currentPerms();
   const userBranch = await currentUserBranch();
   const activeBranchId = effectiveBranchId((await searchParams).branch, userBranch?.branchId);
-  const cCreate = perms.has("appointments.create");
+  const role = (session?.user as any)?.role as string;
+  const userId = (session?.user as any)?.id as string;
+  const cCreate = perms.has("appointments.create") && role !== "THERAPIST";
   const cEdit = perms.has("appointments.edit");
   const cDelete = perms.has("appointments.delete");
 
@@ -56,6 +58,11 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
     { gte: startToday };
   const patientNo = Number(sp.patient);
   const where: any = { scheduledAt: rangeWhere };
+  if (role === "THERAPIST") where.assignedToId = userId;
+  if (role === "HEAD_THERAPIST") {
+    const centerIds = (await prisma.centerMembership.findMany({ where: { userId, role: "HEAD_THERAPIST", status: "ACTIVE" }, select: { centerId: true } })).map((membership) => membership.centerId);
+    where.session = { centerId: { in: centerIds } };
+  }
   if (sp.st) where.status = sp.st;
   else if (range === "upcoming") where.status = "SCHEDULED";
   if (sp.who) where.assignedTo = sp.who;

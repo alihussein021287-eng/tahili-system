@@ -119,7 +119,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         {tab === "official" && <OfficialDocs patient={patient} can={can} id={id} role={role} />}
         {tab === "sickleave" && <SickLeaves patient={patient} can={can} id={id} role={role} approvals={slApprovals} staff={staffNames} staffUsers={staffUsers} />}
         {tab === "diag" && <SpecialistWorkspace patient={patient} can={can} canDel={canDel} patientId={id} openPrescriptions={() => setTab("rx")} />}
-        {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} halls={halls} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
+        {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} doctors={staffUsers.filter((user: any) => user.role === "DOCTOR")} halls={halls} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
         {tab === "centerPrograms" && can("centers.view") && <PatientCenterPrograms programs={patient.centerPrograms || []} />}
         {tab === "expenses" && can("expenses.view") && <PatientExpenses rows={expenseRows} showAmounts={can("expenses.amounts")} />}
         {tab === "sessions" && canSchedule && (

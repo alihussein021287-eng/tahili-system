@@ -28,7 +28,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         medicalReports: { orderBy: { date: "desc" } },
         visits: { orderBy: { visitDate: "desc" }, take: 5 },
         therapySessions: { include: { center: true }, orderBy: { createdAt: "desc" } },
-        treatmentPlans: { include: { therapist: true, hall: true, sessions: true, referralRequest: true }, orderBy: { createdAt: "desc" } },
+        treatmentPlans: { include: { therapist: true, specialistDoctor: true, createdBy: true, center: true, hall: true, sessions: { include: { appointments: { orderBy: { scheduledAt: "asc" } } } }, periodicEvaluations: { include: { evaluatedBy: true }, orderBy: { evaluatedAt: "asc" } }, referralRequest: true }, orderBy: { createdAt: "desc" } },
         centerPrograms: { include: { center: true, assignedTo: true }, orderBy: { createdAt: "desc" } },
         referralRequests: { where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { treatmentPlan: true }, orderBy: { acceptedAt: "desc" } },
         therapySessionLogs: { include: { session: true, appointment: true }, orderBy: { performedAt: "desc" }, take: 25 },
@@ -55,6 +55,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     const memberships = await prisma.centerMembership.findMany({ where: { userId: (accessSession?.user as any)?.id, status: "ACTIVE" }, select: { centerId: true } });
     const allowed = new Set(memberships.map((membership) => membership.centerId));
     (patient as any).centerPrograms = (patient.centerPrograms || []).filter((program: any) => allowed.has(program.centerId));
+    (patient as any).treatmentPlans = (patient.treatmentPlans || []).filter((plan: any) => !plan.centerId || allowed.has(plan.centerId));
   }
   const slApprovals = patient?.sickLeaves?.length
     ? await prisma.reportApproval.findMany({ where: { kind: "sick-leave", refKey: { in: patient.sickLeaves.map((l: any) => l.id) } } })
