@@ -445,7 +445,7 @@ export async function uploadCollaborationFileFromFile(file: File, formData: Form
     await tx.fileVersion.update({ where: { id: created.versions[0].id }, data: { scanStatus: scan.status } });
     await tx.collaborationFile.update({ where: { id: created.id }, data: { scanStatus: scan.status } });
     await tx.auditLog.create({ data: { userId: actor.id, action: "UPDATE", tableName: "collaboration_file_scans", recordId: created.versions[0].id, newValue: { status: scan.status } } });
-    if (scan.status !== "SAFE") await notifyUserInTransaction(tx, actor.id, scan.status === "REJECTED" ? "رُفض ملف تعاون" : "فشل فحص ملف تعاون", { body: created.displayName, link: "/collaboration/files?filter=quarantine" });
+    if (scan.status === "REJECTED" || scan.status === "FAILED") await notifyUserInTransaction(tx, actor.id, scan.status === "REJECTED" ? "رُفض ملف تعاون" : "فشل فحص ملف تعاون", { body: created.displayName, link: "/collaboration/files?filter=quarantine" });
   });
   return created.id;
 }

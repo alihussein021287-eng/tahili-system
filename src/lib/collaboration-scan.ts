@@ -1,7 +1,7 @@
 import net from "net";
 
 export type ScanResult = {
-  status: "SAFE" | "REJECTED" | "FAILED";
+  status: "SAFE" | "REJECTED" | "FAILED" | "PENDING_SCAN";
   engine: string;
   detail: string;
 };
@@ -21,14 +21,14 @@ export async function scanBufferWithClamAv(buffer: Buffer): Promise<ScanResult> 
       socket.destroy();
       resolve(result);
     };
-    socket.setTimeout(Number(process.env.CLAMAV_TIMEOUT_MS || 8000), () => finish({ status: "FAILED", engine: "clamav", detail: "timeout" }));
-    socket.on("error", (error) => finish({ status: "FAILED", engine: "clamav", detail: error.message }));
+    socket.setTimeout(Number(process.env.CLAMAV_TIMEOUT_MS || 8000), () => finish({ status: "PENDING_SCAN", engine: "clamav", detail: "scanner unavailable: timeout" }));
+    socket.on("error", (error) => finish({ status: "PENDING_SCAN", engine: "clamav", detail: `scanner unavailable: ${error.message}` }));
     socket.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
     socket.on("end", () => {
       const answer = Buffer.concat(chunks).toString("utf8");
       if (answer.includes("FOUND")) finish({ status: "REJECTED", engine: "clamav", detail: answer.trim() });
       else if (answer.includes("OK")) finish({ status: "SAFE", engine: "clamav", detail: answer.trim() });
-      else finish({ status: "FAILED", engine: "clamav", detail: answer.trim() || "no response" });
+      else finish({ status: "PENDING_SCAN", engine: "clamav", detail: answer.trim() || "scanner unavailable: no response" });
     });
     socket.on("connect", () => {
       socket.write("zINSTREAM\0");

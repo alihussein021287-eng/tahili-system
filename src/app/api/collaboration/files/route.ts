@@ -8,8 +8,18 @@ const HEADERS = {
   "X-Content-Type-Options": "nosniff",
 };
 
+function assertSameOrigin(request: NextRequest) {
+  const expected = new URL(request.url).origin;
+  const origin = request.headers.get("origin");
+  const referer = request.headers.get("referer");
+  if (origin && origin !== expected) throw new Error("طلب رفع غير موثوق");
+  if (!origin && referer && new URL(referer).origin !== expected) throw new Error("طلب رفع غير موثوق");
+  if (!origin && !referer) throw new Error("طلب رفع غير موثوق");
+}
+
 export async function POST(request: NextRequest) {
   try {
+    assertSameOrigin(request);
     const formData = await request.formData();
     const files = formData.getAll("files").filter((item): item is File => item instanceof File && item.size > 0);
     const single = formData.get("file");
