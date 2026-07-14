@@ -34,12 +34,9 @@ import { PatientExpenses } from "@/components/expenses/PatientExpenses";
 const TABS = [
   { key: "timeline", label: "الخط الزمني", icon: "🕒", group: "overview" },
   { key: "journey", label: "مسار المتابعة", icon: "🧭", group: "overview" },
-  { key: "diag", label: "التشخيصات", icon: "🩺", group: "medical" },
-  { key: "reports", label: "التقارير الطبية", icon: "📋", group: "medical" },
+  { key: "diag", label: "الاستشارية الطبية", icon: "🩺", group: "medical" },
   { key: "resident", label: "الطبيب المقيم", icon: "🩺", group: "medical" },
   { key: "referrals", label: "الفحوص والإحالات", icon: "↗", group: "medical" },
-  { key: "vitals", label: "العلامات الحيوية", icon: "❤️", group: "medical" },
-  { key: "wounds", label: "تقييم الجروح", icon: "🩹", group: "medical" },
   { key: "sessions", label: "الجلسات العلاجية", icon: "🏃", group: "therapy" },
   { key: "therapyProgram", label: "برنامج العلاج الطبيعي", icon: "📅", group: "therapy" },
   { key: "centerPrograms", label: "برامج المراكز", icon: "🏥", group: "therapy" },
@@ -66,18 +63,26 @@ const TAB_GROUPS: Record<string, string> = {
 const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
 // التبويبات التي تُحمّل بياناتها عند فتحها فقط (لتخفيف تحميل الصفحة)
-const LAZY_TABS = ["files", "metrics", "vitals", "plan", "rel", "activity", "care", "resident", "referrals"];
+const LAZY_TABS = ["files", "metrics", "plan", "rel", "activity", "care", "resident", "referrals"];
 
 export function PatientTabs({ patient, editable, perms = [], role = "", slApprovals = [], centers = [], medications = [], rooms = [], halls = [], therapyStaff = [], expenseRows = [], staffNames = [], staffUsers = [] }: { patient: any; editable: boolean; perms?: string[]; role?: string; slApprovals?: any[]; centers?: any[]; medications?: any[]; rooms?: any[]; halls?: any[]; therapyStaff?: any[]; expenseRows?: any[]; staffNames?: string[]; staffUsers?: any[] }) {
   const can = (k: string) => perms.includes(k);
   const canDel = role === "ADMIN";
   const canSchedule = role === "HEAD_THERAPIST" || role === "ADMIN";
   const [tab, setTab] = useState("timeline");
-  const [lazy, setLazy] = useState<Record<string, any[] | undefined>>({});
+  const [lazy, setLazy] = useState<Record<string, any>>({});
   const id = patient.id;
 
   const loadTab = async (key: string) => {
     try {
+      if (key === "resident") {
+        const [reviews, historicalVitals] = await Promise.all([
+          getPatientTabData(id, "resident"),
+          getPatientTabData(id, "vitals"),
+        ]);
+        setLazy((p) => ({ ...p, resident: { reviews, historicalVitals } }));
+        return;
+      }
       const data = await getPatientTabData(id, key);
       setLazy((p) => ({ ...p, [key]: (data as any[]) ?? [] }));
     } catch {
@@ -113,48 +118,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         {tab === "journey" && <Journey patient={patient} can={can} id={id} role={role} />}
         {tab === "official" && <OfficialDocs patient={patient} can={can} id={id} role={role} />}
         {tab === "sickleave" && <SickLeaves patient={patient} can={can} id={id} role={role} approvals={slApprovals} staff={staffNames} staffUsers={staffUsers} />}
-        {tab === "diag" && (
-          <div className="space-y-4">
-          {can("clinical.diagnosis") && (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-brand-100 bg-brand-50/40 p-3">
-              <span className="text-sm font-medium text-gray-700">إجراءات الطبيب الاختصاصي:</span>
-              <button type="button" onClick={() => setTab("rx")} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">💊 وصفة طبية</button>
-              <details className="relative">
-                <summary className="cursor-pointer list-none rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">↪ إحالة إلى المركز المختص</summary>
-                <form action={referToCenter.bind(null, id)} className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-100 bg-white p-2">
-                  <div className="min-w-[200px]"><Combobox name="station" label="المركز/الجهة" allowFree options={["مركز العلاج الطبيعي", "مركز التأهيل النفسي", "مركز العلاج الوظيفي", "مركز النقاء", "الأطراف الصناعية"]} placeholder="مثال: مركز العلاج الطبيعي" /></div>
-                  <input name="note" className="input !py-1 text-sm" placeholder="ملاحظة (اختياري)" />
-                  <button className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700" type="submit">إرسال الإحالة لرئيس المعالجين</button>
-                </form>
-              </details>
-              <span className="text-xs text-gray-400">تُرسل إشعاراً لرئيس المعالجين وتُضاف لمسار المتابعة</span>
-            </div>
-          )}
-          <Section rows={patient.diagnoses} editable={can("clinical.diagnosis")} canDel={canDel} del={deleteDiagnosis.bind(null, id)} action={addDiagnosis.bind(null, id)}
-            edit={(rid: string, fd: FormData) => updateDiagnosis(id, rid, fd)}
-            editFields={(r: any) => <>
-              <Combobox name="type" allowFree={false} defaultValue={r.type} options={[{value:"PRELIMINARY",label:"أولي"},{value:"SPECIALIST",label:"اختصاص"},{value:"GENERAL",label:"عام"}]} />
-              <input name="text" className="input min-w-[220px]" defaultValue={r.text ?? ""} />
-              <input name="doctor" className="input" defaultValue={r.doctor ?? ""} />
-            </>}
-            cols={[["النوع", (r: any) => DIAGNOSIS[r.type as keyof typeof DIAGNOSIS]], ["التشخيص", (r: any) => r.text], ["الطبيب", (r: any) => r.doctor], ["التاريخ", (r: any) => fmtDate(r.date)]]}
-            fields={<>
-              <Combobox name="type" allowFree={false} options={[{value:"PRELIMINARY",label:"أولي"},{value:"SPECIALIST",label:"اختصاص"},{value:"GENERAL",label:"عام"}]} />
-              <input name="text" className="input" placeholder="نص التشخيص" />
-              <input name="doctor" className="input" placeholder="الطبيب" />
-            </>} />
-          </div>
-        )}
-        {tab === "reports" && (
-          <Section rows={patient.medicalReports} editable={can("clinical.report")} canDel={canDel} del={deleteReport.bind(null, id)} action={addReport.bind(null, id)}
-            cols={[["النوع", (r: any) => r.reportType === "FINAL" ? "نهائي" : r.reportType === "PRELIMINARY" ? "أولي" : "قديم"], ["التقرير", (r: any) => r.content], ["الطبيب", (r: any) => r.doctor], ["الحالة", (r: any) => <div className="flex flex-wrap items-center gap-2"><span>{({DRAFT:"مسودة",READY_TO_PRINT:"جاهز للطباعة",PRINTED_APPROVED:"مطبوع/معتمد",CANCELLED:"ملغى"} as any)[r.status] || "قديم"}</span>{r.status === "READY_TO_PRINT" && <a className="text-brand-700 hover:underline" href={`/patients/${id}/medical-report/${r.id}`}>طباعة رسمية</a>}{r.status === "DRAFT" && <form action={setReportStatus.bind(null,id,r.id,"READY_TO_PRINT")}><button className="text-brand-700 hover:underline">تجهيز للطباعة</button></form>}{r.status === "READY_TO_PRINT" && can("reports.print") && <form action={setReportStatus.bind(null,id,r.id,"PRINTED_APPROVED")}><button className="text-emerald-700 hover:underline">تأشير مطبوع/معتمد</button></form>}</div>], ["التاريخ", (r: any) => fmtDate(r.date)]]}
-            fields={<>
-              <Combobox name="reportType" allowFree={false} defaultValue="PRELIMINARY" options={[{value:"PRELIMINARY",label:"أولي"},{value:"FINAL",label:"نهائي"}]} />
-              <Combobox name="status" allowFree={false} defaultValue="DRAFT" options={[{value:"DRAFT",label:"مسودة"},{value:"READY_TO_PRINT",label:"جاهز للطباعة"}]} />
-              <input name="content" className="input min-w-[280px]" placeholder="نص التقرير الطبي" />
-              <input name="doctor" className="input" placeholder="الطبيب" />
-            </>} />
-        )}
+        {tab === "diag" && <SpecialistWorkspace patient={patient} can={can} canDel={canDel} patientId={id} openPrescriptions={() => setTab("rx")} />}
         {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} halls={halls} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
         {tab === "centerPrograms" && can("centers.view") && <PatientCenterPrograms programs={patient.centerPrograms || []} />}
         {tab === "expenses" && can("expenses.view") && <PatientExpenses rows={expenseRows} showAmounts={can("expenses.amounts")} />}
@@ -221,9 +185,6 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         {tab === "adm" && (
           <SectionAdm rows={patient.admissions} editable={can("clinical.admission")} patientId={id} centers={centers} rooms={rooms} role={role} />
         )}
-        {tab === "wounds" && (
-          <SectionWound rows={patient.woundAssessments} editable={can("clinical.wound")} patientId={id} role={role} />
-        )}
         {tab === "corr" && (
           <Section rows={patient.correspondence} editable={can("clinical.report")} canDel={canDel} del={deleteCorrespondence.bind(null, id)} action={addCorrespondence.bind(null, id)}
             edit={(rid: string, fd: FormData) => updateCorrespondence(id, rid, fd)}
@@ -252,9 +213,8 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
           lazy.plan === undefined ? <TabLoading /> :
           <SectionPlan rows={lazy.plan} sessionsCount={completedTherapySessions(patient)} plannedCount={plannedTherapySessions(patient)} editable={can("clinical.plan")} patientId={id} afterMutate={reload("plan")} />
         )}
-        {tab === "resident" && (lazy.resident === undefined ? <TabLoading /> : <SectionResidentReview rows={lazy.resident} editable={can("clinical.metrics")} patientId={id} afterMutate={reload("resident")} />)}
+        {tab === "resident" && (lazy.resident === undefined ? <TabLoading /> : <ResidentWorkspace data={lazy.resident} wounds={patient.woundAssessments} can={can} patientId={id} role={role} afterMutate={reload("resident")} />)}
         {tab === "referrals" && (lazy.referrals === undefined ? <TabLoading /> : <PatientReferralTab patientId={id} rows={lazy.referrals} canCreate={can("referrals.create")} centers={centers} reviewers={staffUsers.filter((user: any) => user.role === "DOCTOR")} residentReviews={patient.residentReviews || []} />)}
-        {tab === "vitals" && (lazy.vitals === undefined ? <TabLoading /> : <SectionVitals rows={lazy.vitals} editable={can("clinical.metrics")} patientId={id} afterMutate={reload("vitals")} />)}
         {tab === "activity" && (lazy.activity === undefined ? <TabLoading /> : <ActivityLog logs={lazy.activity} />)}
         {tab === "care" && (lazy.care === undefined ? <TabLoading /> : <CareSection rows={lazy.care} editable={can("clinical.care")} patientId={id} medications={medications} afterMutate={reload("care")} />)}
         {tab === "rel" && (
@@ -659,6 +619,72 @@ function SectionMetrics({ rows, editable, patientId, afterMutate }: any) {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+function WorkspaceSection({ title, description, children, id }: { title: string; description?: string; children: React.ReactNode; id?: string }) {
+  return (
+    <section id={id} className="scroll-mt-4 space-y-3 border-t border-gray-200 pt-5 first:border-t-0 first:pt-0">
+      <div>
+        <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-gray-500">{description}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function SpecialistWorkspace({ patient, can, canDel, patientId, openPrescriptions }: any) {
+  const diagnosisOptions = [{value:"PRELIMINARY",label:"أولي"},{value:"SPECIALIST",label:"اختصاص"},{value:"GENERAL",label:"عام"}];
+  return (
+    <div className="min-w-0 space-y-6">
+      <WorkspaceSection title="إجراءات الطبيب الاختصاص">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-100 bg-brand-50/40 p-3">
+          {can("clinical.prescription") ? <button type="button" onClick={openPrescriptions} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700">💊 وصفة طبية</button> : null}
+          {can("clinical.diagnosis") ? (
+            <details className="min-w-0">
+              <summary className="cursor-pointer list-none rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white hover:bg-brand-700">↪ إحالة إلى مركز مختص</summary>
+              <form action={referToCenter.bind(null, patientId)} className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-100 bg-white p-2">
+                <div className="min-w-[200px] flex-1"><Combobox name="station" label="المركز أو الجهة" allowFree options={["مركز العلاج الطبيعي", "مركز التأهيل النفسي", "مركز العلاج الوظيفي", "مركز النقاء", "الأطراف الصناعية"]} placeholder="مثال: مركز العلاج الطبيعي" /></div>
+                <input name="note" className="input min-w-0 flex-1 !py-1 text-sm" placeholder="ملاحظة اختيارية" />
+                <button className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700" type="submit">إرسال الإحالة</button>
+              </form>
+            </details>
+          ) : null}
+          {can("clinical.report") ? <a href="#medical-reports" className="rounded-lg bg-gray-800 px-3 py-2 text-xs font-medium text-white hover:bg-gray-900">📋 تقرير طبي</a> : null}
+        </div>
+      </WorkspaceSection>
+
+      <WorkspaceSection title="التشخيصات والاستشارات" description="نماذج وسجل تشخيصات الطبيب الاختصاص والاستشارات الطبية.">
+        <Section rows={patient.diagnoses} editable={can("clinical.diagnosis")} canDel={canDel} del={deleteDiagnosis.bind(null, patientId)} action={addDiagnosis.bind(null, patientId)}
+          edit={(rid: string, fd: FormData) => updateDiagnosis(patientId, rid, fd)}
+          editFields={(r: any) => <><Combobox name="type" allowFree={false} defaultValue={r.type} options={diagnosisOptions} /><input name="text" className="input min-w-[220px]" defaultValue={r.text ?? ""} /><input name="doctor" className="input" defaultValue={r.doctor ?? ""} /></>}
+          cols={[["النوع", (r: any) => DIAGNOSIS[r.type as keyof typeof DIAGNOSIS]], ["التشخيص", (r: any) => r.text], ["الطبيب", (r: any) => r.doctor], ["التاريخ", (r: any) => fmtDate(r.date)]]}
+          fields={<><Combobox name="type" allowFree={false} options={diagnosisOptions} /><input name="text" className="input" placeholder="نص التشخيص" /><input name="doctor" className="input" placeholder="الطبيب" /></>} />
+      </WorkspaceSection>
+
+      <WorkspaceSection id="medical-reports" title="التقارير الطبية" description="أنشئ تقريراً أولياً أو نهائياً، وتابع حالته ونسخته المعدة للطباعة.">
+        <Section rows={patient.medicalReports} editable={can("clinical.report")} canDel={canDel} del={deleteReport.bind(null, patientId)} action={addReport.bind(null, patientId)}
+          cols={[["النوع", (r: any) => r.reportType === "FINAL" ? "نهائي" : r.reportType === "PRELIMINARY" ? "أولي" : "قديم"], ["التقرير", (r: any) => r.content], ["الطبيب", (r: any) => r.doctor], ["الحالة والطباعة", (r: any) => <div className="flex flex-wrap items-center gap-2"><span>{({DRAFT:"مسودة",READY_TO_PRINT:"جاهز للطباعة",PRINTED_APPROVED:"مطبوع ومعتمد",CANCELLED:"ملغى"} as any)[r.status] || "قديم"}</span>{r.status === "READY_TO_PRINT" ? <a className="text-brand-700 hover:underline" href={`/patients/${patientId}/medical-report/${r.id}`}>طباعة رسمية</a> : null}{r.status === "DRAFT" ? <form action={setReportStatus.bind(null,patientId,r.id,"READY_TO_PRINT")}><button className="text-brand-700 hover:underline">تجهيز للطباعة</button></form> : null}{r.status === "READY_TO_PRINT" && can("reports.print") ? <form action={setReportStatus.bind(null,patientId,r.id,"PRINTED_APPROVED")}><button className="text-emerald-700 hover:underline">تأشير مطبوع ومعتمد</button></form> : null}</div>], ["التاريخ", (r: any) => fmtDate(r.date)]]}
+          fields={<><Combobox name="reportType" allowFree={false} defaultValue="PRELIMINARY" options={[{value:"PRELIMINARY",label:"أولي"},{value:"FINAL",label:"نهائي"}]} /><Combobox name="status" allowFree={false} defaultValue="DRAFT" options={[{value:"DRAFT",label:"مسودة"},{value:"READY_TO_PRINT",label:"جاهز للطباعة"}]} /><input name="content" className="input min-w-[280px]" placeholder="نص التقرير الطبي" /><input name="doctor" className="input" placeholder="الطبيب" /></>} />
+      </WorkspaceSection>
+    </div>
+  );
+}
+
+function ResidentWorkspace({ data, wounds, can, patientId, role, afterMutate }: any) {
+  return (
+    <div className="min-w-0 space-y-6">
+      <WorkspaceSection title="تقييم الطبيب المقيم" description="يسجل الطبيب بيانات التقييم والعلامات الحيوية وقرار الإحالة والملاحظات في نموذج واحد.">
+        <SectionResidentReview rows={data.reviews || []} editable={can("clinical.metrics")} patientId={patientId} afterMutate={afterMutate} />
+      </WorkspaceSection>
+      <WorkspaceSection title="سجل العلامات الحيوية السابق" description="قراءات تاريخية غير مرتبطة بتقييم طبيب مقيم. تظهر للقراءة دون نموذج إدخال مستقل.">
+        <SectionVitals rows={data.historicalVitals || []} editable={false} patientId={patientId} />
+      </WorkspaceSection>
+      <WorkspaceSection title="تقييم الجروح" description="التقييم الطبي الأولي للجروح وصورها وسجل القياسات والحالة.">
+        <SectionWound rows={wounds || []} editable={can("clinical.wound")} patientId={patientId} role={role} />
+      </WorkspaceSection>
     </div>
   );
 }
