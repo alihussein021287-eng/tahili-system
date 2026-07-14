@@ -135,6 +135,7 @@ export async function saveOrg(fd: FormData) {
   };
   await prisma.orgSetting.upsert({ where: { id: 1 }, update: data, create: { id: 1, ...data } });
   revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
+  redirect("/settings?saved=" + encodeURIComponent("تم حفظ هوية النظام"));
 }
 
 export async function setMaintenanceMode(on: boolean) {
@@ -184,9 +185,14 @@ export async function saveAdminConfig(fd: FormData) {
   if (!fileTypes.length || fileTypes.some((x) => !/^[a-z0-9]{2,10}$/.test(x))) throw new Error("أنواع الملفات غير صالحة");
   const workDays = fd.getAll("workDays").map(String).filter((x) => /^[0-6]$/.test(x));
   if (!workDays.length) throw new Error("اختر يوم دوام واحداً على الأقل");
+  const workStart = fd.get("workStart")?.toString() || "08:00";
+  const workEnd = fd.get("workEnd")?.toString() || "15:00";
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(workStart) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(workEnd) || workStart >= workEnd) throw new Error("ساعات الدوام غير صالحة");
+  const dateFormat = fd.get("dateFormat")?.toString() || "yyyy/MM/dd";
+  if (!new Set(["yyyy/MM/dd", "dd/MM/yyyy", "yyyy-MM-dd"]).has(dateFormat)) throw new Error("تنسيق التاريخ غير مدعوم");
   const config = {
-    timezone, locale, dateFormat: fd.get("dateFormat")?.toString() || "yyyy/MM/dd", workDays,
-    workStart: fd.get("workStart")?.toString() || "08:00", workEnd: fd.get("workEnd")?.toString() || "15:00",
+    timezone, locale, dateFormat, workDays,
+    workStart, workEnd,
     holidays: fd.get("holidays")?.toString().trim() || "",
     appointmentMinutes: intRange(fd, "appointmentMinutes", 5, 480),
     defaultSessions: intRange(fd, "defaultSessions", 1, 365), defaultPlanDays: intRange(fd, "defaultPlanDays", 1, 730),
@@ -200,4 +206,5 @@ export async function saveAdminConfig(fd: FormData) {
   await prisma.orgSetting.upsert({ where: { id: 1 }, update: { adminConfig: config }, create: { id: 1, adminConfig: config } });
   await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "adminConfig", oldValue: old?.adminConfig as any, newValue: config });
   revalidatePath("/settings"); revalidatePath("/readiness"); revalidatePath("/backup");
+  redirect("/settings?saved=" + encodeURIComponent("تم حفظ الإعدادات وتفعيلها"));
 }

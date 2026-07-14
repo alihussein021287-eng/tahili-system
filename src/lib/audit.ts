@@ -12,8 +12,9 @@ export async function logAudit(opts: {
       const s = await getSession();
       userId = (s?.user as any)?.id;
     }
+    const actor = userId ? await prisma.user.findUnique({ where: { id: userId }, select: { username: true, fullName: true } }) : null;
     await prisma.auditLog.create({ data: {
-      userId, action: opts.action, tableName: opts.tableName,
+      userId, actorUsername: actor?.username, actorName: actor?.fullName, action: opts.action, tableName: opts.tableName,
       recordId: opts.recordId, oldValue: opts.oldValue ?? undefined, newValue: opts.newValue ?? undefined,
     }});
   } catch { /* لا نوقف العملية بسبب فشل التدقيق */ }

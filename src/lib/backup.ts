@@ -3,6 +3,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
 import path from "path";
+import { getAdminConfig } from "@/lib/admin-config";
 
 const runFile = promisify(execFile);
 export const BACKUP_DIR = path.join(process.env.UPLOAD_DIR || "/app/uploads", "backups");
@@ -146,10 +147,11 @@ export async function maybeAutoBackup() {
       await prisma.notification.deleteMany({ where: { read: true, createdAt: { lt: days(notifDays) } } });
       await prisma.loginLog.deleteMany({ where: { createdAt: { lt: days(loginDays) } } });
     } catch {}
+    const config = await getAdminConfig();
     runBackup("auto").then(() => {
-      // إبقاء آخر 14 نسخة تلقائية فقط
+      // الاحتفاظ بعدد يومي يطابق سياسة مدة الاحتفاظ.
       const autos = listBackups().filter((b) => b.name.startsWith("auto-"));
-      autos.slice(14).forEach((b) => { try { fs.unlinkSync(path.join(BACKUP_DIR, b.name)); } catch {} });
+      autos.slice(config.backupRetentionDays).forEach((b) => { try { fs.unlinkSync(path.join(BACKUP_DIR, b.name)); } catch {} });
     }).catch(() => {});
   } catch {}
 }

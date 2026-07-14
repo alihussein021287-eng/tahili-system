@@ -353,16 +353,18 @@ model User {
 
 // سجل التدقيق — من عدّل، شنو، ومتى
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
-  action    String // العملية: CREATE / UPDATE / DELETE
-  tableName String // اسم الجدول المتأثر
-  recordId  String // معرّف السجل
-  oldValue  Json? // القيمة قبل
-  newValue  Json? // القيمة بعد
-  ipAddress String?
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  actorUsername String?
+  actorName     String?
+  action        String // العملية: CREATE / UPDATE / DELETE
+  tableName     String // اسم الجدول المتأثر
+  recordId      String // معرّف السجل
+  oldValue      Json? // القيمة قبل
+  newValue      Json? // القيمة بعد
+  ipAddress     String?
+  createdAt     DateTime @default(now())
 
   @@index([tableName, recordId])
   @@index([userId])

@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { LOGIN_MAX_ATTEMPTS, LOGIN_LOCK_MINUTES } from "./security";
+import { getAdminConfig } from "./admin-config";
 
 export function applyUserClaims(token: Record<string, unknown>, user?: Record<string, unknown>) {
   if (!user) return token;
@@ -42,13 +43,14 @@ export const authOptions: NextAuthOptions = {
         if (user.lockedUntil && user.lockedUntil > new Date()) { await logLogin({ userId: user.id, username: user.username, name: user.fullName, success: false, reason: "الحساب مقفول مؤقتاً" }); return null; }
         const ok = await bcrypt.compare(credentials.password, user.passwordHash);
         if (!ok) {
+          const security = await getAdminConfig();
           const count = (user.failedLoginCount ?? 0) + 1;
-          const lock = count >= LOGIN_MAX_ATTEMPTS;
+          const lock = count >= (security.loginAttempts || LOGIN_MAX_ATTEMPTS);
           await prisma.user.update({
             where: { id: user.id },
             data: {
               failedLoginCount: lock ? 0 : count,
-              lockedUntil: lock ? new Date(Date.now() + LOGIN_LOCK_MINUTES * 60 * 1000) : user.lockedUntil ?? null,
+              lockedUntil: lock ? new Date(Date.now() + (security.lockMinutes || LOGIN_LOCK_MINUTES) * 60 * 1000) : user.lockedUntil ?? null,
             },
           });
           await logLogin({ userId: user.id, username: user.username, name: user.fullName, success: false, reason: "كلمة سر خاطئة" });

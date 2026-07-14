@@ -50,6 +50,12 @@ export async function createUser(fd: FormData) {
     email: fd.get("email")?.toString() || "",
   });
   const activateImmediately = fd.get("activateImmediately")?.toString() === "1";
+  if (v.role === "ADMIN") {
+    const adminCount = await prisma.user.count({ where: { role: "ADMIN" } });
+    if (adminCount > 0 && fd.get("confirmAdditionalAdmin")?.toString().trim() !== "إنشاء مدير إضافي") {
+      throw new Error("يوجد مدير نظام بالفعل. اكتب «إنشاء مدير إضافي» كقرار صريح من المدير الحالي.");
+    }
+  }
   const passwordHash = await bcrypt.hash(rawPw, 10);
   const created = await prisma.user.create({
     data: {

@@ -2,11 +2,16 @@ import { writeFile, mkdir, readFile } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import crypto from "crypto";
+import { getAdminConfig } from "@/lib/admin-config";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "uploads";
 
 // يحفظ ملف مرفوع ويرجّع المفتاح (key) لاستخدامه في الرابط
 export async function saveFile(file: File): Promise<{ key: string; name: string }> {
+  const config = await getAdminConfig();
+  const extension = path.extname(file.name || "").slice(1).toLowerCase();
+  if (!config.fileTypes.includes(extension)) throw new Error("نوع الملف غير مسموح وفق إعدادات النظام");
+  if (file.size > config.maxUploadMb * 1024 * 1024) throw new Error(`حجم الملف يتجاوز الحد المسموح (${config.maxUploadMb} MB)`);
   if (!existsSync(UPLOAD_DIR)) await mkdir(UPLOAD_DIR, { recursive: true });
   const originalName = path.basename(file.name || "file");
   const ext = path.extname(originalName).slice(0, 16) || "";

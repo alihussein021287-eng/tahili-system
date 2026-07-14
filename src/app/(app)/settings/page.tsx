@@ -10,12 +10,13 @@ import { addCenter, addInjuryType, addDistrict, addFormation,
 
 export const dynamic = "force-dynamic";
 
-export default async function Settings() {
+export default async function Settings({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
   await requirePerm("settings.view");
   const org = await getOrg();
   const session = await getSession();
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   const maint = await maintenanceOn();
+  const messages = await searchParams;
   const retention = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, loginLogRetentionDays: true, expenseApprovalLevels: true, adminConfig: true } });
   const cfg = (retention?.adminConfig ?? {}) as Record<string, any>;
   const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks] = await Promise.all([
@@ -32,11 +33,13 @@ export default async function Settings() {
   return (
     <div className="space-y-6">
       <PageHeader title="الإعدادات" subtitle="هوية المركز والقوائم الثابتة" icon="🛠" />
+      {messages.saved && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{messages.saved}</div>}
+      {messages.error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{messages.error}</div>}
       <nav className="flex gap-2 overflow-x-auto rounded-lg border bg-white p-2 text-sm" aria-label="أقسام الإعدادات">
-        {["هوية النظام", "الدوام والمواعيد", "العلاج والمراكز", "الأمان والجلسات", "الإشعارات", "الملفات والطباعة", "النسخ والاحتفاظ", "القوائم والفروع"].map((x) => <a key={x} href={`#${x}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{x}</a>)}
+        {[["هوية النظام","هوية النظام"],["الدوام والمواعيد","سياسات النظام"],["العلاج والمراكز","سياسات النظام"],["الأمان والجلسات","الأمان والجلسات"],["الإشعارات","سياسات النظام"],["الملفات والطباعة","سياسات النظام"],["النسخ والاحتفاظ","النسخ والاحتفاظ"],["القوائم والفروع","القوائم والفروع"]].map(([label,target]) => <a key={label} href={`#${target}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{label}</a>)}
       </nav>
 
-      {isAdmin && <form id="الدوام والمواعيد" action={saveAdminConfig} className="card grid gap-4 p-5 md:grid-cols-3">
+      {isAdmin && <form id="سياسات النظام" action={saveAdminConfig} className="card grid gap-4 p-5 md:grid-cols-3">
         <div className="md:col-span-3"><h2 className="font-semibold text-gray-800">سياسات التشغيل والعلاج والأمان</h2><p className="text-sm text-gray-500">قيم افتراضية مركزية مع تحقق خادمي وسجل للقيمة السابقة والجديدة.</p></div>
         <label className="label">المنطقة الزمنية<Combobox name="timezone" allowFree={false} defaultValue={cfg.timezone ?? "Asia/Baghdad"} options={[{value:"Asia/Baghdad",label:"بغداد"},{value:"UTC",label:"UTC"}]} /></label>
         <label className="label">اللغة<Combobox name="locale" allowFree={false} defaultValue={cfg.locale ?? "ar-IQ"} options={[{value:"ar-IQ",label:"العربية - العراق"},{value:"en-US",label:"English"}]} /></label>
@@ -53,7 +56,7 @@ export default async function Settings() {
       </form>}
 
       {isAdmin && (
-        <div className={`card border p-5 ${maint ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
+        <div id="الأمان والجلسات" className={`card border p-5 ${maint ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
           <h2 className="mb-1 font-semibold text-gray-800">وضع الصيانة <span className="text-sm font-normal text-red-600">(خطر — للأدمن فقط)</span></h2>
           <p className="mb-3 text-sm text-gray-600">عند التفعيل تظهر «منطقة الصيانة» التي تسمح بمسح البيانات بشكل انتقائي (لترتيب النظام قبل الإطلاق). أطفئه فور الانتهاء.</p>
           <div className="flex flex-wrap items-center gap-3">
@@ -68,7 +71,7 @@ export default async function Settings() {
         </div>
       )}
 
-      <div className="card p-5">
+      <div id="هوية النظام" className="card p-5">
         <h2 className="mb-3 font-semibold text-gray-700">هوية المركز (تظهر في التقارير والوصولات والبطاقات)</h2>
         <form action={saveOrg} className="grid gap-3 md:grid-cols-2">
           <div><label className="label">اسم المركز</label><input name="name" className="input" defaultValue={org.name} /></div>
@@ -92,7 +95,7 @@ export default async function Settings() {
       )}
 
       {isAdmin && (
-        <div className="card p-5">
+        <div id="النسخ والاحتفاظ" className="card p-5">
           <h2 className="mb-1 font-semibold text-gray-700">مدد الاحتفاظ بالسجلات</h2>
           <p className="mb-3 text-sm text-gray-500">
             يُنظّف النظام السجلات القديمة تلقائياً مع النسخة الاحتياطية اليومية.
@@ -116,7 +119,7 @@ export default async function Settings() {
 
       {isAdmin && <div className="card p-5"><h2 className="font-semibold text-gray-700">سياسة اعتماد صرفيات الجرحى</h2><p className="mt-1 text-sm text-gray-500">حدد عدد مستويات الاعتماد المطلوبة قبل تجهيز السند للصرف.</p><form action={saveExpenseApprovalLevels} className="mt-3 flex items-end gap-3"><label className="label">عدد المستويات<input name="expenseApprovalLevels" type="number" min="1" max="5" className="input mt-1 !w-28" defaultValue={retention?.expenseApprovalLevels||1}/></label><button className="btn-primary">حفظ السياسة</button></form></div>}
 
-      <h2 className="text-lg font-bold text-gray-800">القوائم الثابتة</h2>
+      <h2 id="القوائم والفروع" className="text-lg font-bold text-gray-800">القوائم الثابتة</h2>
       <p className="text-sm text-gray-500">القوائم تُستخدم لتوحيد الإدخال في بطاقة المريض والجلسات والوصفات.</p>
 
       <div className="card p-5">

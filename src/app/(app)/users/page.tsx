@@ -60,6 +60,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
         <div><label className="label">القسم/الشعبة</label><input className="input" name="department"  autoComplete="off" /></div>
         <div><label className="label">البريد (اختياري)</label><input className="input" name="email"  autoComplete="off" /></div>
         <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" name="activateImmediately" value="1" /> تفعيل الحساب مباشرة بهذه الكلمة (خيار إداري صريح)</label>
+        <div><label className="label">تأكيد مدير إضافي فقط</label><input className="input" name="confirmAdditionalAdmin" placeholder="إنشاء مدير إضافي" autoComplete="off" /><p className="mt-1 text-xs text-gray-400">يُترك فارغاً لجميع الأدوار الأخرى.</p></div>
         <div className="flex items-end"><button className="btn-primary w-full" type="submit">إضافة مستخدم</button></div>
       </form>
 
