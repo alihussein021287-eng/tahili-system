@@ -75,7 +75,7 @@ export const PERM_GROUPS: PermGroup[] = [
     { key: "visits.view", label: "عرض سجل الحضور والاستعلام" },
     { key: "visits.manage", label: "تسجيل حضور مراجع" },
   ]},
-  { section: "beds", title: "الأسرّة والإشغال", items: [
+  { section: "beds", title: "الرقود والفندقة", items: [
     { key: "beds.view", label: "عرض الأسرّة" },
     { key: "beds.manage", label: "إدارة الغرف (إضافة/تعديل/حذف)" },
     { key: "beds.assign", label: "تخصيص سرير" },

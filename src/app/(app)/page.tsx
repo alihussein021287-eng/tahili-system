@@ -24,7 +24,7 @@ export default async function Dashboard() {
     { href: "/visits", label: "تسجيل حضور", icon: "📋", perm: "visits.view" },
     { href: "/queue", label: "الطابور", icon: "⏳", perm: "queue.view" },
     { href: "/appointments", label: "المواعيد", icon: "📅", perm: "appointments.view" },
-    { href: "/beds", label: "الأسرّة", icon: "🛏", perm: "beds.view" },
+    { href: "/beds", label: "الرقود والفندقة", icon: "🛏", perm: "beds.view" },
     { href: "/meds", label: "أدوية الراقدين", icon: "💊", perm: "meds.view" },
     { href: "/finance", label: "المالية", icon: "💰", perm: "finance.view" },
     { href: "/analytics", label: "التحليلات", icon: "📊", perm: "analytics.view" },

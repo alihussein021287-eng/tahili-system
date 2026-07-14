@@ -44,7 +44,7 @@ const ALL_ITEMS: Item[] = [
   { href: "/pharmacy/stock", label: "دفعات الصيدلية", icon: "📦", perm: "pharmacy.view" },
   { href: "/pharmacy/reports", label: "تقارير الصيدلية", icon: "📊", perm: "pharmacy.view" },
   { href: "/pharmacy/purchases", label: "أوامر الشراء", icon: "🧾", perm: "pharmacy.purchase.view" },
-  { href: "/beds", label: "الأسرّة والإشغال", icon: "🛏", perm: "beds.view" },
+  { href: "/beds", label: "الرقود والفندقة", icon: "🛏", perm: "beds.view" },
   { href: "/meds", label: "أدوية الراقدين", icon: "💊", perm: "meds.view" },
   { href: "/devices", label: "التسليم والصيانة", icon: "🔧", perm: "devices.view" },
   { href: "/workload", label: "حمل المعالجين", icon: "👷", perm: "workload.view" },
