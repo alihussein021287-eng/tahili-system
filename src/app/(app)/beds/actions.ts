@@ -40,7 +40,7 @@ export async function assignBed(admissionId: string, fd: FormData) {
   await prisma.$transaction(async (tx) => {
     const admission = await tx.admission.findUniqueOrThrow({ where: { id: admissionId } });
     const bed = await tx.bed.findUniqueOrThrow({ where: { id: bedId } });
-    const overlap = await tx.admission.findFirst({ where: { id: { not: admissionId }, bedId, admissionDate: { lte: admission.expectedDischargeDate || new Date("9999-12-31") }, OR: [{ dischargeDate: null }, { dischargeDate: { gte: admission.admissionDate } }] } });
+    const overlap = await tx.admission.findFirst({ where: { id: { not: admissionId }, bedId, admissionDate: { lte: admission.expectedDischargeDate || new Date("9999-12-31") }, OR: [{ dischargeDate: null }, { dischargeDate: { gt: admission.admissionDate } }] } });
     if (overlap) throw new Error("السرير مشغول خلال فترة الرقود");
     if (admission.bedId) await tx.bed.update({ where: { id: admission.bedId }, data: { occupied: false } });
     await tx.admission.update({ where: { id: admissionId }, data: { roomId: bed.roomId, bedId } });

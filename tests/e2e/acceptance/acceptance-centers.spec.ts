@@ -159,8 +159,9 @@ async function expectResourceConflict(browser: Browser, slug: CenterSlug, center
     confirmation: async () => false,
     recoveryUrl: `/centers/${slug}/programs/${programId}`,
     roleState: statePath(credential("HEAD_THERAPIST")),
+    expectFailure: true,
   });
-  expect(result.status).toBe("FAIL");
+  expect(result.status).toBe("PASS");
 }
 
 async function recordCenterSession(browser: Browser, slug: CenterSlug, sessionId: string, patientName: string, procedure: string, progress: string, sensitive?: string) {

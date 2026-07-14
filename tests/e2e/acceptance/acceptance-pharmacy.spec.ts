@@ -245,8 +245,9 @@ test("workflow 20: purchase, split receipts, FEFO dispense, shortages and idempo
     confirmation: async () => false,
     recoveryUrl: "/pharmacy",
     roleState: statePath(credential("PHARMACIST")),
+    expectFailure: true,
   });
-  expect(result.status).toBe("FAIL");
+  expect(result.status).toBe("PASS");
   expect(await prisma.stockMovement.count({ where: { prescriptionId: shortageRx.id } })).toBe(0);
 
   const reports = await pageFor(browser, "PHARMACIST");

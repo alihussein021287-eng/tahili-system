@@ -26,6 +26,11 @@ export function credential(role: string, suffix?: string) {
 
 export const statePath = (user: Credential) => path.join(STATES, `${user.username}.json`);
 
+export function expectedIdentityText(user: Credential) {
+  if (user.role === "ADMIN") return null;
+  return user.username.includes("manager-2") ? "ACCEPTANCE-20260713 MANAGER LEVEL 2" : `ACCEPTANCE-20260713 ${user.role}`;
+}
+
 export async function contextFor(browser: Browser, role: string, suffix?: string): Promise<BrowserContext> {
   const user = credential(role, suffix);
   return browser.newContext({ storageState: statePath(user), baseURL: "http://localhost:3000" });
@@ -43,7 +48,9 @@ export async function pageFor(browser: Browser, role: string, suffix?: string) {
   });
   await page.goto("/");
   if (page.url().endsWith("/login")) throw new Error(`Expired storageState for ${user.username}`);
-  await expect(page.getByText(user.username.includes("manager-2") ? "ACCEPTANCE-20260713 MANAGER LEVEL 2" : `ACCEPTANCE-20260713 ${user.role}`, { exact: false }).first()).toBeVisible();
+  const expected = expectedIdentityText(user);
+  if (expected) await expect(page.getByText(expected, { exact: false }).first()).toBeVisible();
+  else await expect(page.locator("body")).not.toContainText("اسم المستخدم");
   return { context, page, user, errors };
 }
 

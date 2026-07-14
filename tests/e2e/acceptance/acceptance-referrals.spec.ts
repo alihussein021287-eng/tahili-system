@@ -65,7 +65,7 @@ async function externalCycle(browser: Browser, type: "RADIOLOGY"|"HOSPITAL", lab
   await action(browser,"DOCTOR",row.id,"إرسال إلى قائمة الطباعة","PENDING_PRINT");
   await action(browser,"DATA_ENTRY",row.id,"إنشاء الكتاب وتأكيد الجاهزية","READY",async(page)=>{const form=page.locator('form:has(button:has-text("إنشاء الكتاب"))').last();await form.locator('input[name="number"]').fill(`ACCEPTANCE-20260713-${RUN_ID}`);await form.locator('input[name="docDate"]').fill("2026-07-13");});
   await action(browser,"DATA_ENTRY",row.id,"تأكيد إرسال الطلب","SENT");
-  const file=path.join(ROOT,`${RUN_ID}-${label}.txt`);fs.writeFileSync(file,"ACCEPTANCE SAFE RESULT");
+  const file=path.join(ROOT,`${RUN_ID}-${label}.pdf`);fs.writeFileSync(file,"%PDF-1.4\n% ACCEPTANCE SAFE RESULT\n");
   await action(browser,"DATA_ENTRY",row.id,"تسجيل وصول النتيجة","RESULT_RECEIVED",async(page)=>{const form=page.locator('form:has(button:has-text("تسجيل وصول النتيجة"))').last();await form.locator('textarea[name="resultSummary"]').fill("ACCEPTANCE-20260713 نتيجة تجريبية");await form.locator('input[type="file"]').setInputFiles(file);});
   await action(browser,"DOCTOR",row.id,"اعتماد مراجعة النتيجة","REVIEWED");
   await screenshot((await pageFor(browser,"DOCTOR")).page,`${label}-reviewed`);

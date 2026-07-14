@@ -25,6 +25,7 @@ type Input = {
   confirmation: (page: Page) => Promise<boolean>;
   recoveryUrl: string;
   roleState: string;
+  expectFailure?: boolean;
 };
 
 const resultsFile = path.join(ROOT, "resilient-results.json");
@@ -73,8 +74,21 @@ export async function submitServerAction(input: Input) {
   const dbConfirmed = await poll(input.dbExpectation);
   await input.context.close().catch(() => undefined);
   if (!dbConfirmed) {
+    if (input.expectFailure) {
+      const result: ActionResult = { name: input.name, role: input.role, status: "PASS", startedAt, finishedAt: new Date().toISOString(), usedDbRecovery: !quickConfirmed, recoveryUrl: input.recoveryUrl, detail: "Expected server-side denial observed" };
+      persist(result);
+      return result;
+    }
     const result: ActionResult = { name: input.name, role: input.role, status: "FAIL", startedAt, finishedAt: new Date().toISOString(), usedDbRecovery: !quickConfirmed, recoveryUrl: input.recoveryUrl, detail: submitError instanceof Error ? submitError.message : "DB expectation not reached" };
     persist(result);
+    expect(result.status, result.detail).toBe("PASS");
+    return result;
+  }
+
+  if (input.expectFailure) {
+    const result: ActionResult = { name: input.name, role: input.role, status: "FAIL", startedAt, finishedAt: new Date().toISOString(), usedDbRecovery: !quickConfirmed, recoveryUrl: input.recoveryUrl, detail: "Expected denial, but DB expectation was reached" };
+    persist(result);
+    expect(result.status, result.detail).toBe("PASS");
     return result;
   }
 

@@ -1,7 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { prisma } from "@/lib/db";
+import { ensureLegacyAcceptancePatients } from "./fixture-factory";
 import { credential, pageFor, screenshot, statePath } from "./helpers";
 import { submitServerAction } from "./resilient-action";
+
+test.beforeAll(async () => { await ensureLegacyAcceptancePatients(); });
 
 test("workflow 01: attendance, queue and care-stage deduplication", async ({ browser }) => {
   const { context, page } = await pageFor(browser, "RECEPTION");

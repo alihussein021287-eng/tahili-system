@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { prisma } from "@/lib/db";
-import { acceptedCenterReferral, acceptanceUser, activeTherapyHall, centerByNamePart, clinicalPatient } from "./fixture-factory";
+import { acceptanceDoctor, acceptedCenterReferral, acceptanceUser, activeTherapyHall, centerByNamePart, clinicalPatient } from "./fixture-factory";
 import { credential, pageFor, RUN_ID, screenshot, statePath } from "./helpers";
 import { submitServerAction } from "./resilient-action";
 
@@ -53,6 +53,7 @@ async function bodyOnTab(page: Page, tabName: string, text: string) {
 async function createPhysicalPlan(browser: Browser, patientId: string, referralId: string, therapistId: string, hallId: number, title: string) {
   const { iso, weekday } = today();
   const slot = await freeTherapyTime(therapistId, hallId);
+  const specialist = await acceptanceDoctor();
   const actor = await pageFor(browser, "HEAD_THERAPIST");
   await actor.page.goto(`/patients/${patientId}`, { waitUntil: "domcontentloaded" });
   await tab(actor.page, "برنامج العلاج الطبيعي");
@@ -62,6 +63,7 @@ async function createPhysicalPlan(browser: Browser, patientId: string, referralI
   await form.locator('select[name="therapyType"]').selectOption("PHYSICAL");
   await form.locator('select[name="therapistId"]').selectOption(therapistId);
   await expect(form.locator('select[name="therapistId"]')).toContainText("جلسات اليوم");
+  await form.locator('select[name="specialistDoctorId"]').selectOption(specialist.id);
   await form.locator('select[name="hallId"]').selectOption(String(hallId));
   await form.locator('input[name="plannedSessions"]').fill("1");
   await form.locator('input[name="startDate"]').fill(iso);
@@ -154,19 +156,21 @@ test("workflow 10: physical therapy referral through final consultancy follow-up
 
   const final = await pageFor(browser, "HEAD_THERAPIST");
   await final.page.goto(`/therapy/plans/${plan.id}/final`, { waitUntil: "domcontentloaded" });
-  await final.page.locator('textarea[name="beforeCondition"]').fill("قبل البرنامج حالة تجريبية");
-  await final.page.locator('textarea[name="afterCondition"]').fill("بعد البرنامج تحسن تجريبي");
-  await final.page.locator('input[name="improvementLevel"]').fill("تحسن جيد");
-  await final.page.locator('textarea[name="achievedGoals"]').fill("تحققت أهداف قبول العلاج الطبيعي");
-  await final.page.locator('textarea[name="finalRecommendation"]').fill("إنهاء وتحويل للاستشارية");
-  await final.page.locator('select[name="finalDecision"]').selectOption("END");
+  const finalForm = final.page.locator('form:has(button:has-text("حفظ التقييم النهائي"))').first();
+  await finalForm.locator('textarea[name="beforeCondition"]').fill("قبل البرنامج حالة تجريبية");
+  await finalForm.locator('textarea[name="afterCondition"]').fill("بعد البرنامج تحسن تجريبي");
+  await finalForm.locator('input[name="improvementLevel"]').fill("تحسن جيد");
+  await finalForm.locator('input[name="finalRecoveryPercent"]').fill("85");
+  await finalForm.locator('textarea[name="achievedGoals"]').fill("تحققت أهداف قبول العلاج الطبيعي");
+  await finalForm.locator('textarea[name="finalRecommendation"]').fill("إنهاء وتحويل للاستشارية");
+  await finalForm.locator('select[name="finalDecision"]').selectOption("END");
   await submitServerAction({
     name: "physical-finalize",
     role: "HEAD_THERAPIST",
     browser,
     context: final.context,
     page: final.page,
-    submit: final.page.getByRole("button", { name: "حفظ التقييم النهائي" }),
+    submit: finalForm.getByRole("button", { name: "حفظ التقييم النهائي" }),
     dbExpectation: async () => Boolean(await prisma.treatmentPlan.findFirst({ where: { id: plan.id, evaluatedAt: { not: null }, finalDecision: "END" } })),
     confirmation: async (page) => bodyOnTab(page, "برنامج العلاج الطبيعي", "مغلقة"),
     recoveryUrl: `/patients/${patient.id}`,

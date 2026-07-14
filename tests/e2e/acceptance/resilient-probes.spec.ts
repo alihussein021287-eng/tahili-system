@@ -1,24 +1,26 @@
 import "dotenv/config";
 import { test } from "@playwright/test";
 import { prisma } from "@/lib/db";
+import { clinicalPatient, ensureLegacyAcceptancePatients } from "./fixture-factory";
 import { credential, pageFor, RUN_ID, statePath } from "./helpers";
 import { submitServerAction } from "./resilient-action";
 
+test.beforeAll(async () => { await ensureLegacyAcceptancePatients(); });
+
 test("probe 1: reception submit, DB persistence, fresh UI", async ({ browser }) => {
-  const patientId = "cmridquqw0029rr01epzlh9yc";
-  const patient = "ACCEPTANCE-20260713 مراجع 19 رفض وإلغاء";
+  const patient = await clinicalPatient("probe reception", true);
   const started = new Date();
   const actor = await pageFor(browser, "RECEPTION");
-  await actor.page.goto(`/visits?q=${encodeURIComponent(patient)}`, { waitUntil: "domcontentloaded" });
-  const form = actor.page.locator(`form:has(input[name="patientId"][value="${patientId}"])`);
+  await actor.page.goto(`/visits?q=${encodeURIComponent(patient.fullName)}`, { waitUntil: "domcontentloaded" });
+  const form = actor.page.locator(`form:has(input[name="patientId"][value="${patient.id}"])`);
   await form.locator('input[name="notes"]').fill(`ACCEPTANCE-20260713 ${RUN_ID} reception probe`);
   await form.locator('select[name="destination"]').selectOption({ label: "الأشعة" });
   await submitServerAction({
     name: "probe-reception", role: "RECEPTION", browser, context: actor.context, page: actor.page,
     submit: form.getByRole("button", { name: /تسجيل زيارة/ }),
-    dbExpectation: async () => Boolean(await prisma.careStage.findFirst({ where: { patientId, station: "الأشعة", createdAt: { gte: started } } })),
+    dbExpectation: async () => Boolean(await prisma.careStage.findFirst({ where: { patientId: patient.id, station: "الأشعة", createdAt: { gte: started } } })),
     confirmation: async (page) => page.getByText("حاضر", { exact: true }).isVisible().catch(() => false),
-    recoveryUrl: `/visits?q=${encodeURIComponent(patient)}`,
+    recoveryUrl: `/visits?q=${encodeURIComponent(patient.fullName)}`,
     roleState: statePath(credential("RECEPTION")),
   });
 });
@@ -62,9 +64,23 @@ test("probe 2: referral transition, DB persistence, fresh UI", async ({ browser 
 });
 
 test("probe 3: expense approval, DB persistence, fresh UI", async ({ browser }) => {
-  const expense = await prisma.woundedExpense.findFirstOrThrow({
-    where: { status: "SUBMITTED", approvals: { some: {} }, reason: { contains: "ACCEPTANCE-20260713" } },
-    orderBy: { createdAt: "desc" }, include: { approvals: true },
+  const patient = await prisma.patient.findUniqueOrThrow({ where: { id: "cmridqufinance0018rr01" } });
+  const accountant = await prisma.user.findUniqueOrThrow({ where: { username: credential("ACCOUNTANT").username } });
+  const seededManager = await prisma.user.findUniqueOrThrow({ where: { username: credential("MANAGER").username } });
+  const expense = await prisma.woundedExpense.create({
+    data: {
+      voucherNo: `ACC-${RUN_ID}-PROBE`,
+      patientId: patient.id,
+      beneficiary: `ACCEPTANCE-20260713 ${RUN_ID} probe`,
+      expenseType: "اعتماد قبول",
+      reason: `ACCEPTANCE-20260713 ${RUN_ID} probe`,
+      amount: "50000",
+      createdById: accountant.id,
+      status: "SUBMITTED",
+      requiredApprovalLevels: 2,
+      approvals: { create: { level: 1, decision: "APPROVED", userId: seededManager.id, reason: "ACCEPTANCE-20260713 fixture" } },
+    },
+    include: { approvals: true },
   });
   const used = new Set(expense.approvals.map((row) => row.userId));
   const manager1 = await prisma.user.findUniqueOrThrow({ where: { username: credential("MANAGER").username } });

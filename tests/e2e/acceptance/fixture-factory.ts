@@ -39,6 +39,33 @@ export async function clinicalPatient(label: string, eligible: boolean) {
   });
 }
 
+export async function ensureAcceptancePatientFixture(id: string, fullName: string, fileNumber?: number) {
+  const creator = await prisma.user.findUniqueOrThrow({ where: { username: "acceptance-20260713-data-entry" } });
+  const base = {
+    fullName,
+    phone: `0777${Date.now().toString().slice(-6)}${sequence++}`.slice(0, 11),
+    caseType: "WOUNDED" as const,
+    inMobilization: true,
+    status: "ACTIVE" as const,
+    archivedAt: null,
+    notes: `ACCEPTANCE-20260713 ${RUN_ID} fixture`,
+    dataEntryBy: creator.fullName,
+    createdById: creator.id,
+  };
+  return prisma.patient.upsert({
+    where: { id },
+    update: { ...base, ...(fileNumber ? { fileNumber } : {}) },
+    create: { id, ...base, ...(fileNumber ? { fileNumber } : {}) },
+  });
+}
+
+export async function ensureLegacyAcceptancePatients() {
+  await ensureAcceptancePatientFixture("cmridqumv0019rr01watzuwzr", "ACCEPTANCE-20260713 مراجع 01 الاستقبال والطبيب والاختصاص");
+  await ensureAcceptancePatientFixture("cmridquqw0029rr01epzlh9yc", "ACCEPTANCE-20260713 مراجع 19 رفض وإلغاء");
+  await ensureAcceptancePatientFixture("cmridqunt001brr01xx57t1xa", "ACCEPTANCE-20260713 مراجع 20 مختبر");
+  await ensureAcceptancePatientFixture("cmridqufinance0018rr01", "ACCEPTANCE-20260713 مراجع 18 صرفية جريح", 30);
+}
+
 export async function stockedMedication(label: string) {
   const medication = await prisma.medication.create({ data: { name: `ACCEPTANCE-20260713 ${RUN_ID} ${label}`, quantity: 20, minQuantity: 2, unit: "حبة" } });
   const batch = await prisma.medicationBatch.create({ data: { medicationId: medication.id, batchNo: `${RUN_ID}-${label}`, quantity: 20, expiryDate: new Date("2027-12-31") } });

@@ -207,7 +207,7 @@ export async function addAdmission(patientId: string, fd: FormData) {
   const bedId = fd.get("bedId") ? Number(fd.get("bedId")) : null;
   await prisma.$transaction(async (tx) => {
     if (bedId) {
-      const overlap = await tx.admission.findFirst({ where: { bedId, admissionDate: { lte: expectedDischargeDate || new Date("9999-12-31") }, OR: [{ dischargeDate: null }, { dischargeDate: { gte: admissionDate } }] }, select: { id: true } });
+      const overlap = await tx.admission.findFirst({ where: { bedId, admissionDate: { lte: expectedDischargeDate || new Date("9999-12-31") }, OR: [{ dischargeDate: null }, { dischargeDate: { gt: admissionDate } }] }, select: { id: true } });
       if (overlap) throw new Error("السرير مشغول خلال الفترة المحددة");
     }
     const rec = await tx.admission.create({ data: {
