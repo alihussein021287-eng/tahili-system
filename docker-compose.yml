@@ -33,6 +33,8 @@ services:
     image: clamav/clamav:stable
     container_name: tahili_clamav
     restart: unless-stopped
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "true"
     volumes:
       - clamavdata:/var/lib/clamav
 
