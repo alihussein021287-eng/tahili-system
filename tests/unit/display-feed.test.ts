@@ -39,6 +39,8 @@ describe("display-only queue feed", () => {
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ centerId: 4, hall: { in: ["قاعة أ"] } }) }));
     expect(body.called).toMatchObject({ id: "new-call", name: "علي ح. ج." });
     expect(body.waiting[0]).toMatchObject({ id: "wait", name: "سالم ك. ع." });
+    expect(body.waitingTotal).toBe(1);
+    expect(body.inSessionTotal).toBe(0);
     expect(body.called.eventId).toContain("2026-07-14T11:59:50.000Z");
   });
 });

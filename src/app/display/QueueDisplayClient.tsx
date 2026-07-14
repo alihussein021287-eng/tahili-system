@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Item = { id: string; name: string; hall: string | null; time: string; queueNumber: number; eventId?: string };
 type Data = {
   device: { id: string; name: string; centerName: string; callDisplaySeconds: number };
-  called: Item | null; inSession: Item[]; waiting: Item[]; updatedAt: string;
+  called: Item | null; inSession: Item[]; waiting: Item[]; inSessionTotal: number; waitingTotal: number; updatedAt: string;
 };
 
 function playCall(ctx: AudioContext) {
@@ -103,14 +103,26 @@ export default function QueueDisplayClient({ deviceId, deviceName }: { deviceId:
     </section>
 
     <section className="grid h-[35%] grid-cols-2 gap-[clamp(.75rem,1.5vw,2rem)] pt-[clamp(.75rem,1.5vw,2rem)]">
-      <QueueList title="داخل الجلسة" items={data?.inSession ?? []} tone="amber" />
-      <QueueList title="قائمة الانتظار" items={data?.waiting ?? []} tone="teal" />
+      <QueueList title="داخل الجلسة" items={data?.inSession ?? []} total={data?.inSessionTotal ?? 0} tone="amber" />
+      <QueueList title="قائمة الانتظار" items={data?.waiting ?? []} total={data?.waitingTotal ?? 0} tone="teal" />
     </section>
 
     <footer className="flex h-[6%] items-end justify-between text-[clamp(.7rem,1vw,1rem)] text-white/45"><span className={connected ? "" : "rounded-full bg-amber-300/15 px-3 py-1 text-amber-200"}>{connected ? "متصل" : "إعادة الاتصال…"}</span><span>آخر تحديث: {lastUpdate}</span></footer>
   </main>;
 }
 
-function QueueList({ title, items, tone }: { title: string; items: Item[]; tone: "amber" | "teal" }) {
-  return <div className="min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-[clamp(.75rem,1.3vw,1.5rem)]"><h2 className={`mb-2 text-[clamp(1rem,1.6vw,2rem)] font-black ${tone === "amber" ? "text-amber-200" : "text-teal-200"}`}>{title} <span className="text-white/40">({items.length})</span></h2><div className="grid gap-2">{items.map((item) => <div key={item.id} className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-white/10 px-4 py-2 text-[clamp(.9rem,1.35vw,1.7rem)]"><span className="min-w-0 truncate font-bold">{item.name}</span><span className="shrink-0 text-[.75em] text-white/60">{item.hall ?? item.time}</span></div>)}{items.length === 0 && <div className="py-8 text-center text-2xl text-white/20">—</div>}</div></div>;
+function QueueList({ title, items, total, tone }: { title: string; items: Item[]; total: number; tone: "amber" | "teal" }) {
+  const pageSize = 5;
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  const [page, setPage] = useState(0);
+  useEffect(() => { setPage((current) => Math.min(current, pageCount - 1)); }, [pageCount]);
+  useEffect(() => {
+    if (pageCount < 2) return;
+    const timer = setInterval(() => setPage((current) => (current + 1) % pageCount), 7_000);
+    return () => clearInterval(timer);
+  }, [pageCount]);
+  const visible = items.slice(page * pageSize, page * pageSize + pageSize);
+  const first = total ? page * pageSize + 1 : 0;
+  const last = Math.min((page + 1) * pageSize, total);
+  return <div className="min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-[clamp(.75rem,1.3vw,1.5rem)]"><div className="mb-2 flex items-center justify-between gap-2"><h2 className={`text-[clamp(1rem,1.6vw,2rem)] font-black ${tone === "amber" ? "text-amber-200" : "text-teal-200"}`}>{title} <span className="text-white/40">({total})</span></h2>{total > pageSize && <span className="shrink-0 text-[clamp(.65rem,.9vw,1rem)] text-white/55">{first}–{last} من {total}</span>}</div><div className="grid gap-2">{visible.map((item) => <div key={item.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl bg-white/10 px-4 py-2 text-[clamp(.9rem,1.35vw,1.7rem)]"><span className="min-w-0 truncate font-bold">{item.name}</span><span className="shrink-0 text-[.75em] text-white/60">{item.hall ?? item.time}</span></div>)}{items.length === 0 && <div className="py-8 text-center text-2xl text-white/20">—</div>}</div></div>;
 }

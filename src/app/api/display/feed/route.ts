@@ -36,11 +36,14 @@ export async function GET() {
   const calledCutoff = new Date(now.getTime() - device.callDisplaySeconds * 1000);
   const currentCall = numbered.filter(({ entry }) => entry.status === "CALLED" && entry.calledAt && entry.calledAt >= calledCutoff).sort((a, b) => (b.entry.calledAt?.getTime() ?? 0) - (a.entry.calledAt?.getTime() ?? 0))[0];
   const called = currentCall ? { ...item(currentCall), eventId: `${currentCall.entry.id}:${currentCall.entry.calledAt!.toISOString()}` } : null;
-  const inSession = numbered.filter(({ entry }) => entry.status === "IN_SESSION").slice(0, 8).map(item);
-  const waiting = numbered.filter(({ entry }) => entry.status === "WAITING").slice(0, 8).map(item);
+  const inSessionEntries = numbered.filter(({ entry }) => entry.status === "IN_SESSION");
+  const waitingEntries = numbered.filter(({ entry }) => entry.status === "WAITING");
+  // The display rotates compact pages. Keep enough items for several pages without sending an unbounded daily queue.
+  const inSession = inSessionEntries.slice(0, 40).map(item);
+  const waiting = waitingEntries.slice(0, 40).map(item);
   if (!device.lastSeenAt || now.getTime() - device.lastSeenAt.getTime() >= 30_000) await prisma.displayDevice.update({ where: { id: device.id }, data: { lastSeenAt: now } });
   return NextResponse.json({
     device: { id: device.id, name: device.name, centerName: device.center?.name ?? "المجمع التأهيلي الطبي", callDisplaySeconds: device.callDisplaySeconds },
-    called, inSession, waiting, updatedAt: now.toISOString(),
+    called, inSession, waiting, inSessionTotal: inSessionEntries.length, waitingTotal: waitingEntries.length, updatedAt: now.toISOString(),
   }, { headers: { "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate" } });
 }
