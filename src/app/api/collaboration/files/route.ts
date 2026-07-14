@@ -9,12 +9,22 @@ const HEADERS = {
 };
 
 function assertSameOrigin(request: NextRequest) {
-  const expected = new URL(request.url).origin;
+  const expected = new Set([new URL(request.url).origin]);
+  const host = request.headers.get("host");
+  if (host) {
+    const proto = request.headers.get("x-forwarded-proto") || (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
+    expected.add(`${proto}://${host}`);
+    const [hostname, port] = host.split(":");
+    if (hostname === "127.0.0.1") expected.add(`${proto}://localhost${port ? `:${port}` : ""}`);
+    if (hostname === "localhost") expected.add(`${proto}://127.0.0.1${port ? `:${port}` : ""}`);
+  }
+  if (process.env.NEXTAUTH_URL) expected.add(new URL(process.env.NEXTAUTH_URL).origin);
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
-  if (origin && origin !== expected) throw new Error("طلب رفع غير موثوق");
-  if (!origin && referer && new URL(referer).origin !== expected) throw new Error("طلب رفع غير موثوق");
-  if (!origin && !referer) throw new Error("طلب رفع غير موثوق");
+  const secFetchSite = request.headers.get("sec-fetch-site");
+  if (origin && !expected.has(origin)) throw new Error("طلب رفع غير موثوق");
+  if (!origin && referer && !expected.has(new URL(referer).origin)) throw new Error("طلب رفع غير موثوق");
+  if (!origin && !referer && secFetchSite !== "same-origin") throw new Error("طلب رفع غير موثوق");
 }
 
 export async function POST(request: NextRequest) {
