@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { DisplaySettings } from "./DisplaySettings";
 import { queueHallNames } from "@/lib/queue";
+import { collaborationSettings } from "@/lib/collaboration-service";
 import { addCenter, addInjuryType, addDistrict, addFormation,
   addRank, deleteRank, deleteCenter, deleteInjuryType, deleteFormation, deleteDistrict, saveOrg, saveRetention, saveExpenseApprovalLevels, saveAdminConfig, setMaintenanceMode, addBranch, deleteBranch, toggleBranch, addMobilityAid, deleteMobilityAid, addProstheticType, deleteProstheticType } from "./actions";
 
@@ -21,7 +22,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const messages = await searchParams;
   const retention = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, loginLogRetentionDays: true, expenseApprovalLevels: true, adminConfig: true } });
   const cfg = (retention?.adminConfig ?? {}) as Record<string, any>;
-  const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks, displayDevices, therapyHalls] = await Promise.all([
+  const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks, displayDevices, therapyHalls, collabSettings] = await Promise.all([
     prisma.branch.findMany({ include: { _count: { select: { users: true, patients: true } } }, orderBy: [{ isActive: "desc" }, { name: "asc" }] }),
     prisma.mobilityAid.findMany({ orderBy: { name: "asc" } }),
     prisma.prostheticType.findMany({ orderBy: { name: "asc" } }),
@@ -32,6 +33,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
     prisma.rank.findMany({ orderBy: { name: "asc" } }),
     isAdmin ? prisma.displayDevice.findMany({ include: { center: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
     isAdmin ? prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }) : Promise.resolve([]),
+    isAdmin ? collaborationSettings() : Promise.resolve(null),
   ]);
 
   return (
@@ -40,10 +42,28 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {messages.saved && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{messages.saved}</div>}
       {messages.error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{messages.error}</div>}
       <nav className="flex gap-2 overflow-x-auto rounded-lg border bg-white p-2 text-sm" aria-label="أقسام الإعدادات">
-        {[["هوية النظام","هوية النظام"],["شاشات الانتظار","شاشات الانتظار"],["الدوام والمواعيد","سياسات النظام"],["العلاج والمراكز","سياسات النظام"],["الأمان والجلسات","الأمان والجلسات"],["الإشعارات","سياسات النظام"],["الملفات والطباعة","سياسات النظام"],["النسخ والاحتفاظ","النسخ والاحتفاظ"],["القوائم والفروع","القوائم والفروع"]].map(([label,target]) => <a key={label} href={`#${target}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{label}</a>)}
+        {[["هوية النظام","هوية النظام"],["شاشات الانتظار","شاشات الانتظار"],["مركز التعاون","مركز التعاون"],["الدوام والمواعيد","سياسات النظام"],["العلاج والمراكز","سياسات النظام"],["الأمان والجلسات","الأمان والجلسات"],["الإشعارات","سياسات النظام"],["الملفات والطباعة","سياسات النظام"],["النسخ والاحتفاظ","النسخ والاحتفاظ"],["القوائم والفروع","القوائم والفروع"]].map(([label,target]) => <a key={label} href={`#${target}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{label}</a>)}
       </nav>
 
       {isAdmin && <DisplaySettings devices={JSON.parse(JSON.stringify(displayDevices))} centers={centers} halls={queueHallNames(therapyHalls.map((hall) => hall.name))} />}
+
+      {isAdmin && collabSettings && (
+        <section id="مركز التعاون" className="card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-gray-800">مركز التعاون</h2>
+              <p className="text-sm text-gray-500">الإدارة التفصيلية للقنوات والفحص والحصص تتم من صفحة إدارة التعاون.</p>
+            </div>
+            <Link href="/collaboration/admin" className="btn-primary">فتح إدارة التعاون</Link>
+          </div>
+          <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
+            <div className="rounded-lg border p-3"><div className="text-gray-500">الحالة</div><div className="font-semibold">{collabSettings.servicePaused ? "متوقفة مؤقتاً" : "تعمل"}</div></div>
+            <div className="rounded-lg border p-3"><div className="text-gray-500">أقصى ملف</div><div className="font-semibold">{collabSettings.maxUploadMb} MB</div></div>
+            <div className="rounded-lg border p-3"><div className="text-gray-500">مدة تعديل الرسالة</div><div className="font-semibold">{collabSettings.editWindowMinutes} دقيقة</div></div>
+            <div className="rounded-lg border p-3"><div className="text-gray-500">حصة المستخدم</div><div className="font-semibold">{collabSettings.userQuotaMb} MB</div></div>
+          </div>
+        </section>
+      )}
 
       {isAdmin && <form id="سياسات النظام" action={saveAdminConfig} className="card grid gap-4 p-5 md:grid-cols-3">
         <div className="md:col-span-3"><h2 className="font-semibold text-gray-800">سياسات التشغيل والعلاج والأمان</h2><p className="text-sm text-gray-500">قيم افتراضية مركزية مع تحقق خادمي وسجل للقيمة السابقة والجديدة.</p></div>

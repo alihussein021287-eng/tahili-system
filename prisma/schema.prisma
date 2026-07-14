@@ -293,6 +293,59 @@ enum CenterResourceStatus {
   OUT_OF_SERVICE
 }
 
+enum ConversationType {
+  DIRECT
+  GROUP
+  CHANNEL
+}
+
+enum ConversationMemberRole {
+  OWNER
+  MODERATOR
+  MEMBER
+}
+
+enum ConversationMemberStatus {
+  ACTIVE
+  LEFT
+  REMOVED
+}
+
+enum MessageStatus {
+  ACTIVE
+  DELETED
+}
+
+enum CollaborationFileAccessLevel {
+  PRIVATE
+  SPECIFIC_USERS
+  CONVERSATION
+  DEPARTMENT
+  CENTER
+  ALL_STAFF
+}
+
+enum FileShareTargetType {
+  USER
+  CONVERSATION
+  DEPARTMENT
+  CENTER
+  ALL_STAFF
+}
+
+enum FileScanStatus {
+  PENDING_SCAN
+  SAFE
+  REJECTED
+  FAILED
+}
+
+enum CollaborationQuotaTarget {
+  USER
+  DEPARTMENT
+  CENTER
+}
+
 // =====================================================================
 //  المستخدمون والصلاحيات
 // =====================================================================
@@ -346,6 +399,22 @@ model User {
   woundedExpensesCreated      WoundedExpense[]            @relation("WoundedExpenseCreatedBy")
   woundedExpensesPaid         WoundedExpense[]            @relation("WoundedExpensePaidBy")
   woundedExpenseApprovals     WoundedExpenseApproval[]
+  conversationsCreated        Conversation[]              @relation("ConversationCreatedBy")
+  conversationMemberships     ConversationMember[]
+  messagesSent                Message[]                   @relation("MessageSender")
+  messageReads                MessageRead[]
+  messageMentions             MessageMention[]
+  collaborationFoldersOwned   Folder[]                    @relation("FolderOwner")
+  collaborationFilesOwned     CollaborationFile[]         @relation("CollaborationFileOwner")
+  collaborationFilesUploaded  CollaborationFile[]         @relation("CollaborationFileUploadedBy")
+  collaborationFilesUpdated   CollaborationFile[]         @relation("CollaborationFileUpdatedBy")
+  collaborationFilesDeleted   CollaborationFile[]         @relation("CollaborationFileDeletedBy")
+  fileVersionsUploaded        FileVersion[]               @relation("FileVersionUploadedBy")
+  fileSharesCreated           FileShare[]                 @relation("FileShareCreatedBy")
+  fileSharesTargeted          FileShare[]                 @relation("FileShareTargetUser")
+  fileFavorites               Favorite[]
+  fileScansRequested          FileScan[]                  @relation("FileScanRequestedBy")
+  filePatientLinks            CollaborationFile[]         @relation("CollaborationFileLinkedBy")
 
   @@index([username])
   @@map("users")
@@ -410,6 +479,11 @@ model Center {
   treatmentPlans   TreatmentPlan[]
   queueEntries     QueueEntry[]
   displayDevices   DisplayDevice[]
+  collaborationConversations Conversation[]
+  collaborationFolders       Folder[]
+  collaborationFiles         CollaborationFile[]
+  collaborationFileShares    FileShare[]
+  collaborationQuotas        CollaborationQuota[]
 
   @@map("centers")
 }
@@ -777,6 +851,7 @@ model Patient {
   officialDocuments  OfficialDocument[]
   approvalRequests   ApprovalRequest[]
   sickLeaves         SickLeave[]
+  collaborationFiles CollaborationFile[]
   archivedAt         DateTime? // الأرشفة
   accessToken        String?             @unique // رمز بوابة المريض
   photoUrl           String? // صورة المريض
@@ -1562,6 +1637,288 @@ model UserPreference {
   userId    String   @id
   favorites String   @default("[]")
   updatedAt DateTime @updatedAt
+}
+
+// ===== مركز التعاون: محادثات وملفات منفصلة عن وثائق المراجعين =====
+model Conversation {
+  id             String            @id @default(cuid())
+  type           ConversationType
+  title          String?
+  description    String?
+  directKey      String?           @unique
+  department     String?
+  centerId       Int?
+  center         Center?           @relation(fields: [centerId], references: [id], onDelete: SetNull)
+  isSystemChannel Boolean          @default(false)
+  isArchived     Boolean           @default(false)
+  createdById    String?
+  createdBy      User?             @relation("ConversationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  members        ConversationMember[]
+  messages       Message[]
+  files          CollaborationFile[]
+  fileShares     FileShare[]
+
+  @@index([type, updatedAt])
+  @@index([centerId])
+  @@index([department])
+  @@map("collaboration_conversations")
+}
+
+model ConversationMember {
+  id             String                   @id @default(cuid())
+  conversationId String
+  conversation   Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           ConversationMemberRole   @default(MEMBER)
+  status         ConversationMemberStatus @default(ACTIVE)
+  muted          Boolean                  @default(false)
+  joinedAt       DateTime                 @default(now())
+  leftAt         DateTime?
+
+  @@unique([conversationId, userId])
+  @@index([userId, status])
+  @@index([conversationId, status])
+  @@map("collaboration_conversation_members")
+}
+
+model Message {
+  id               String             @id @default(cuid())
+  conversationId   String
+  conversation     Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId         String
+  sender           User               @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+  body             String?
+  attachmentFileId String?
+  attachmentFile   CollaborationFile? @relation("MessageAttachment", fields: [attachmentFileId], references: [id], onDelete: SetNull)
+  replyToId        String?
+  replyTo          Message?           @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies          Message[]          @relation("MessageReply")
+  status           MessageStatus      @default(ACTIVE)
+  pinned           Boolean            @default(false)
+  editedAt         DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  reads            MessageRead[]
+  mentions         MessageMention[]
+
+  @@index([conversationId, createdAt])
+  @@index([senderId, createdAt])
+  @@index([conversationId, pinned])
+  @@map("collaboration_messages")
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId, readAt])
+  @@map("collaboration_message_reads")
+}
+
+model MessageMention {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId, createdAt])
+  @@map("collaboration_message_mentions")
+}
+
+model Folder {
+  id          String    @id @default(cuid())
+  ownerId     String
+  owner       User      @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  name        String
+  description String?
+  parentId    String?
+  parent      Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Folder[]  @relation("FolderTree")
+  department  String?
+  centerId    Int?
+  center      Center?   @relation(fields: [centerId], references: [id], onDelete: SetNull)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  files       CollaborationFile[]
+
+  @@index([ownerId, deletedAt])
+  @@index([parentId])
+  @@index([centerId])
+  @@map("collaboration_folders")
+}
+
+model CollaborationFile {
+  id              String                       @id @default(cuid())
+  publicId        String                       @unique
+  originalName    String
+  displayName     String
+  description     String?
+  mimeType        String
+  size            Int
+  sha256          String
+  accessLevel     CollaborationFileAccessLevel @default(PRIVATE)
+  scanStatus      FileScanStatus               @default(PENDING_SCAN)
+  currentVersion  Int                          @default(1)
+  ownerId         String
+  owner           User                         @relation("CollaborationFileOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  uploadedById    String
+  uploadedBy      User                         @relation("CollaborationFileUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  updatedById     String?
+  updatedBy       User?                        @relation("CollaborationFileUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  deletedById     String?
+  deletedBy       User?                        @relation("CollaborationFileDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  folderId        String?
+  folder          Folder?                      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  conversationId  String?
+  conversation    Conversation?                @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  department      String?
+  centerId        Int?
+  center          Center?                      @relation(fields: [centerId], references: [id], onDelete: SetNull)
+  patientId       String?
+  patient         Patient?                     @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  linkedToPatientAt DateTime?
+  linkedToPatientById String?
+  linkedToPatientBy   User?                    @relation("CollaborationFileLinkedBy", fields: [linkedToPatientById], references: [id], onDelete: SetNull)
+  deletedAt       DateTime?
+  permanentlyDeletedAt DateTime?
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+  versions        FileVersion[]
+  shares          FileShare[]
+  favorites       Favorite[]
+  messageAttachments Message[]                 @relation("MessageAttachment")
+
+  @@index([ownerId, deletedAt])
+  @@index([scanStatus])
+  @@index([accessLevel])
+  @@index([centerId])
+  @@index([department])
+  @@index([createdAt])
+  @@map("collaboration_files")
+}
+
+model FileVersion {
+  id           String         @id @default(cuid())
+  fileId       String
+  file         CollaborationFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  version      Int
+  storageKey   String         @unique
+  mimeType     String
+  size         Int
+  sha256       String
+  scanStatus   FileScanStatus @default(PENDING_SCAN)
+  uploadedById String
+  uploadedBy   User           @relation("FileVersionUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime       @default(now())
+  scans        FileScan[]
+
+  @@unique([fileId, version])
+  @@index([fileId, scanStatus])
+  @@map("collaboration_file_versions")
+}
+
+model FileShare {
+  id                   String              @id @default(cuid())
+  fileId               String
+  file                 CollaborationFile   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  targetType           FileShareTargetType
+  targetUserId         String?
+  targetUser           User?               @relation("FileShareTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+  targetConversationId String?
+  targetConversation   Conversation?       @relation(fields: [targetConversationId], references: [id], onDelete: Cascade)
+  targetDepartment     String?
+  targetCenterId       Int?
+  targetCenter         Center?             @relation(fields: [targetCenterId], references: [id], onDelete: Cascade)
+  shareKey             String
+  canEdit              Boolean             @default(false)
+  createdById          String
+  createdBy            User                @relation("FileShareCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt            DateTime            @default(now())
+  revokedAt            DateTime?
+
+  @@unique([fileId, shareKey])
+  @@index([targetUserId, revokedAt])
+  @@index([targetConversationId, revokedAt])
+  @@index([targetCenterId, revokedAt])
+  @@index([targetDepartment, revokedAt])
+  @@map("collaboration_file_shares")
+}
+
+model Favorite {
+  id        String            @id @default(cuid())
+  fileId    String
+  file      CollaborationFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime          @default(now())
+
+  @@unique([fileId, userId])
+  @@index([userId, createdAt])
+  @@map("collaboration_file_favorites")
+}
+
+model FileScan {
+  id            String         @id @default(cuid())
+  versionId     String
+  version       FileVersion    @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  status        FileScanStatus
+  engine        String
+  detail        String?
+  requestedById String?
+  requestedBy   User?          @relation("FileScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now())
+  scannedAt     DateTime?
+
+  @@index([status, createdAt])
+  @@index([versionId])
+  @@map("collaboration_file_scans")
+}
+
+model CollaborationSettings {
+  id                    Int      @id @default(1)
+  servicePaused         Boolean  @default(false)
+  maxUploadMb           Int      @default(50)
+  allowedTypes          Json     @default("[\"pdf\",\"jpg\",\"jpeg\",\"png\",\"webp\",\"doc\",\"docx\",\"xls\",\"xlsx\",\"ppt\",\"pptx\",\"txt\",\"zip\",\"rar\",\"mp3\",\"wav\",\"mp4\",\"mov\"]")
+  blockedTypes          Json     @default("[\"exe\",\"msi\",\"bat\",\"cmd\",\"com\",\"ps1\",\"sh\",\"js\",\"jar\",\"scr\",\"dll\"]")
+  editWindowMinutes     Int      @default(15)
+  messageRetentionDays  Int      @default(365)
+  trashRetentionDays    Int      @default(30)
+  userQuotaMb           Int      @default(1024)
+  departmentQuotaMb     Int      @default(10240)
+  centerQuotaMb         Int      @default(20480)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("collaboration_settings")
+}
+
+model CollaborationQuota {
+  id               String                  @id @default(cuid())
+  targetType       CollaborationQuotaTarget
+  targetUserId     String?
+  targetDepartment String?
+  targetCenterId   Int?
+  targetCenter     Center?                 @relation(fields: [targetCenterId], references: [id], onDelete: Cascade)
+  quotaKey         String                  @unique
+  limitMb          Int
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([targetType])
+  @@map("collaboration_quotas")
 }
 
 model VitalSign {

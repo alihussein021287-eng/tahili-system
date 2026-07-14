@@ -176,6 +176,23 @@ export const PERM_GROUPS: PermGroup[] = [
     { key: "tasks.complete", label: "إنجاز/إعادة فتح" },
     { key: "tasks.delete", label: "حذف مهمة (أدمن فقط)", adminOnly: true },
   ]},
+  { section: "collaboration", title: "مركز التعاون", items: [
+    { key: "collaboration.view", label: "عرض مركز التعاون" },
+    { key: "chat.create", label: "إنشاء محادثة أو مجموعة" },
+    { key: "chat.send", label: "إرسال رسائل ومرفقات" },
+    { key: "chat.manage.members", label: "إدارة أعضاء وقنوات التعاون" },
+    { key: "chat.moderate", label: "تثبيت وحذف رسائل بصفة مشرف" },
+    { key: "files.view", label: "عرض مركز الملفات" },
+    { key: "files.upload", label: "رفع ملفات التعاون" },
+    { key: "files.download", label: "تنزيل ومعاينة الملفات" },
+    { key: "files.edit", label: "تعديل بيانات الملفات وإصداراتها" },
+    { key: "files.share", label: "مشاركة وإلغاء مشاركة الملفات" },
+    { key: "files.delete", label: "نقل الملفات إلى السلة" },
+    { key: "files.restore", label: "استرجاع الملفات من السلة" },
+    { key: "files.delete.permanent", label: "حذف نهائي للملفات (أدمن فقط)", adminOnly: true },
+    { key: "files.audit", label: "عرض سجل عمليات الملفات" },
+    { key: "files.admin", label: "إدارة خدمة التعاون والفحص والحصص", adminOnly: true },
+  ]},
   { section: "users", title: "المستخدمون والنظام", items: [
     { key: "users.view", label: "عرض المستخدمين" },
     { key: "users.manage", label: "إضافة/تعطيل/تغيير كلمة سر (أدمن فقط)", adminOnly: true },
@@ -188,6 +205,14 @@ export const PERM_GROUPS: PermGroup[] = [
 export const ALL_PERMS: string[] = PERM_GROUPS.flatMap((g) => g.items.map((i) => i.key));
 
 // ===== الافتراضيات لكل دور =====
+const COLLABORATION_DEFAULT = [
+  "collaboration.view", "chat.create", "chat.send",
+  "files.view", "files.upload", "files.download", "files.edit", "files.share",
+];
+const COLLABORATION_SUPERVISOR_DEFAULT = [
+  ...COLLABORATION_DEFAULT,
+  "chat.manage.members", "chat.moderate", "files.delete", "files.restore", "files.audit",
+];
 const VIEWER_DEFAULT = [
   "dashboard.view", "patients.view", "clinical.view",
   "appointments.view", "queue.view", "visits.view", "reports.view",
@@ -197,6 +222,7 @@ const VIEWER_DEFAULT = [
   "officialdocs.view",
   "approvals.view", "approvals.create",
   "sickleave.view",
+  ...COLLABORATION_DEFAULT,
 ];
 const THERAPIST_DEFAULT = [
   ...VIEWER_DEFAULT,
@@ -232,6 +258,7 @@ const MANAGER_DEFAULT = [
   "approvals.approve", "approvals.execute",
   "referrals.view", "referrals.print", "referrals.updateStatus",
   "centers.view", "centers.central.view", "centers.memberships.manage", "centers.resources.manage", "centers.programs.manage", "centers.programs.finalize", "centers.psych.sensitive",
+  ...COLLABORATION_SUPERVISOR_DEFAULT,
 ];
 const ACCOUNTANT_DEFAULT = [
   "dashboard.view", "patients.view", "reports.view",
@@ -243,6 +270,7 @@ const ACCOUNTANT_DEFAULT = [
   "officialdocs.view",
   "approvals.view", "approvals.create",
   "sickleave.view",
+  ...COLLABORATION_DEFAULT,
 ];
 const PHARMACIST_DEFAULT = [
   "dashboard.view", "patients.view",
@@ -254,6 +282,7 @@ const PHARMACIST_DEFAULT = [
   "officialdocs.view",
   "approvals.view", "approvals.create",
   "sickleave.view",
+  ...COLLABORATION_DEFAULT,
 ];
 
 const STATION_BASE = [
@@ -264,6 +293,7 @@ const STATION_BASE = [
   "officialdocs.view",
   "approvals.view", "approvals.create",
   "sickleave.view",
+  ...COLLABORATION_DEFAULT,
 ];
 const RECEPTION_DEFAULT = [...STATION_BASE, "patients.create", "patients.edit", "patients.print", "patients.portal", "appointments.create", "appointments.edit", "queue.manage", "visits.manage", "officialdocs.manage"];
 const LAB_DEFAULT = [...STATION_BASE, "clinical.report"];
@@ -279,6 +309,7 @@ const HEAD_THERAPIST_DEFAULT = [...STATION_BASE,
   "therapy.evaluation.periodic", "therapy.improvement.update", "therapy.specialist.assign", "therapy.schedule.reschedule",
   "centers.view", "centers.resources.manage", "centers.programs.manage", "centers.programs.finalize", "centers.psych.sensitive",
   "meds.view", "workload.view", "journey.manage", "shifts.view", "referrals.view", "referrals.accept",
+  ...COLLABORATION_SUPERVISOR_DEFAULT,
 ];
 
 // الطبيب المقيم: صلاحيات المعالج + التشخيص/الإحالة (دور طبي)

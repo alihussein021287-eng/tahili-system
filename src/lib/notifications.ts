@@ -1,4 +1,4 @@
-export type NotificationKind = "tasks" | "appointments" | "inventory" | "devices" | "referrals" | "system";
+export type NotificationKind = "tasks" | "appointments" | "inventory" | "devices" | "referrals" | "collaboration" | "system";
 
 export type NotificationTone = {
   kind: NotificationKind;
@@ -13,6 +13,7 @@ const TONES: Record<NotificationKind, NotificationTone> = {
   inventory: { kind: "inventory", label: "مخزون", icon: "📦", className: "border-orange-200 bg-orange-50 text-orange-700" },
   devices: { kind: "devices", label: "أجهزة", icon: "🔧", className: "border-amber-200 bg-amber-50 text-amber-700" },
   referrals: { kind: "referrals", label: "إحالات", icon: "↗", className: "border-teal-200 bg-teal-50 text-teal-700" },
+  collaboration: { kind: "collaboration", label: "تعاون", icon: "💬", className: "border-indigo-200 bg-indigo-50 text-indigo-700" },
   system: { kind: "system", label: "نظام", icon: "⚙", className: "border-slate-200 bg-slate-50 text-slate-700" },
 };
 
@@ -24,6 +25,7 @@ export function notificationKind(input: { title?: string | null; link?: string |
   if (link.startsWith("/pharmacy") || link.startsWith("/inventory") || title.includes("وصفة") || title.includes("مخزون")) return "inventory";
   if (link.startsWith("/devices") || title.includes("جهاز") || title.includes("صيانة")) return "devices";
   if (link.startsWith("/referrals") || title.includes("إحالة") || title.includes("فحص خارجي")) return "referrals";
+  if (link.startsWith("/collaboration") || title.includes("تعاون") || title.includes("ملف تعاون") || title.includes("الإشارة إليك")) return "collaboration";
   return "system";
 }
 
@@ -39,6 +41,7 @@ export function permissionForLink(link?: string | null) {
   if (link.startsWith("/inventory")) return "inventory.view";
   if (link.startsWith("/devices")) return "devices.view";
   if (link.startsWith("/referrals")) return "referrals.view";
+  if (link.startsWith("/collaboration")) return "collaboration.view";
   if (link.startsWith("/backup")) return "settings.backup";
   if (link.startsWith("/readiness")) return "settings.view";
   if (link.startsWith("/patients")) return "patients.view";
@@ -65,5 +68,6 @@ export const NOTIFICATION_KINDS = [
   { value: "inventory", label: "مخزون" },
   { value: "devices", label: "أجهزة" },
   { value: "referrals", label: "إحالات" },
+  { value: "collaboration", label: "تعاون" },
   { value: "system", label: "نظام" },
 ];

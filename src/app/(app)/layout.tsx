@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getBackupOverview, maybeAutoBackup } from "@/lib/backup";
 import { loadPerms } from "@/lib/access";
 import { canOpenNotification } from "@/lib/notifications";
+import { collaborationUnreadCount } from "@/lib/collaboration-service";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const now = new Date();
   const soon = new Date(); soon.setDate(soon.getDate() + 60);
   const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-  const [admitted, devicesDue, meds, rxPending, expiringSoon, myTasks, overdueTasks, appointmentSoon, org] = await Promise.all([
+  const [admitted, devicesDue, meds, rxPending, expiringSoon, myTasks, overdueTasks, appointmentSoon, org, collaborationUnread] = await Promise.all([
     prisma.admission.findMany({ where: { status: "ADMITTED" }, select: { admissionDate: true, durationDays: true } }),
     prisma.device.count({ where: { nextMaintenanceAt: { lte: now }, status: { not: "REPLACED" } } }),
     prisma.medication.findMany({ select: { quantity: true, minQuantity: true } }),
@@ -33,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, dueDate: { lt: now }, OR: [{ assignedToId: uid }, { assignedRole: role }] } }),
     prisma.appointment.count({ where: { status: "SCHEDULED", scheduledAt: { gte: now, lte: inTwoHours }, OR: [{ assignedTo: name }, { assignedTo: null }] } }),
     permSet.has("settings.backup") ? prisma.orgSetting.findUnique({ where: { id: 1 }, select: { autoBackup: true } }) : Promise.resolve(null),
+    permSet.has("collaboration.view") ? collaborationUnreadCount(uid, role) : Promise.resolve(0),
   ]);
   const admOver = admitted.filter((a) => a.durationDays && now >= new Date(new Date(a.admissionDate).getTime() + a.durationDays * 86400000)).length;
   const lowStock = meds.filter((m: any) => (m.quantity ?? 0) <= (m.minQuantity ?? 0)).length;
@@ -45,6 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     rxPending,
     expiringSoon,
     myTasks,
+    collaborationUnread,
     overdueTasks,
     appointmentSoon,
     backupStale: permSet.has("settings.backup") && backupAgeHours > 48 ? 1 : 0,

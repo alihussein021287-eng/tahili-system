@@ -28,6 +28,14 @@ services:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
 
+  # فحص ملفات التعاون محلياً قبل السماح بالتنزيل أو المشاركة
+  clamav:
+    image: clamav/clamav:stable
+    container_name: tahili_clamav
+    restart: unless-stopped
+    volumes:
+      - clamavdata:/var/lib/clamav
+
   # تطبيق Next.js (الواجهة + الـ API)
   app:
     build: .
@@ -47,6 +55,9 @@ services:
       MINIO_PORT: "9000"
       MINIO_ACCESS_KEY: ${MINIO_USER:?set MINIO_USER in .env}
       MINIO_SECRET_KEY: ${MINIO_PASSWORD:?set MINIO_PASSWORD in .env}
+      COLLABORATION_MINIO_BUCKET: ${COLLABORATION_MINIO_BUCKET:-tahili-collaboration}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
       UPLOAD_DIR: /app/uploads
       TZ: Asia/Baghdad
       REMINDER_KEY: ${REMINDER_KEY:?set REMINDER_KEY in .env}
@@ -58,4 +69,5 @@ services:
 volumes:
   pgdata:
   miniodata:
+  clamavdata:
   uploads:

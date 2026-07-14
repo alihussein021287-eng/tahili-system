@@ -17,6 +17,7 @@ type AlertCounts = {
   rxPending: number;
   expiringSoon: number;
   myTasks: number;
+  collaborationUnread?: number;
   overdueTasks?: number;
   appointmentSoon?: number;
   backupStale?: number;
@@ -26,6 +27,7 @@ type AlertCounts = {
 const ALL_ITEMS: Item[] = [
   { href: "/", label: "الرئيسية", icon: "▤", perm: "dashboard.view" },
   { href: "/notifications", label: "مركز التنبيهات", icon: "🔔", perm: "dashboard.view" },
+  { href: "/collaboration", label: "مركز التعاون", icon: "💬", perm: "collaboration.view" },
   { href: "/patients", label: "المراجعون", icon: "☺", perm: "patients.view" },
   { href: "/referrals", label: "الفحوص والإحالات", icon: "↗", perm: "referrals.view" },
   { href: "/appointments", label: "المواعيد", icon: "▦", perm: "appointments.view" },
@@ -67,7 +69,7 @@ const ALL_ITEMS: Item[] = [
 ];
 
 // مجموعات التنقل: تبويب رئيسي (مجموعة) ← تبويبات فرعية (روابط)
-const STANDALONE = ["/", "/notifications"]; // روابط عامة تبقى مفردة فوق
+const STANDALONE = ["/", "/notifications", "/collaboration"]; // روابط عامة تبقى مفردة فوق
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
   { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/therapy", "/therapy/today", "/centers", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
   { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy", "/pharmacy/stock", "/pharmacy/purchases", "/pharmacy/reports", "/inventory", "/devices"] },
@@ -95,6 +97,7 @@ export function AppShell({ role, name, alerts, perms = [], notifs = [], children
     "/devices": { count: a.devicesDue ?? 0, title: "أجهزة تحتاج صيانة" },
     "/beds": { count: a.admOver ?? 0, title: "رقود انتهت مدته" },
     "/tasks": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
+    "/collaboration": { count: a.collaborationUnread ?? 0, title: "رسائل تعاون غير مقروءة" },
   };
   const badgeFor = (it: Item) => {
     const raw = ALERT_BY_HREF[it.href] ?? 0;
