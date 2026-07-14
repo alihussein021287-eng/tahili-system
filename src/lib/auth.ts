@@ -15,6 +15,18 @@ export function applyUserClaims(token: Record<string, unknown>, user?: Record<st
   };
 }
 
+export function loginLogWriteFailure(error: unknown) {
+  const candidate = error as { code?: unknown; name?: unknown; constructor?: { name?: string } } | null;
+  const code = typeof candidate?.code === "string" ? candidate.code : undefined;
+  const type =
+    typeof candidate?.name === "string"
+      ? candidate.name
+      : typeof candidate?.constructor?.name === "string"
+        ? candidate.constructor.name
+        : "UnknownError";
+  return { type, code };
+}
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: { signIn: "/login" },
@@ -31,7 +43,11 @@ export const authOptions: NextAuthOptions = {
         const ip = (hdr["x-forwarded-for"]?.split(",")[0] || hdr["x-real-ip"] || "").trim() || null;
         const userAgent = hdr["user-agent"] || null;
         const logLogin = async (d: { userId?: string | null; username: string; name?: string | null; success: boolean; reason?: string }) => {
-          try { await prisma.loginLog.create({ data: { ...d, ip, userAgent } }); } catch {}
+          try {
+            await prisma.loginLog.create({ data: { ...d, ip, userAgent } });
+          } catch (error) {
+            console.error("[auth] loginLog write failed", loginLogWriteFailure(error));
+          }
         };
         if (!credentials?.username || !credentials?.password) return null;
         const user = await prisma.user.findUnique({

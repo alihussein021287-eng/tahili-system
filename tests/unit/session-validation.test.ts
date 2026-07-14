@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyUserClaims } from "@/lib/auth";
+import { applyUserClaims, loginLogWriteFailure } from "@/lib/auth";
 import { getApiSession } from "@/lib/access";
 import {
   SessionStoreUnavailableError,
@@ -25,6 +25,12 @@ describe("auth-version session validation", () => {
   it("puts uid, role, and authVersion in the JWT at login", () => {
     expect(applyUserClaims({}, { id: "user-1", role: "VIEWER", authVersion: 7 }))
       .toMatchObject({ uid: "user-1", role: "VIEWER", authVersion: 7 });
+  });
+
+  it("classifies login-log write failures without leaking error messages", () => {
+    const failure = Object.assign(new Error("contains-sensitive-context"), { code: "P2002" });
+    expect(loginLogWriteFailure(failure)).toEqual({ type: "Error", code: "P2002" });
+    expect(JSON.stringify(loginLogWriteFailure(failure))).not.toContain("sensitive");
   });
 
   it("rejects a JWT without authVersion", async () => {
