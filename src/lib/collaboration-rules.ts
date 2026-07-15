@@ -77,6 +77,49 @@ export function extensionOf(name: string) {
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
+const MIME_EXTENSIONS: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "text/plain": "txt",
+  "text/csv": "csv",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "application/zip": "zip",
+};
+
+function ensureDownloadExtension(name: string, fallbackName: string, mimeType: string) {
+  if (extensionOf(name)) return name;
+  const fallbackExtension = extensionOf(fallbackName) || MIME_EXTENSIONS[mimeType] || "";
+  return fallbackExtension ? `${name}.${fallbackExtension}` : name;
+}
+
+function appendVersionBeforeExtension(name: string, version: number) {
+  const extension = extensionOf(name);
+  if (!extension) return `${name}.v${version}`;
+  const dotIndex = name.lastIndexOf(".");
+  return dotIndex > 0 ? `${name.slice(0, dotIndex)}.v${version}${name.slice(dotIndex)}` : `${name}.v${version}`;
+}
+
+export function collaborationDownloadFileName(input: {
+  displayName?: string | null;
+  originalName: string;
+  mimeType: string;
+  version: number;
+  includeVersion?: boolean;
+}) {
+  const baseName = sanitizeFileName(input.displayName || input.originalName);
+  const fallbackName = sanitizeFileName(input.originalName);
+  const namedWithExtension = ensureDownloadExtension(baseName, fallbackName, input.mimeType);
+  return input.includeVersion ? appendVersionBeforeExtension(namedWithExtension, input.version) : namedWithExtension;
+}
+
 export function hasDangerousDoubleExtension(name: string, blockedTypes = DEFAULT_BLOCKED_FILE_TYPES) {
   const parts = sanitizeFileName(name).toLowerCase().split(".").filter(Boolean);
   if (parts.length < 3) return false;

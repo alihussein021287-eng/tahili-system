@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { readCollaborationFile } from "@/lib/collaboration-service";
+import { collaborationDownloadFileName } from "@/lib/collaboration-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -18,16 +19,24 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params;
     const url = new URL(request.url);
-    const version = url.searchParams.get("version") ? Number(url.searchParams.get("version")) : undefined;
+    const requestedVersion = url.searchParams.get("version");
+    const version = requestedVersion ? Number(requestedVersion) : undefined;
     const preview = url.searchParams.get("preview") === "1";
     const { file, version: resolvedVersion, buffer } = await readCollaborationFile(id, version);
     const previewable = file.mimeType.startsWith("image/") || file.mimeType === "application/pdf";
+    const finalName = collaborationDownloadFileName({
+      displayName: file.displayName,
+      originalName: file.originalName,
+      mimeType: file.mimeType,
+      version: resolvedVersion.version,
+      includeVersion: Boolean(requestedVersion),
+    });
     return new Response(new Uint8Array(buffer), {
       headers: {
         ...BASE_HEADERS,
         "Content-Type": preview && previewable ? file.mimeType : "application/octet-stream",
         "Content-Length": String(buffer.length),
-        "Content-Disposition": disposition(`${file.displayName || file.originalName}.v${resolvedVersion.version}`, preview && previewable),
+        "Content-Disposition": disposition(finalName, preview && previewable),
       },
     });
   } catch (error) {

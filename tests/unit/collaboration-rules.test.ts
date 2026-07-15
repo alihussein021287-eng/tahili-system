@@ -6,6 +6,7 @@ import {
   canModerateConversation,
   canUseCenter,
   canUseDepartment,
+  collaborationDownloadFileName,
   detectMime,
   directConversationKey,
   sanitizeFileName,
@@ -86,5 +87,41 @@ describe("collaboration file security rules", () => {
     expect(() => assertMedicalFileShareAllowed({ patientId: "p1", targetType: "ALL_STAFF", allRecipientsCanViewPatient: true })).toThrow("نطاق عام");
     expect(() => assertMedicalFileShareAllowed({ patientId: "p1", targetType: "USER", allRecipientsCanViewPatient: false })).toThrow("صلاحية رؤية");
     expect(() => assertMedicalFileShareAllowed({ patientId: "p1", targetType: "USER", allRecipientsCanViewPatient: true })).not.toThrow();
+  });
+});
+
+describe("collaboration file download names", () => {
+  it("keeps the original extension on normal downloads", () => {
+    expect(
+      collaborationDownloadFileName({
+        displayName: "tah.docx",
+        originalName: "tah.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        version: 1,
+      }),
+    ).toBe("tah.docx");
+  });
+
+  it("adds explicit version labels before the extension", () => {
+    expect(
+      collaborationDownloadFileName({
+        displayName: "tah.docx",
+        originalName: "tah.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        version: 1,
+        includeVersion: true,
+      }),
+    ).toBe("tah.v1.docx");
+  });
+
+  it("restores the original extension after a display-name rename", () => {
+    expect(
+      collaborationDownloadFileName({
+        displayName: "تقرير التأهيل",
+        originalName: "tah.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        version: 2,
+      }),
+    ).toBe("تقرير التأهيل.docx");
   });
 });
