@@ -40,12 +40,14 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <button onClick={() => setTab("roles")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === "roles" ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-600"}`}>صلاحيات الأدوار</button>
-        <button onClick={() => setTab("users")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === "users" ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-600"}`}>استثناءات المستخدمين</button>
-        {pending && <span className="self-center text-xs text-gray-400">يحفظ...</span>}
+      <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setTab("roles")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "roles" ? "bg-brand-600 text-white" : "text-gray-700 hover:bg-gray-100"}`}>صلاحيات الأدوار</button>
+          <button type="button" onClick={() => setTab("users")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "users" ? "bg-brand-600 text-white" : "text-gray-700 hover:bg-gray-100"}`}>استثناءات المستخدمين</button>
+          {pending ? <span className="self-center text-xs text-gray-400">يحفظ...</span> : null}
+        </div>
+        <input className="input max-w-lg" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="بحث في المجموعات والصلاحيات والمفاتيح" />
       </div>
-      <input className="input max-w-lg" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="بحث في المجموعات والصلاحيات والمفاتيح" />
 
       {tab === "roles" && (
         <>
@@ -54,16 +56,16 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
           </div>
           <div className="flex flex-wrap gap-2">
             {ROLES.map((r) => (
-              <button key={r} onClick={() => setRole(r)} className={`rounded-full px-3 py-1 text-sm ${role === r ? "bg-brand-50 text-brand-700 ring-1 ring-brand-300" : "bg-gray-100 text-gray-600"}`}>
+              <button key={r} type="button" onClick={() => setRole(r)} className={`rounded-full px-3 py-1 text-sm ${role === r ? "bg-brand-50 text-brand-700 ring-1 ring-brand-300" : "bg-gray-100 text-gray-600"}`}>
                 {ROLE_LABELS[r as keyof typeof ROLE_LABELS]}
               </button>
             ))}
-          <button type="button" onClick={resetRole} disabled={pending}
-            className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
-            ↺ إرجاع للافتراضي
-          </button>
+            <button type="button" onClick={resetRole} disabled={pending}
+              className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
+              ↺ إرجاع للافتراضي
+            </button>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="card p-3"><div className="text-xl font-bold text-gray-800">{roleSet.size}</div><div className="text-xs text-gray-500">صلاحية حالية</div></div>
             <div className="card p-3"><div className="text-xl font-bold text-brand-700">{defaultRoleSet.size}</div><div className="text-xs text-gray-500">قالب الدور</div></div>
             <div className="card p-3"><div className="text-xl font-bold text-amber-700">{[...SENSITIVE].filter((k) => roleSet.has(k)).length}</div><div className="text-xs text-gray-500">صلاحيات حساسة</div></div>
@@ -75,17 +77,25 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
       {tab === "users" && (
         <>
           <div className="flex flex-wrap items-center gap-2">
-<div className="min-w-[240px]"><Combobox name="_userPick" allowFree={false} defaultValue={userId} onValueChange={setUserId} options={users.map((u:any)=>({value:String(u.id),label:`${u.fullName} — ${ROLE_LABELS[u.role as keyof typeof ROLE_LABELS]}`}))} /></div>
-            <button onClick={() => { if (confirm("حذف كل استثناءات هذا المستخدم والعودة لافتراضي دوره؟")) resetUser(); }} className="btn-ghost text-sm">إرجاع لافتراضي الدور</button>
+            <div className="min-w-[240px]">
+              <Combobox
+                name="_userPick"
+                allowFree={false}
+                defaultValue={userId}
+                onValueChange={setUserId}
+                options={users.map((u: any) => ({ value: String(u.id), label: `${u.fullName} — ${ROLE_LABELS[u.role as keyof typeof ROLE_LABELS]}` }))}
+              />
+            </div>
+            <button type="button" onClick={() => { if (confirm("حذف كل استثناءات هذا المستخدم والعودة لافتراضي دوره؟")) resetUser(); }} className="btn-ghost text-sm">إرجاع لافتراضي الدور</button>
             <span className="text-xs text-gray-400">العلامة الزرقاء = استثناء خاص بهذا المستخدم</span>
           </div>
-          <form action={(fd) => start(async()=>{ await copyUserPerms(userId, fd); router.refresh(); })} className="card grid gap-2 p-3 md:grid-cols-3">
-            <Combobox name="sourceUserId" allowFree={false} placeholder="نسخ من مستخدم" options={users.filter(u=>u.id!==userId).map(u=>({value:u.id,label:u.fullName}))} />
+          <form action={(fd) => start(async () => { await copyUserPerms(userId, fd); router.refresh(); })} className="card grid gap-2 p-3 md:grid-cols-3">
+            <Combobox name="sourceUserId" allowFree={false} placeholder="نسخ من مستخدم" options={users.filter((u) => u.id !== userId).map((u) => ({ value: u.id, label: u.fullName }))} />
             <input name="confirm" className="input" placeholder="اكتب: نسخ الصلاحيات" />
             <button className="btn-primary">نسخ بعد التأكيد</button>
           </form>
           {selUser && (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="card p-3"><div className="text-xl font-bold text-gray-800">{baseForUser.size}</div><div className="text-xs text-gray-500">افتراضي الدور</div></div>
               <div className="card p-3"><div className="text-xl font-bold text-brand-700">{Object.keys(ov).length}</div><div className="text-xs text-gray-500">استثناء خاص</div></div>
               <div className="card p-3"><div className="text-xl font-bold text-amber-700">{[...SENSITIVE].filter((k) => (ov[k] !== undefined ? ov[k] : baseForUser.has(k))).length}</div><div className="text-xs text-gray-500">حساس فعّال</div></div>

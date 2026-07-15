@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminIntro, AdminSection, AdminSectionNav, StatCard } from "@/components/AdminPageSections";
 import { canManageUsers } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -8,6 +9,10 @@ import { AUDIT_TABLE, AUDIT_ACTION, fmtDateTime } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
+const AUDIT_ADMIN_SECTIONS = [
+  { href: "#overview", label: "نظرة عامة" },
+  { href: "#logs", label: "السجلات" },
+];
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const session = await requireSession();
@@ -23,39 +28,65 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
     prisma.auditLog.count(),
   ]);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const firstItem = logs.length === 0 ? 0 : (p - 1) * PAGE_SIZE + 1;
+  const lastItem = logs.length === 0 ? 0 : Math.min(total, (p - 1) * PAGE_SIZE + logs.length);
 
   const actionColor: Record<string, string> = {
     CREATE: "bg-emerald-50 text-emerald-700", UPDATE: "bg-amber-50 text-amber-700", DELETE: "bg-red-50 text-red-700",
   };
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-6">
       <PageHeader title="سجل التدقيق" subtitle="عمليات الإضافة والتعديل والحذف — للمساءلة والمراجعة" icon="🗂" />
+      <AdminSectionNav items={AUDIT_ADMIN_SECTIONS} />
 
-      <div className="card overflow-x-auto">
-        <table className="w-full">
-          <thead><tr>
-            <th className="th">المستخدم</th><th className="th">العملية</th>
-            <th className="th">القسم</th><th className="th">السجل</th><th className="th">التاريخ والوقت</th>
-          </tr></thead>
-          <tbody>
-            {logs.map((l) => (
-              <tr key={l.id} className="hover:bg-gray-50">
-                <td className="td">{l.user?.fullName ?? "—"}</td>
-                <td className="td"><span className={`badge ${actionColor[l.action] ?? "bg-gray-100 text-gray-600"}`}>{AUDIT_ACTION[l.action] ?? l.action}</span></td>
-                <td className="td">{AUDIT_TABLE[l.tableName] ?? l.tableName}</td>
-                <td className="td">
-                  {l.tableName === "patients"
-                    ? <Link href={`/patients/${l.recordId}`} className="text-brand-700 hover:underline">عرض</Link>
-                    : <span className="text-gray-400 text-xs">{l.recordId.slice(0, 8)}</span>}
-                </td>
-                <td className="td">{fmtDateTime(l.createdAt)}</td>
+      <AdminIntro
+        title="مراجعة عمليات النظام"
+        description="يعرض السجل آخر العمليات الإدارية والطبية المهمة بترتيب زمني عكسي مع روابط مباشرة عندما يكون السجل قابلاً للفتح."
+      />
+
+      <section id="overview" className="grid gap-3 sm:grid-cols-3">
+        <StatCard label="إجمالي السجلات" value={total} />
+        <StatCard label="الصفحة الحالية" value={`${p} / ${pages}`} tone="text-brand-700" />
+        <StatCard label="المعروض الآن" value={logs.length} description={`${firstItem} - ${lastItem}`} />
+      </section>
+
+      <AdminSection
+        id="logs"
+        title="السجلات"
+        description="كل صف يوضح الفاعل، نوع العملية، القسم المتأثر، ومعرّف السجل أو رابط فتحه."
+        className="overflow-hidden"
+      >
+        <div className="-mx-5 -mb-5 overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="th">المستخدم</th>
+                <th className="th">العملية</th>
+                <th className="th">القسم</th>
+                <th className="th">السجل</th>
+                <th className="th">التاريخ والوقت</th>
               </tr>
-            ))}
-            {logs.length === 0 && <tr><td className="td text-center text-gray-400" colSpan={5}>لا توجد سجلات بعد.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {logs.map((l) => (
+                <tr key={l.id} className="hover:bg-gray-50">
+                  <td className="td">{l.user?.fullName ?? "—"}</td>
+                  <td className="td"><span className={`badge ${actionColor[l.action] ?? "bg-gray-100 text-gray-600"}`}>{AUDIT_ACTION[l.action] ?? l.action}</span></td>
+                  <td className="td">{AUDIT_TABLE[l.tableName] ?? l.tableName}</td>
+                  <td className="td">
+                    {l.tableName === "patients"
+                      ? <Link href={`/patients/${l.recordId}`} className="text-brand-700 hover:underline">عرض</Link>
+                      : <span className="text-xs text-gray-400">{l.recordId.slice(0, 8)}</span>}
+                  </td>
+                  <td className="td">{fmtDateTime(l.createdAt)}</td>
+                </tr>
+              ))}
+              {logs.length === 0 ? <tr><td className="td text-center text-gray-400" colSpan={5}>لا توجد سجلات بعد.</td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </AdminSection>
 
       {pages > 1 && (
         <div className="flex items-center justify-center gap-2 text-sm">

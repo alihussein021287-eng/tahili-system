@@ -1,10 +1,18 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminIntro, AdminSection, AdminSectionNav, StatCard } from "@/components/AdminPageSections";
 import { prisma } from "@/lib/db";
 import { adminStats, collaborationActor, collaborationSettings, listFiles } from "@/lib/collaboration-service";
 import { createChannelAction, rescanFileAction, saveCollaborationSettingsAction, transferOwnerAction } from "../actions";
 
 export const dynamic = "force-dynamic";
+const COLLAB_ADMIN_SECTIONS = [
+  { href: "#overview", label: "نظرة عامة" },
+  { href: "#settings", label: "الإعدادات والحصص" },
+  { href: "#channels", label: "القنوات" },
+  { href: "#quarantine", label: "الفحص والعزل" },
+  { href: "#audit", label: "سجل العمليات" },
+];
 
 function sizeLabel(bytes: number) {
   if (bytes > 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
@@ -27,23 +35,40 @@ export default async function CollaborationAdminPage() {
   ]);
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-6">
       <PageHeader title="إدارة مركز التعاون" subtitle="إدارة القنوات والسياسات والفحص والحصص دون عرض محتوى خاص" icon="🛡">
         <Link href="/collaboration" className="btn-ghost bg-white text-brand-700">المحادثات</Link>
         <Link href="/collaboration/files" className="btn-ghost bg-white text-brand-700">مركز الملفات</Link>
       </PageHeader>
+      <AdminSectionNav items={COLLAB_ADMIN_SECTIONS} />
 
-      <section className="grid gap-3 md:grid-cols-4">
-        <div className="card p-4"><div className="text-sm text-gray-500">الرسائل</div><div className="text-2xl font-bold">{stats.messages}</div></div>
-        <div className="card p-4"><div className="text-sm text-gray-500">الملفات</div><div className="text-2xl font-bold">{stats.files}</div></div>
-        <div className="card p-4"><div className="text-sm text-gray-500">المساحة المستخدمة</div><div className="text-2xl font-bold">{sizeLabel(stats.usedBytes)}</div></div>
-        <div className="card p-4"><div className="text-sm text-gray-500">الفحص</div><div className="text-2xl font-bold">{stats.pending} / {stats.rejected}</div><div className="text-xs text-gray-500">قيد الفحص / مرفوض أو فشل</div></div>
+      <AdminIntro
+        title="لوحة إدارة التعاون"
+        description="تنظم الصفحة سياسات الخدمة والحصص، إنشاء القنوات، متابعة الملفات المعزولة، ومراجعة العمليات دون كشف محتوى خاص."
+      >
+        {settings.servicePaused ? <p className="text-sm text-amber-700">الخدمة موقوفة مؤقتاً؛ تبقى القراءة الإدارية متاحة للمراجعة.</p> : null}
+      </AdminIntro>
+
+      <section id="overview" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="الرسائل" value={stats.messages} />
+        <StatCard label="الملفات" value={stats.files} tone="text-brand-700" />
+        <StatCard label="المساحة المستخدمة" value={sizeLabel(stats.usedBytes)} />
+        <StatCard label="الفحص" value={`${stats.pending} / ${stats.rejected}`} description="قيد الفحص / مرفوض أو فشل" tone="text-amber-700" />
       </section>
 
-      <section className="card p-5">
-        <h2 className="mb-3 font-semibold">إعدادات الخدمة والحصص</h2>
+      <AdminSection
+        id="settings"
+        title="إعدادات الخدمة والحصص"
+        description="تتحكم هذه القيم بسلوك الخدمة، مدد الاحتفاظ، وحدود الملفات والحصص."
+      >
         <form action={saveCollaborationSettingsAction} className="grid gap-3 md:grid-cols-3">
-          <label className="label">إيقاف الخدمة مؤقتاً <span className="text-xs text-gray-500">(تبقى القراءة للأدمن)</span><br /><input type="checkbox" name="servicePaused" defaultChecked={settings.servicePaused} /> موقوفة</label>
+          <label className="flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50/50 p-3 text-sm text-gray-700 md:col-span-3">
+            <input type="checkbox" name="servicePaused" defaultChecked={settings.servicePaused} className="mt-1" />
+            <span>
+              <span className="font-medium">إيقاف الخدمة مؤقتاً</span>
+              <span className="block text-xs text-gray-500">تبقى القراءة متاحة للأدمن أثناء الإيقاف.</span>
+            </span>
+          </label>
           <label className="label">أقصى حجم ملف MB<input name="maxUploadMb" type="number" min="1" max="500" className="input mt-1" defaultValue={settings.maxUploadMb} /></label>
           <label className="label">مدة تعديل الرسالة بالدقائق<input name="editWindowMinutes" type="number" min="1" max="1440" className="input mt-1" defaultValue={settings.editWindowMinutes} /></label>
           <label className="label">احتفاظ الرسائل بالأيام<input name="messageRetentionDays" type="number" min="1" className="input mt-1" defaultValue={settings.messageRetentionDays} /></label>
@@ -53,12 +78,15 @@ export default async function CollaborationAdminPage() {
           <label className="label">حصة المركز MB<input name="centerQuotaMb" type="number" min="1" className="input mt-1" defaultValue={settings.centerQuotaMb} /></label>
           <label className="label md:col-span-3">الأنواع المسموحة<input name="allowedTypes" className="input mt-1" defaultValue={settings.allowedTypes.join(",")} /></label>
           <label className="label md:col-span-3">الأنواع الممنوعة<input name="blockedTypes" className="input mt-1" defaultValue={settings.blockedTypes.join(",")} /></label>
-          <div className="md:col-span-3"><button className="btn-primary">حفظ إعدادات التعاون</button></div>
+          <div className="md:col-span-3"><button className="btn-primary" type="submit">حفظ إعدادات التعاون</button></div>
         </form>
-      </section>
+      </AdminSection>
 
-      <section className="card p-5">
-        <h2 className="mb-3 font-semibold">إنشاء قنوات الأقسام والمراكز</h2>
+      <AdminSection
+        id="channels"
+        title="إنشاء قنوات الأقسام والمراكز"
+        description="أنشئ قناة عامة مرتبطة بقسم أو مركز عند الحاجة لمساحة تعاون رسمية."
+      >
         <form action={createChannelAction} className="grid gap-3 md:grid-cols-4">
           <input name="title" className="input" placeholder="اسم القناة" required />
           <input name="department" className="input" placeholder="القسم" />
@@ -66,16 +94,17 @@ export default async function CollaborationAdminPage() {
             <option value="">بلا مركز محدد</option>
             {centers.map((center) => <option key={center.id} value={center.id}>{center.name}</option>)}
           </select>
-          <button className="btn-primary">إنشاء قناة</button>
+          <button className="btn-primary" type="submit">إنشاء قناة</button>
         </form>
-      </section>
+      </AdminSection>
 
-      <section className="card overflow-hidden">
-        <div className="border-b p-4">
-          <h2 className="font-semibold">الملفات قيد الفحص والمرفوضة</h2>
-          <p className="text-sm text-gray-500">التحميل والمشاركة ممنوعان حتى تصبح الحالة آمن.</p>
-        </div>
-        <div className="overflow-x-auto">
+      <AdminSection
+        id="quarantine"
+        title="الملفات قيد الفحص والمرفوضة"
+        description="التحميل والمشاركة ممنوعان حتى تصبح الحالة آمن."
+        className="overflow-hidden"
+      >
+        <div className="-mx-5 -mb-5 overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr><th className="th">الملف</th><th className="th">الحالة</th><th className="th">المالك</th><th className="th">الإصدار</th><th className="th">إجراءات</th></tr></thead>
             <tbody>
@@ -103,14 +132,15 @@ export default async function CollaborationAdminPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </AdminSection>
 
-      <section className="card overflow-hidden">
-        <div className="border-b p-4">
-          <h2 className="font-semibold">سجل العمليات</h2>
-          <p className="text-sm text-gray-500">يعرض نوع العملية والجدول والفاعل دون محتوى الرسائل الخاصة.</p>
-        </div>
-        <div className="overflow-x-auto">
+      <AdminSection
+        id="audit"
+        title="سجل عمليات التعاون"
+        description="يعرض نوع العملية والجدول والفاعل دون محتوى الرسائل الخاصة."
+        className="overflow-hidden"
+      >
+        <div className="-mx-5 -mb-5 overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr><th className="th">الوقت</th><th className="th">الفاعل</th><th className="th">العملية</th><th className="th">الجدول</th><th className="th">السجل</th></tr></thead>
             <tbody>
@@ -127,7 +157,7 @@ export default async function CollaborationAdminPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </AdminSection>
     </div>
   );
 }
