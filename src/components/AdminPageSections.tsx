@@ -1,22 +1,35 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AdminTabSelect } from "@/components/AdminTabSelect";
 
-type SectionLink = {
+type AdminTab = {
+  key: string;
   href: string;
   label: string;
 };
 
-export function AdminSectionNav({ items, label = "أقسام الصفحة" }: { items: SectionLink[]; label?: string }) {
+export function AdminSectionTabs({
+  tabs,
+  active,
+  label = "تبويبات الصفحة",
+}: {
+  tabs: AdminTab[];
+  active: string;
+  label?: string;
+}) {
   return (
     <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-      <nav className="flex gap-2 overflow-x-auto" aria-label={label}>
-        {items.map((item) => (
+      <AdminTabSelect tabs={tabs} active={active} label={label} />
+      <nav className="hidden gap-2 overflow-x-auto md:flex" aria-label={label}>
+        {tabs.map((tab) => (
           <Link
-            key={item.href}
-            href={item.href}
-            className="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 focus:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-100"
+            key={tab.key}
+            href={tab.href}
+            className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${
+              active === tab.key ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"
+            }`}
           >
-            {item.label}
+            {tab.label}
           </Link>
         ))}
       </nav>

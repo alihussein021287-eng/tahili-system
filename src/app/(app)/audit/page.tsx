@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
-import { AdminIntro, AdminSection, AdminSectionNav, StatCard } from "@/components/AdminPageSections";
+import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
 import { canManageUsers } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -9,16 +9,29 @@ import { AUDIT_TABLE, AUDIT_ACTION, fmtDateTime } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
-const AUDIT_ADMIN_SECTIONS = [
-  { href: "#overview", label: "نظرة عامة" },
-  { href: "#logs", label: "السجلات" },
+type AuditTab = "logs" | "overview";
+
+const AUDIT_TABS: { key: AuditTab; label: string; title: string; description: string }[] = [
+  { key: "logs", label: "السجلات", title: "سجل العمليات", description: "يعرض آخر العمليات الإدارية والطبية المهمة بترتيب زمني عكسي مع رابط مباشر عندما يكون السجل قابلاً للفتح." },
+  { key: "overview", label: "نظرة عامة", title: "ملخص سجل التدقيق", description: "قراءة سريعة لحجم السجل والصفحة الحالية وعدد السجلات المعروضة." },
 ];
 
-export default async function AuditPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+function normalizeTab(raw?: string): AuditTab {
+  return AUDIT_TABS.some((tab) => tab.key === raw) ? (raw as AuditTab) : "logs";
+}
+
+function tabHref(key: AuditTab) {
+  return `/audit?tab=${key}`;
+}
+
+export default async function AuditPage({ searchParams }: { searchParams: Promise<{ tab?: string; page?: string }> }) {
   const session = await requireSession();
   if (!canManageUsers((session?.user as any)?.role)) redirect("/");
 
-  const { page } = await searchParams;
+  const { tab, page } = await searchParams;
+  const activeTab = normalizeTab(tab);
+  const activeInfo = AUDIT_TABS.find((item) => item.key === activeTab)!;
+  const navTabs = AUDIT_TABS.map((item) => ({ key: item.key, label: item.label, href: tabHref(item.key) }));
   const p = Math.max(1, Number(page) || 1);
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
@@ -38,63 +51,61 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   return (
     <div className="min-w-0 space-y-6">
       <PageHeader title="سجل التدقيق" subtitle="عمليات الإضافة والتعديل والحذف — للمساءلة والمراجعة" icon="🗂" />
-      <AdminSectionNav items={AUDIT_ADMIN_SECTIONS} />
+      <AdminSectionTabs tabs={navTabs} active={activeTab} label="تبويبات سجل التدقيق" />
 
-      <AdminIntro
-        title="مراجعة عمليات النظام"
-        description="يعرض السجل آخر العمليات الإدارية والطبية المهمة بترتيب زمني عكسي مع روابط مباشرة عندما يكون السجل قابلاً للفتح."
-      />
+      <AdminIntro title={activeInfo.title} description={activeInfo.description} />
 
-      <section id="overview" className="grid gap-3 sm:grid-cols-3">
-        <StatCard label="إجمالي السجلات" value={total} />
-        <StatCard label="الصفحة الحالية" value={`${p} / ${pages}`} tone="text-brand-700" />
-        <StatCard label="المعروض الآن" value={logs.length} description={`${firstItem} - ${lastItem}`} />
-      </section>
+      {activeTab === "overview" ? (
+        <section className="grid gap-3 sm:grid-cols-3">
+          <StatCard label="إجمالي السجلات" value={total} />
+          <StatCard label="الصفحة الحالية" value={`${p} / ${pages}`} tone="text-brand-700" />
+          <StatCard label="المعروض الآن" value={logs.length} description={`${firstItem} - ${lastItem}`} />
+        </section>
+      ) : null}
 
-      <AdminSection
-        id="logs"
-        title="السجلات"
-        description="كل صف يوضح الفاعل، نوع العملية، القسم المتأثر، ومعرّف السجل أو رابط فتحه."
-        className="overflow-hidden"
-      >
-        <div className="-mx-5 -mb-5 overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr>
-                <th className="th">المستخدم</th>
-                <th className="th">العملية</th>
-                <th className="th">القسم</th>
-                <th className="th">السجل</th>
-                <th className="th">التاريخ والوقت</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((l) => (
-                <tr key={l.id} className="hover:bg-gray-50">
-                  <td className="td">{l.user?.fullName ?? "—"}</td>
-                  <td className="td"><span className={`badge ${actionColor[l.action] ?? "bg-gray-100 text-gray-600"}`}>{AUDIT_ACTION[l.action] ?? l.action}</span></td>
-                  <td className="td">{AUDIT_TABLE[l.tableName] ?? l.tableName}</td>
-                  <td className="td">
-                    {l.tableName === "patients"
-                      ? <Link href={`/patients/${l.recordId}`} className="text-brand-700 hover:underline">عرض</Link>
-                      : <span className="text-xs text-gray-400">{l.recordId.slice(0, 8)}</span>}
-                  </td>
-                  <td className="td">{fmtDateTime(l.createdAt)}</td>
-                </tr>
-              ))}
-              {logs.length === 0 ? <tr><td className="td text-center text-gray-400" colSpan={5}>لا توجد سجلات بعد.</td></tr> : null}
-            </tbody>
-          </table>
-        </div>
-      </AdminSection>
+      {activeTab === "logs" ? (
+        <>
+          <AdminSection id="logs" title="السجلات" description="كل صف يوضح الفاعل، نوع العملية، القسم المتأثر، ومعرّف السجل أو رابط فتحه." className="overflow-hidden">
+            <div className="-mx-5 -mb-5 overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className="th">المستخدم</th>
+                    <th className="th">العملية</th>
+                    <th className="th">القسم</th>
+                    <th className="th">السجل</th>
+                    <th className="th">التاريخ والوقت</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((l) => (
+                    <tr key={l.id} className="hover:bg-gray-50">
+                      <td className="td">{l.user?.fullName ?? "—"}</td>
+                      <td className="td"><span className={`badge ${actionColor[l.action] ?? "bg-gray-100 text-gray-600"}`}>{AUDIT_ACTION[l.action] ?? l.action}</span></td>
+                      <td className="td">{AUDIT_TABLE[l.tableName] ?? l.tableName}</td>
+                      <td className="td">
+                        {l.tableName === "patients"
+                          ? <Link href={`/patients/${l.recordId}`} className="text-brand-700 hover:underline">عرض</Link>
+                          : <span className="text-xs text-gray-400">{l.recordId.slice(0, 8)}</span>}
+                      </td>
+                      <td className="td">{fmtDateTime(l.createdAt)}</td>
+                    </tr>
+                  ))}
+                  {logs.length === 0 ? <tr><td className="td text-center text-gray-400" colSpan={5}>لا توجد سجلات بعد.</td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </AdminSection>
 
-      {pages > 1 && (
-        <div className="flex items-center justify-center gap-2 text-sm">
-          {p > 1 && <Link href={`/audit?page=${p - 1}`} className="btn-ghost">السابق</Link>}
-          <span className="text-gray-500">صفحة {p} من {pages}</span>
-          {p < pages && <Link href={`/audit?page=${p + 1}`} className="btn-ghost">التالي</Link>}
-        </div>
-      )}
+          {pages > 1 ? (
+            <div className="flex items-center justify-center gap-2 text-sm">
+              {p > 1 ? <Link href={`/audit?tab=logs&page=${p - 1}`} className="btn-ghost">السابق</Link> : null}
+              <span className="text-gray-500">صفحة {p} من {pages}</span>
+              {p < pages ? <Link href={`/audit?tab=logs&page=${p + 1}`} className="btn-ghost">التالي</Link> : null}
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }

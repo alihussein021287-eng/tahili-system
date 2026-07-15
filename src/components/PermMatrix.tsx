@@ -42,8 +42,8 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
     <div className="space-y-4">
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setTab("roles")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "roles" ? "bg-brand-600 text-white" : "text-gray-700 hover:bg-gray-100"}`}>صلاحيات الأدوار</button>
-          <button type="button" onClick={() => setTab("users")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "users" ? "bg-brand-600 text-white" : "text-gray-700 hover:bg-gray-100"}`}>استثناءات المستخدمين</button>
+          <button type="button" onClick={() => setTab("roles")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "roles" ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"}`}>صلاحيات الأدوار</button>
+          <button type="button" onClick={() => setTab("users")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "users" ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"}`}>استثناءات المستخدمين</button>
           {pending ? <span className="self-center text-xs text-gray-400">يحفظ...</span> : null}
         </div>
         <input className="input max-w-lg" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="بحث في المجموعات والصلاحيات والمفاتيح" />
