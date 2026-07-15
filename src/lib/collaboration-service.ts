@@ -150,6 +150,7 @@ export async function listMessages(actor: CollaborationActor, conversationId: st
       replyTo: { select: { id: true, body: true, sender: { select: { fullName: true } } } },
       attachmentFile: { select: { id: true, publicId: true, displayName: true, mimeType: true, size: true, scanStatus: true } },
       mentions: { include: { user: { select: { id: true, fullName: true } } } },
+      _count: { select: { reads: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 40,
