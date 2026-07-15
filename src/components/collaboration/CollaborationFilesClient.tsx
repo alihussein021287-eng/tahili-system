@@ -123,7 +123,7 @@ type Props = {
   canAdmin: boolean;
 };
 
-type ModalName = "upload" | "folder" | "share" | "rename" | "move" | "delete" | "details" | "version" | "patient" | "owner" | null;
+type ModalName = "upload" | "folder" | "share" | "rename" | "move" | "delete" | "details" | "preview" | "version" | "patient" | "owner" | null;
 
 const filterLabels: Record<string, string> = {
   mine: "ملفاتي",
@@ -181,6 +181,35 @@ function safeScanReason(status: string) {
   if (status === "PENDING_SCAN") return "الملف قيد الفحص ولا يمكن تنزيله الآن.";
   if (status === "SAFE") return "اجتاز الفحص الأمني.";
   return "لم يجتز الملف الفحص الأمني ولا يمكن تنزيله.";
+}
+
+const textPreviewMimeTypes = new Set([
+  "application/json",
+  "application/ld+json",
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+  "text/tab-separated-values",
+]);
+
+function baseMimeType(mimeType: string) {
+  return mimeType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+}
+
+function canInlinePreview(file: FileItem) {
+  const mimeType = baseMimeType(file.mimeType);
+  if (mimeType === "application/pdf") return true;
+  if (mimeType.startsWith("image/") && mimeType !== "image/svg+xml") return true;
+  if (mimeType.startsWith("video/") || mimeType.startsWith("audio/")) return true;
+  return textPreviewMimeTypes.has(mimeType);
+}
+
+function previewUrl(file: FileItem) {
+  return `/api/collaboration/files/${file.id}/download?preview=1`;
+}
+
+function downloadUrl(file: FileItem) {
+  return `/api/collaboration/files/${file.id}/download`;
 }
 
 export function CollaborationFilesClient({
@@ -271,6 +300,7 @@ export function CollaborationFilesClient({
   const selectedCanEdit = selectedFiles.length > 0 && selectedFiles.every((file) => canEdit && actionAllowed(file, actor, canAdmin) && filter !== "trash");
   const selectedCanDelete = selectedFiles.length > 0 && selectedFiles.every((file) => canDelete && actionAllowed(file, actor, canAdmin));
   const selectedCanDownload = selectedFiles.length > 0 && selectedFiles.every((file) => file.scanStatus === "SAFE") && canDownload;
+  const selectedCanPreview = selectedFiles.length === 1 && selectedFiles[0].scanStatus === "SAFE" && canDownload;
   const selectedCanShare = selectedFiles.length > 0 && selectedFiles.every((file) => file.scanStatus === "SAFE") && canShare && filter !== "trash";
 
   const hrefFor = (updates: Record<string, string | null>) => {
@@ -290,21 +320,21 @@ export function CollaborationFilesClient({
   };
 
   const openPreview = (file: FileItem) => {
+    setSelectedIds([file.id]);
     if (file.scanStatus !== "SAFE") {
-      setSelectedIds([file.id]);
       setModal("details");
       return;
     }
-    if (file.mimeType.startsWith("image/") || file.mimeType === "application/pdf") {
-      window.open(`/api/collaboration/files/${file.id}/download?preview=1`, "_blank", "noopener,noreferrer");
-    } else if (canDownload) {
-      window.open(`/api/collaboration/files/${file.id}/download`, "_blank", "noopener,noreferrer");
+    if (!canDownload) {
+      setModal("details");
+      return;
     }
+    setModal("preview");
   };
 
   const downloadSelected = () => {
     selectedFiles.filter((file) => file.scanStatus === "SAFE").slice(0, 5).forEach((file) => {
-      window.open(`/api/collaboration/files/${file.id}/download`, "_blank", "noopener,noreferrer");
+      window.open(downloadUrl(file), "_blank", "noopener,noreferrer");
     });
   };
 
@@ -316,6 +346,7 @@ export function CollaborationFilesClient({
         selectedCanEdit={selectedCanEdit}
         selectedCanDelete={selectedCanDelete}
         selectedCanDownload={selectedCanDownload}
+        selectedCanPreview={selectedCanPreview}
         selectedCanShare={selectedCanShare}
         filter={filter}
         viewMode={viewMode}
@@ -323,6 +354,7 @@ export function CollaborationFilesClient({
         query={query}
         onModal={setModal}
         onDownload={downloadSelected}
+        onPreview={() => primaryFile && openPreview(primaryFile)}
         onViewMode={setViewMode}
         onSort={setSortBy}
         onQuery={setQuery}
@@ -462,6 +494,7 @@ export function CollaborationFilesClient({
       <RenameModal open={modal === "rename"} onClose={() => setModal(null)} file={primaryFile} />
       <MoveModal open={modal === "move"} onClose={() => setModal(null)} files={selectedFiles} folders={folders} />
       <DeleteModal open={modal === "delete"} onClose={() => setModal(null)} files={selectedFiles} filter={filter} canRestore={canRestore} canPermanentDelete={canPermanentDelete} selectedCanDelete={selectedCanDelete} />
+      <FilePreviewModal open={modal === "preview"} onClose={() => setModal(null)} file={primaryFile} canDownload={canDownload} />
       <DetailsDrawer
         open={modal === "details"}
         onClose={() => setModal(null)}
@@ -486,6 +519,7 @@ function CommandBar({
   selectedCanEdit,
   selectedCanDelete,
   selectedCanDownload,
+  selectedCanPreview,
   selectedCanShare,
   filter,
   viewMode,
@@ -493,6 +527,7 @@ function CommandBar({
   query,
   onModal,
   onDownload,
+  onPreview,
   onViewMode,
   onSort,
   onQuery,
@@ -502,6 +537,7 @@ function CommandBar({
   selectedCanEdit: boolean;
   selectedCanDelete: boolean;
   selectedCanDownload: boolean;
+  selectedCanPreview: boolean;
   selectedCanShare: boolean;
   filter: string;
   viewMode: "grid" | "list";
@@ -509,6 +545,7 @@ function CommandBar({
   query: string;
   onModal: (modal: ModalName) => void;
   onDownload: () => void;
+  onPreview: () => void;
   onViewMode: (mode: "grid" | "list") => void;
   onSort: (sort: "updated" | "name" | "size" | "status") => void;
   onQuery: (query: string) => void;
@@ -520,6 +557,7 @@ function CommandBar({
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={!canUpload} onClick={() => onModal("folder")} className="btn-ghost btn-sm"><Icon name="newFolder" className="h-4 w-4" /> جديد</button>
           <button type="button" disabled={!canUpload} onClick={() => onModal("upload")} className="btn-primary btn-sm"><Icon name="upload" className="h-4 w-4" /> رفع</button>
+          <button type="button" disabled={!selectedCanPreview} onClick={onPreview} className="btn-ghost btn-sm"><Icon name="eye" className="h-4 w-4" /> معاينة</button>
           <button type="button" disabled={!selectedCanShare} onClick={() => onModal("share")} className="btn-ghost btn-sm"><Icon name="share" className="h-4 w-4" /> مشاركة</button>
           <button type="button" disabled={!selectedCanDownload} onClick={onDownload} className="btn-ghost btn-sm"><Icon name="download" className="h-4 w-4" /> تنزيل</button>
           <button type="button" disabled={!selectedCanEdit || selectedCount !== 1} onClick={() => onModal("rename")} className="btn-ghost btn-sm"><Icon name="rename" className="h-4 w-4" /> إعادة تسمية</button>
@@ -664,7 +702,7 @@ function FileCard({
           <span className="truncate">{file.owner.fullName}</span>
         </div>
         {file.scanStatus !== "SAFE" && <div className="mt-2 text-xs text-amber-700">{safeScanReason(file.scanStatus)}</div>}
-        {file.scanStatus === "SAFE" && canDownload && <div className="mt-2 text-xs text-gray-400">نقرة مزدوجة للمعاينة أو التنزيل</div>}
+        {file.scanStatus === "SAFE" && canDownload && <div className="mt-2 text-xs text-gray-400">نقرة مزدوجة للمعاينة داخل النظام</div>}
       </div>
     </div>
   );
@@ -765,6 +803,85 @@ function EmptyFilesState({ canUpload, onUpload }: { canUpload: boolean; onUpload
         <h2 className="mt-4 font-bold text-gray-900">لا توجد عناصر هنا</h2>
         <p className="mt-2 text-sm text-gray-500">ارفع ملفاً أو أنشئ مجلداً للبدء ضمن هذا التصنيف.</p>
         {canUpload && <button type="button" onClick={onUpload} className="btn-primary mt-4">رفع ملف</button>}
+      </div>
+    </div>
+  );
+}
+
+function FilePreviewModal({ open, onClose, file, canDownload }: { open: boolean; onClose: () => void; file: FileItem | null; canDownload: boolean }) {
+  if (!open || !file) return null;
+  const mimeType = baseMimeType(file.mimeType);
+  const inline = file.scanStatus === "SAFE" && canDownload && canInlinePreview(file);
+  const src = previewUrl(file);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="معاينة الملف">
+      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+        <header className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="truncate font-bold text-gray-900">{file.displayName}</h2>
+            <p className="mt-1 text-xs text-gray-500">{file.mimeType} · {sizeLabel(file.size)}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {file.scanStatus === "SAFE" && canDownload && (
+              <a href={downloadUrl(file)} className="btn-ghost btn-sm">
+                <Icon name="download" className="h-4 w-4" /> تنزيل
+              </a>
+            )}
+            <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-100" onClick={onClose} aria-label="إغلاق">
+              <Icon name="close" className="h-5 w-5" />
+            </button>
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 overflow-auto bg-gray-50 p-3">
+          {inline && mimeType.startsWith("image/") && (
+            <div className="flex min-h-[60vh] items-center justify-center">
+              <img src={src} alt={file.displayName} className="max-h-[72vh] max-w-full rounded-lg object-contain shadow-sm" />
+            </div>
+          )}
+          {inline && mimeType === "application/pdf" && <iframe src={src} title={file.displayName} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" />}
+          {inline && mimeType.startsWith("video/") && (
+            <div className="flex min-h-[60vh] items-center justify-center">
+              <video src={src} controls className="max-h-[72vh] w-full max-w-5xl rounded-lg bg-black" />
+            </div>
+          )}
+          {inline && mimeType.startsWith("audio/") && (
+            <div className="flex min-h-[45vh] items-center justify-center">
+              <div className="w-full max-w-2xl rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+                    <Icon name="file" className="h-7 w-7" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate font-bold text-gray-900">{file.displayName}</div>
+                    <div className="text-xs text-gray-500">{sizeLabel(file.size)}</div>
+                  </div>
+                </div>
+                <audio src={src} controls className="w-full" />
+              </div>
+            </div>
+          )}
+          {inline && textPreviewMimeTypes.has(mimeType) && <iframe src={src} title={file.displayName} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" />}
+          {!inline && (
+            <div className="flex min-h-[60vh] items-center justify-center text-center">
+              <div className="max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gray-50 text-gray-600">
+                  <Icon name={fileIconFor(file.mimeType, file.displayName)} className="h-8 w-8" />
+                </div>
+                <h3 className="mt-4 font-bold text-gray-900">المعاينة المباشرة غير متاحة لهذا النوع</h3>
+                <p className="mt-2 text-sm leading-6 text-gray-500">
+                  الملف فُتح داخل النظام، لكن هذا النوع يحتاج تنزيله أو فتحه بتطبيقه المخصص.
+                </p>
+                {file.scanStatus !== "SAFE" && <p className="mt-3 text-sm text-amber-700">{safeScanReason(file.scanStatus)}</p>}
+                {file.scanStatus === "SAFE" && canDownload && (
+                  <a href={downloadUrl(file)} className="btn-primary mt-4 inline-flex">
+                    <Icon name="download" className="h-4 w-4" /> تنزيل الملف
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
