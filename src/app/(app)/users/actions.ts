@@ -7,6 +7,7 @@ import { roleDefaultSet, ALL_PERMS } from "@/lib/perms";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { passwordError } from "@/lib/security";
+import { getAdminConfig } from "@/lib/admin-config";
 import { userCreateSchema, userUpdateSchema, parseOrThrow } from "@/lib/validate";
 import { assertCanApplyAdminChange } from "@/lib/admin-security";
 import { incrementAuthVersion, incrementAuthVersionIf } from "@/lib/auth-version";
@@ -41,7 +42,8 @@ export async function deleteUnusedUser(id: string, fd: FormData) {
 export async function createUser(fd: FormData) {
   await requireAdmin();
   const rawPw = fd.get("password")?.toString() || "";
-  const pwError = initialCredentialError(rawPw);
+  const policy = await getAdminConfig();
+  const pwError = initialCredentialError(rawPw, policy);
   if (pwError) throw new Error(pwError);
   const v = parseOrThrow(userCreateSchema, {
     username: fd.get("username")?.toString() ?? "",
@@ -97,7 +99,8 @@ export async function toggleUser(id: string, isActive: boolean) {
 export async function resetPassword(id: string, fd: FormData) {
   await requireAdmin();
   const pw = fd.get("password")?.toString() || "";
-  const pwErr = passwordError(pw);
+  const policy = await getAdminConfig();
+  const pwErr = passwordError(pw, policy);
   if (pwErr) throw new Error(pwErr);
   const passwordHash = await bcrypt.hash(pw, 10);
   await prisma.user.update({

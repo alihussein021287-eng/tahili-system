@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { passwordError } from "@/lib/security";
 import { assertInitialSetupAllowed } from "@/lib/setup-security";
 import { incrementAuthVersion } from "@/lib/auth-version";
+import { getAdminConfig } from "@/lib/admin-config";
 
 export async function completeSetup(fd: FormData) {
   assertInitialSetupAllowed();
@@ -15,7 +16,8 @@ export async function completeSetup(fd: FormData) {
   const password = fd.get("password")?.toString() || "";
   const confirm = fd.get("confirm")?.toString() || "";
   if (password !== confirm) throw new Error("كلمتا السر غير متطابقتين");
-  const pwErr = passwordError(password);
+  const policy = await getAdminConfig();
+  const pwErr = passwordError(password, policy);
   if (pwErr) throw new Error(pwErr);
 
   const passwordHash = await bcrypt.hash(password, 10);

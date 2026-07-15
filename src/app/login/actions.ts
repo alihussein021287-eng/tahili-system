@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { incrementAuthVersion } from "@/lib/auth-version";
 import { activateWithTemporaryCredential } from "@/lib/account-activation";
+import { getAdminConfig } from "@/lib/admin-config";
 
 // فحص اسم المستخدم: يحدّد إذا يحتاج تفعيل أو دخول عادي
 export async function checkUsername(username: string): Promise<{ state: "activate" | "password" | "invalid" }> {
@@ -20,6 +21,7 @@ export async function activateAccount(
   newPassword: string,
   confirm: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const passwordPolicy = await getAdminConfig();
   return activateWithTemporaryCredential({
     username,
     temporaryPassword,
@@ -59,5 +61,6 @@ export async function activateAccount(
         // فشل سجل المحاولة لا يغير نتيجة التفعيل ولا يكشف تفاصيل القاعدة.
       }
     },
+    passwordPolicy,
   });
 }

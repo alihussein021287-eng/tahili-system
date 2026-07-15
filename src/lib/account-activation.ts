@@ -1,9 +1,9 @@
-import { LOGIN_LOCK_MINUTES, LOGIN_MAX_ATTEMPTS, passwordError } from "@/lib/security";
+import { LOGIN_LOCK_MINUTES, LOGIN_MAX_ATTEMPTS, passwordError, type PasswordPolicy } from "@/lib/security";
 
 export const GENERIC_ACTIVATION_ERROR = "تعذر التفعيل. تحقق من بيانات الحساب وحاول لاحقاً";
 
-export function initialCredentialError(password: string) {
-  const error = passwordError(password);
+export function initialCredentialError(password: string, policy?: PasswordPolicy) {
+  const error = passwordError(password, policy);
   return error ? `كلمة المرور المؤقتة مطلوبة: ${error}` : null;
 }
 
@@ -26,6 +26,7 @@ export type ActivationDependencies = {
   activate(user: ActivationCandidate, passwordHash: string): Promise<number>;
   logAttempt(details: { userId?: string; username: string; success: boolean; reason: string }): Promise<void>;
   now?: () => Date;
+  passwordPolicy?: PasswordPolicy;
 };
 
 export type ActivationResult = { ok: true } | { ok: false; error: string };
@@ -42,7 +43,7 @@ export async function activateWithTemporaryCredential(
   const username = input.username.trim();
   if (!username || !input.temporaryPassword) return { ok: false, error: GENERIC_ACTIVATION_ERROR };
   if (input.newPassword !== input.confirmPassword) return { ok: false, error: "كلمتا السر غير متطابقتين" };
-  const policyError = passwordError(input.newPassword);
+  const policyError = passwordError(input.newPassword, deps.passwordPolicy);
   if (policyError) return { ok: false, error: policyError };
   if (input.temporaryPassword === input.newPassword) {
     return { ok: false, error: "يجب أن تختلف كلمة السر الجديدة عن المؤقتة" };

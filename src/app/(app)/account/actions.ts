@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { passwordError } from "@/lib/security";
 import { logAudit } from "@/lib/audit";
 import { incrementAuthVersion } from "@/lib/auth-version";
+import { getAdminConfig } from "@/lib/admin-config";
 
 export async function changeOwnPassword(fd: FormData) {
   const session = await requireSession();
@@ -16,7 +17,8 @@ export async function changeOwnPassword(fd: FormData) {
   const next = fd.get("next")?.toString() || "";
   const confirm = fd.get("confirm")?.toString() || "";
 
-  const pwErr = passwordError(next);
+  const policy = await getAdminConfig();
+  const pwErr = passwordError(next, policy);
   if (pwErr) redirect("/account?saved=" + encodeURIComponent(pwErr));
   if (next !== confirm) redirect("/account?saved=" + encodeURIComponent("كلمتا السر غير متطابقتين"));
 

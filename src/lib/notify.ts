@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import type { UserRole } from "@prisma/client";
+import { getAdminConfig } from "@/lib/admin-config";
 
 const DEDUPE_WINDOW_MS = 6 * 60 * 60 * 1000;
 
@@ -10,7 +11,9 @@ async function createNotification(
   data: { targetRole?: UserRole; targetUserId?: string; title: string; body?: string | null; link?: string | null },
   options: { includeReadInDedupe?: boolean } = {},
 ) {
-  const since = new Date(Date.now() - DEDUPE_WINDOW_MS);
+  const config = await getAdminConfig().catch(() => null);
+  const dedupeMinutes = Math.max(1, Math.min(1440, config?.notificationDedupeMinutes ?? DEDUPE_WINDOW_MS / 60_000));
+  const since = new Date(Date.now() - dedupeMinutes * 60_000);
   const existing = await client.notification.findFirst({
     where: {
       ...(options.includeReadInDedupe ? {} : { read: false }),

@@ -65,7 +65,7 @@ const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأر�
 // التبويبات التي تُحمّل بياناتها عند فتحها فقط (لتخفيف تحميل الصفحة)
 const LAZY_TABS = ["files", "metrics", "plan", "rel", "activity", "care", "resident", "referrals"];
 
-export function PatientTabs({ patient, editable, perms = [], role = "", slApprovals = [], centers = [], medications = [], rooms = [], halls = [], therapyStaff = [], expenseRows = [], staffNames = [], staffUsers = [] }: { patient: any; editable: boolean; perms?: string[]; role?: string; slApprovals?: any[]; centers?: any[]; medications?: any[]; rooms?: any[]; halls?: any[]; therapyStaff?: any[]; expenseRows?: any[]; staffNames?: string[]; staffUsers?: any[] }) {
+export function PatientTabs({ patient, editable, perms = [], role = "", slApprovals = [], centers = [], medications = [], rooms = [], halls = [], therapyDefaults, therapyStaff = [], expenseRows = [], staffNames = [], staffUsers = [] }: { patient: any; editable: boolean; perms?: string[]; role?: string; slApprovals?: any[]; centers?: any[]; medications?: any[]; rooms?: any[]; halls?: any[]; therapyDefaults?: any; therapyStaff?: any[]; expenseRows?: any[]; staffNames?: string[]; staffUsers?: any[] }) {
   const can = (k: string) => perms.includes(k);
   const canDel = role === "ADMIN";
   const canSchedule = role === "HEAD_THERAPIST" || role === "ADMIN";
@@ -119,7 +119,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         {tab === "official" && <OfficialDocs patient={patient} can={can} id={id} role={role} />}
         {tab === "sickleave" && <SickLeaves patient={patient} can={can} id={id} role={role} approvals={slApprovals} staff={staffNames} staffUsers={staffUsers} />}
         {tab === "diag" && <SpecialistWorkspace patient={patient} can={can} canDel={canDel} patientId={id} openPrescriptions={() => setTab("rx")} />}
-        {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} doctors={staffUsers.filter((user: any) => user.role === "DOCTOR")} halls={halls} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
+        {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} doctors={staffUsers.filter((user: any) => user.role === "DOCTOR")} halls={halls} defaults={therapyDefaults} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
         {tab === "centerPrograms" && can("centers.view") && <PatientCenterPrograms programs={patient.centerPrograms || []} />}
         {tab === "expenses" && can("expenses.view") && <PatientExpenses rows={expenseRows} showAmounts={can("expenses.amounts")} />}
         {tab === "sessions" && canSchedule && (

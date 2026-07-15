@@ -1,274 +1,745 @@
-import { requirePerm, getSession } from "@/lib/access";
-import { Combobox } from "@/components/Combobox";
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { currentPerms, getSession, requirePerm } from "@/lib/access";
+import { getAdminConfig } from "@/lib/admin-config";
+import { collaborationSettings } from "@/lib/collaboration-service";
+import { prisma } from "@/lib/db";
 import { maintenanceOn } from "@/lib/maintenance";
 import { getOrg } from "@/lib/org";
-import { PageHeader } from "@/components/PageHeader";
-import { prisma } from "@/lib/db";
-import { DisplaySettings } from "./DisplaySettings";
 import { queueHallNames } from "@/lib/queue";
-import { collaborationSettings } from "@/lib/collaboration-service";
-import { addCenter, addInjuryType, addDistrict, addFormation,
-  addRank, deleteRank, deleteCenter, deleteInjuryType, deleteFormation, deleteDistrict, saveOrg, saveRetention, saveExpenseApprovalLevels, saveAdminConfig, setMaintenanceMode, addBranch, deleteBranch, toggleBranch, addMobilityAid, deleteMobilityAid, addProstheticType, deleteProstheticType } from "./actions";
+import { PageHeader } from "@/components/PageHeader";
+import { DisplaySettings } from "./DisplaySettings";
+import {
+  addBranch,
+  addCenter,
+  addDistrict,
+  addFormation,
+  addInjuryType,
+  addMobilityAid,
+  addProstheticType,
+  addRank,
+  deleteBranch,
+  deleteCenter,
+  deleteDistrict,
+  deleteFormation,
+  deleteInjuryType,
+  deleteMobilityAid,
+  deleteProstheticType,
+  deleteRank,
+  saveBackupAction,
+  saveFilesAction,
+  saveIdentityAction,
+  saveNotificationsAction,
+  saveOperationsAction,
+  saveSecurityAction,
+  saveTherapyAction,
+  setMaintenanceMode,
+  toggleBranch,
+} from "./actions";
+import {
+  ConfirmSubmitButton,
+  LookupSearchInput,
+  SettingsActionForm,
+  SettingsTabSelect,
+  SmallSubmitButton,
+  SubmitButton,
+} from "./SettingsControls";
 
 export const dynamic = "force-dynamic";
 
-export default async function Settings({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
+type TabKey = "identity" | "operations" | "therapy" | "security" | "notifications" | "files" | "backup" | "lookups";
+
+const TABS: { key: TabKey; label: string; title: string; description: string }[] = [
+  { key: "identity", label: "هوية النظام", title: "هوية النظام", description: "الاسم العام وبيانات الترويسة الرسمية المستخدمة في التقارير والطباعة." },
+  { key: "operations", label: "الدوام والمواعيد", title: "الدوام والمواعيد", description: "المنطقة الزمنية، تنسيق التاريخ، أيام وساعات الدوام، ومدة الموعد الافتراضية." },
+  { key: "therapy", label: "العلاج والمراكز", title: "العلاج والمراكز", description: "القيم الافتراضية للخطط العلاجية ومراجعة ارتباط المراكز والقاعات." },
+  { key: "security", label: "الأمان والجلسات", title: "الأمان والجلسات", description: "قفل الحساب، مدة الجلسات الجديدة، وسياسات كلمة المرور." },
+  { key: "notifications", label: "الإشعارات", title: "الإشعارات", description: "أنواع الإشعارات، مدد الاحتفاظ، ومنع التكرار." },
+  { key: "files", label: "الملفات والطباعة", title: "الملفات والطباعة", description: "سياسة الرفع، PDF، الطباعة الرسمية، شاشات الانتظار ومركز التعاون." },
+  { key: "backup", label: "النسخ والاحتفاظ", title: "النسخ والاحتفاظ", description: "النسخ التلقائي ومدد الاحتفاظ مع روابط الفحص والنسخ دون تنفيذ استعادة من هنا." },
+  { key: "lookups", label: "القوائم والفروع", title: "القوائم والفروع", description: "المناطق والفروع والمراكز والتشكيلات والصفات وأنواع الإصابات ومساعدات الحركة." },
+];
+
+const DAY_LABELS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const NOTIFICATION_TYPES = [
+  ["appointments", "المواعيد"],
+  ["tasks", "المهام"],
+  ["results", "النتائج والفحوص"],
+  ["inventory", "المخزون"],
+  ["system", "النظام"],
+] as const;
+
+function normalizeTab(raw?: string): TabKey {
+  return TABS.some((tab) => tab.key === raw) ? (raw as TabKey) : "identity";
+}
+
+function tabHref(key: TabKey) {
+  return `/settings?tab=${key}`;
+}
+
+function fieldValue<T>(value: T | null | undefined, fallback: T) {
+  return value ?? fallback;
+}
+
+function canDeleteCount(item: any) {
+  const counts = item?._count ? Object.values(item._count).filter((value): value is number => typeof value === "number") : [];
+  return counts.reduce((sum, value) => sum + value, 0);
+}
+
+export default async function Settings({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; saved?: string; error?: string; card?: string }>;
+}) {
   await requirePerm("settings.view");
-  const org = await getOrg();
-  const session = await getSession();
+  const params = await searchParams;
+  const activeTab = normalizeTab(params.tab);
+  const activeInfo = TABS.find((tab) => tab.key === activeTab)!;
+  const [perms, session, org, cfg, orgRow] = await Promise.all([
+    currentPerms(),
+    getSession(),
+    getOrg(),
+    getAdminConfig(),
+    prisma.orgSetting.findUnique({
+      where: { id: 1 },
+      select: {
+        notifRetentionDays: true,
+        loginLogRetentionDays: true,
+        autoBackup: true,
+        expenseApprovalLevels: true,
+      },
+    }),
+  ]);
+  const canEdit = perms.has("settings.edit");
+  const canBackup = perms.has("settings.backup");
   const isAdmin = (session?.user as any)?.role === "ADMIN";
+  const navTabs = TABS.map((tab) => ({ key: tab.key, label: tab.label, href: tabHref(tab.key) }));
+
+  return (
+    <div className="min-w-0 space-y-6">
+      <PageHeader title="الإعدادات" subtitle="إعدادات فعلية مقسمة حسب المجال، مع حفظ مستقل لكل بطاقة" icon="🛠" />
+
+      <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+        <SettingsTabSelect tabs={navTabs} active={activeTab} />
+        <nav className="hidden gap-2 overflow-x-auto md:flex" aria-label="تبويبات الإعدادات">
+          {navTabs.map((tab) => (
+            <Link
+              key={tab.key}
+              href={tab.href}
+              className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                activeTab === tab.key ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </nav>
+      </div>
+
+      <section className="rounded-xl border border-brand-100 bg-brand-50/50 p-4">
+        <h1 className="text-xl font-bold text-gray-900">{activeInfo.title}</h1>
+        <p className="mt-1 text-sm text-gray-600">{activeInfo.description}</p>
+        {!canEdit ? <p className="mt-3 text-sm text-amber-700">لديك صلاحية عرض فقط؛ أزرار التعديل مخفية والحفظ مرفوض خادمياً.</p> : null}
+      </section>
+
+      {activeTab === "identity" ? <IdentityTab org={org} canEdit={canEdit} message={params} /> : null}
+      {activeTab === "operations" ? <OperationsTab cfg={cfg} canEdit={canEdit} /> : null}
+      {activeTab === "therapy" ? <TherapyTab cfg={cfg} canEdit={canEdit} /> : null}
+      {activeTab === "security" ? <SecurityTab cfg={cfg} canEdit={canEdit} isAdmin={isAdmin} message={params} /> : null}
+      {activeTab === "notifications" ? <NotificationsTab cfg={cfg} orgRow={orgRow} canEdit={canEdit} /> : null}
+      {activeTab === "files" ? <FilesTab cfg={cfg} canEdit={canEdit} isAdmin={isAdmin} /> : null}
+      {activeTab === "backup" ? <BackupTab cfg={cfg} orgRow={orgRow} canEdit={canEdit} canBackup={canBackup} message={params} /> : null}
+      {activeTab === "lookups" ? <LookupsTab canEdit={canEdit} isAdmin={isAdmin} message={params} /> : null}
+    </div>
+  );
+}
+
+function QueryMessage({ message, card }: { message?: { saved?: string; error?: string; card?: string }; card: string }) {
+  if (!message || message.card !== card || (!message.saved && !message.error)) return null;
+  const ok = Boolean(message.saved);
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-sm ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}>
+      {message.saved || message.error}
+    </div>
+  );
+}
+
+function Card({
+  id,
+  title,
+  description,
+  children,
+  message,
+}: {
+  id: string;
+  title: string;
+  description?: string;
+  children: ReactNode;
+  message?: { saved?: string; error?: string; card?: string };
+}) {
+  return (
+    <section id={id} className="card min-w-0 space-y-4 p-5">
+      <div>
+        <h2 className="font-semibold text-gray-900">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-gray-500">{description}</p> : null}
+      </div>
+      <QueryMessage message={message} card={id} />
+      {children}
+    </section>
+  );
+}
+
+function TextInput({
+  label,
+  name,
+  defaultValue,
+  type = "text",
+  required = false,
+  unit,
+  hint,
+  min,
+  max,
+  step,
+  disabled,
+}: {
+  label: string;
+  name: string;
+  defaultValue?: string | number | null;
+  type?: string;
+  required?: boolean;
+  unit?: string;
+  hint?: string;
+  min?: number;
+  max?: number;
+  step?: number | string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="label min-w-0">
+      <span>
+        {label} {required ? <span className="text-red-600">*</span> : null}
+      </span>
+      <div className="mt-1 flex min-w-0 items-center gap-2">
+        <input
+          name={name}
+          type={type}
+          required={required}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+          className="input min-w-0 flex-1"
+          defaultValue={defaultValue ?? ""}
+        />
+        {unit ? <span className="shrink-0 rounded-md bg-gray-100 px-2 py-2 text-xs text-gray-600">{unit}</span> : null}
+      </div>
+      {hint ? <span className="mt-1 block text-xs text-gray-400">{hint}</span> : null}
+    </label>
+  );
+}
+
+function SelectInput({
+  label,
+  name,
+  defaultValue,
+  options,
+  disabled,
+  hint,
+}: {
+  label: string;
+  name: string;
+  defaultValue?: string | number | null;
+  options: { value: string | number; label: string }[];
+  disabled?: boolean;
+  hint?: string;
+}) {
+  return (
+    <label className="label min-w-0">
+      {label}
+      <select name={name} className="input mt-1" defaultValue={defaultValue ?? ""} disabled={disabled}>
+        {options.map((option) => (
+          <option key={String(option.value)} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {hint ? <span className="mt-1 block text-xs text-gray-400">{hint}</span> : null}
+    </label>
+  );
+}
+
+function IdentityTab({ org, canEdit, message }: { org: Awaited<ReturnType<typeof getOrg>>; canEdit: boolean; message: any }) {
+  return (
+    <div className="space-y-5">
+      <Card id="identity-main" title="الاسم والاتصال" description="هذه البيانات تظهر في واجهة النظام وعدد من النماذج العامة." message={message}>
+        <SettingsActionForm action={saveIdentityAction} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-2">
+            <TextInput label="اسم النظام" name="name" defaultValue={org.name} required disabled={!canEdit} />
+            <TextInput label="العنوان الفرعي" name="subtitle" defaultValue={org.subtitle} disabled={!canEdit} />
+            <TextInput label="العنوان" name="address" defaultValue={org.address} disabled={!canEdit} />
+            <TextInput label="الهاتف" name="phone" defaultValue={org.phone} disabled={!canEdit} />
+            <div className="md:col-span-2">
+              <TextInput label="رابط الشعار" name="logoUrl" defaultValue={org.logoUrl} hint="استخدم مساراً داخلياً مثل /official/logo.png أو رابط http/https." disabled={!canEdit} />
+              {org.logoUrl ? (
+                <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <img src={org.logoUrl} alt="معاينة الشعار" className="max-h-24 max-w-full object-contain" />
+                </div>
+              ) : null}
+            </div>
+          </fieldset>
+
+          <div className="grid min-w-0 gap-4 md:grid-cols-2">
+            <TextInput label="سطر الترويسة الرسمي 1" name="officialHeader1" defaultValue={org.officialHeader1} disabled={!canEdit} />
+            <TextInput label="سطر الترويسة الرسمي 2" name="officialHeader2" defaultValue={org.officialHeader2} disabled={!canEdit} />
+            <TextInput label="سطر الترويسة الرسمي 3" name="officialHeader3" defaultValue={org.officialHeader3} disabled={!canEdit} />
+            <TextInput label="سطر الترويسة الرسمي 4" name="officialHeader4" defaultValue={org.officialHeader4} disabled={!canEdit} />
+            <TextInput label="الشعار/الآية في الترويسة" name="officialMotto" defaultValue={org.officialMotto} disabled={!canEdit} />
+            <TextInput label="مصدر الشعار" name="officialMottoSub" defaultValue={org.officialMottoSub} disabled={!canEdit} />
+            <TextInput label="عنوان الطباعة الرسمي" name="officialAddress" defaultValue={org.officialAddress} disabled={!canEdit} />
+            <TextInput label="هاتف الطباعة الرسمي" name="officialPhone" defaultValue={org.officialPhone} disabled={!canEdit} />
+          </div>
+          {canEdit ? <SubmitButton>حفظ هوية النظام</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+    </div>
+  );
+}
+
+function OperationsTab({ cfg, canEdit }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean }) {
+  const workDays = new Set((cfg.workDays ?? ["0", "1", "2", "3", "4"]).map(String));
+  return (
+    <div className="space-y-5">
+      <Card id="operations-time" title="المنطقة والتنسيق" description="استخدم select ثابت للقيم المحددة حتى لا تُحفظ صيغة غير مدعومة.">
+        <SettingsActionForm action={saveOperationsAction} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
+            <SelectInput label="المنطقة الزمنية" name="timezone" defaultValue={cfg.timezone} disabled={!canEdit} options={[{ value: "Asia/Baghdad", label: "بغداد" }, { value: "UTC", label: "UTC" }]} />
+            <SelectInput label="اللغة" name="locale" defaultValue={cfg.locale} disabled={!canEdit} options={[{ value: "ar-IQ", label: "العربية - العراق" }, { value: "en-US", label: "English" }]} />
+            <SelectInput label="تنسيق التاريخ" name="dateFormat" defaultValue={cfg.dateFormat} disabled={!canEdit} options={[{ value: "yyyy/MM/dd", label: "yyyy/MM/dd" }, { value: "dd/MM/yyyy", label: "dd/MM/yyyy" }, { value: "yyyy-MM-dd", label: "yyyy-MM-dd" }]} />
+            <TextInput label="بداية الدوام" name="workStart" type="time" defaultValue={cfg.workStart} disabled={!canEdit} />
+            <TextInput label="نهاية الدوام" name="workEnd" type="time" defaultValue={cfg.workEnd} disabled={!canEdit} />
+            <TextInput label="مدة الموعد الافتراضية" name="appointmentMinutes" type="number" min={5} max={480} unit="دقيقة" defaultValue={cfg.appointmentMinutes} required disabled={!canEdit} />
+            <div className="md:col-span-3">
+              <span className="label">أيام الدوام <span className="text-red-600">*</span></span>
+              <div className="mt-2 flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                {DAY_LABELS.map((day, index) => (
+                  <label key={day} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" name="workDays" value={index} defaultChecked={workDays.has(String(index))} disabled={!canEdit} />
+                    {day}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <label className="label md:col-span-3">
+              العطل الرسمية
+              <textarea name="holidays" className="input mt-1 min-h-24" defaultValue={cfg.holidays} placeholder="2026-01-01, 2026-03-21" disabled={!canEdit} />
+              <span className="mt-1 block text-xs text-gray-400">اكتب تواريخ بصيغة YYYY-MM-DD مفصولة بفواصل أو أسطر.</span>
+            </label>
+          </fieldset>
+          {canEdit ? <SubmitButton>حفظ الدوام والمواعيد</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+    </div>
+  );
+}
+
+async function TherapyTab({ cfg, canEdit }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean }) {
+  const [centers, halls] = await Promise.all([
+    prisma.center.findMany({
+      include: {
+        _count: { select: { memberships: true, resources: true, programs: true, centerSessions: true, treatmentPlans: true } },
+      },
+      orderBy: { name: "asc" },
+    }),
+    prisma.therapyHall.findMany({
+      include: { _count: { select: { centerResources: true, therapySessions: true, treatmentPlans: true } } },
+      orderBy: [{ active: "desc" }, { name: "asc" }],
+    }),
+  ]);
+  return (
+    <div className="space-y-5">
+      <Card id="therapy-defaults" title="افتراضيات الخطط العلاجية" description="تستخدم كنقطة بداية عند إنشاء الخطط ولا تغيّر الخطط القديمة تلقائياً.">
+        <SettingsActionForm action={saveTherapyAction} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-4">
+            <TextInput label="عدد الجلسات الافتراضي" name="defaultSessions" type="number" min={1} max={365} defaultValue={cfg.defaultSessions} required disabled={!canEdit} />
+            <TextInput label="مدة الخطة" name="defaultPlanDays" type="number" min={1} max={730} unit="يوم" defaultValue={cfg.defaultPlanDays} required disabled={!canEdit} />
+            <TextInput label="دورية التقييم" name="evaluationEvery" type="number" min={1} max={365} unit="جلسة" defaultValue={cfg.evaluationEvery} required disabled={!canEdit} />
+            <TextInput label="تنبيه ضعف التحسن" name="weakImprovementThreshold" type="number" min={0} max={100} unit="نسبة مئوية" defaultValue={cfg.weakImprovementThreshold} required disabled={!canEdit} />
+          </fieldset>
+          {canEdit ? <SubmitButton>حفظ إعدادات العلاج</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+
+      <Card id="therapy-centers" title="المراكز والقاعات المرتبطة" description="إدارة أسماء المراكز من تبويب القوائم، وهذه البطاقة توضّح الارتباطات قبل أي تعديل.">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-gray-200 p-3">
+            <div className="mb-2 font-medium text-gray-800">المراكز العلاجية</div>
+            <div className="space-y-2 text-sm">
+              {centers.map((center) => (
+                <div key={center.id} className="rounded-md bg-gray-50 p-2">
+                  <div className="font-medium">{center.name}</div>
+                  <div className="mt-1 flex flex-wrap gap-1 text-xs text-gray-500">
+                    <span className="badge-neutral">{center._count.memberships} عضوية</span>
+                    <span className="badge-neutral">{center._count.resources} مورد/قاعة</span>
+                    <span className="badge-neutral">{center._count.programs} برنامج</span>
+                    <span className="badge-neutral">{center._count.centerSessions + center._count.treatmentPlans} علاج</span>
+                  </div>
+                </div>
+              ))}
+              {centers.length === 0 ? <div className="text-gray-400">لا توجد مراكز.</div> : null}
+            </div>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3">
+            <div className="mb-2 font-medium text-gray-800">القاعات</div>
+            <div className="space-y-2 text-sm">
+              {halls.map((hall) => (
+                <div key={hall.id} className="rounded-md bg-gray-50 p-2">
+                  <div className="font-medium">{hall.name}</div>
+                  <div className="mt-1 flex flex-wrap gap-1 text-xs text-gray-500">
+                    <span className={hall.active ? "badge-success" : "badge-neutral"}>{hall.active ? "فعالة" : "معطلة"}</span>
+                    <span className="badge-neutral">{hall._count.centerResources} مورد</span>
+                    <span className="badge-neutral">{hall._count.therapySessions + hall._count.treatmentPlans} ارتباط علاجي</span>
+                  </div>
+                </div>
+              ))}
+              {halls.length === 0 ? <div className="text-gray-400">لا توجد قاعات.</div> : null}
+            </div>
+          </div>
+        </div>
+        <Link href="/settings?tab=lookups" className="btn-ghost">فتح القوائم والفروع</Link>
+      </Card>
+    </div>
+  );
+}
+
+async function SecurityTab({ cfg, canEdit, isAdmin, message }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean; isAdmin: boolean; message: any }) {
   const maint = await maintenanceOn();
-  const messages = await searchParams;
-  const retention = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, loginLogRetentionDays: true, expenseApprovalLevels: true, adminConfig: true } });
-  const cfg = (retention?.adminConfig ?? {}) as Record<string, any>;
-  const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks, displayDevices, therapyHalls, collabSettings] = await Promise.all([
+  return (
+    <div className="space-y-5">
+      <Card id="security-login" title="قفل الدخول والجلسات" description="تغيير مدة الجلسة يؤثر على الجلسات الجديدة فقط، ولا يقطع الجلسات الحالية.">
+        <SettingsActionForm action={saveSecurityAction} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
+            <TextInput label="محاولات الدخول" name="loginAttempts" type="number" min={3} max={20} defaultValue={cfg.loginAttempts} required disabled={!canEdit} />
+            <TextInput label="مدة قفل الحساب" name="lockMinutes" type="number" min={5} max={1440} unit="دقيقة" defaultValue={cfg.lockMinutes} required disabled={!canEdit} />
+            <TextInput label="مدة الجلسة" name="sessionMinutes" type="number" min={15} max={10080} unit="دقيقة" defaultValue={cfg.sessionMinutes} required disabled={!canEdit} />
+            <TextInput label="الحد الأدنى لكلمة المرور" name="passwordMinLength" type="number" min={8} max={64} defaultValue={cfg.passwordMinLength} required disabled={!canEdit} />
+            <div className="md:col-span-2">
+              <span className="label">شروط كلمة المرور</span>
+              <div className="mt-2 flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                <label className="flex items-center gap-2"><input name="passwordRequireLetters" type="checkbox" defaultChecked={cfg.passwordRequireLetters} disabled={!canEdit} /> حروف</label>
+                <label className="flex items-center gap-2"><input name="passwordRequireNumbers" type="checkbox" defaultChecked={cfg.passwordRequireNumbers} disabled={!canEdit} /> أرقام</label>
+                <label className="flex items-center gap-2"><input name="passwordRequireSymbols" type="checkbox" defaultChecked={cfg.passwordRequireSymbols} disabled={!canEdit} /> رمز خاص</label>
+              </div>
+            </div>
+          </fieldset>
+          {canEdit ? <SubmitButton>حفظ الأمان والجلسات</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+
+      {isAdmin ? (
+        <Card id="maintenance" title="وضع الصيانة" description="يبقى حصرياً للأدمن لأنه يفتح منطقة عمليات خطرة. لا يؤثر على صلاحية settings.edit." message={message}>
+          <div className={`rounded-lg border p-3 text-sm ${maint ? "border-red-200 bg-red-50 text-red-800" : "border-gray-200 bg-gray-50 text-gray-700"}`}>
+            الحالة الحالية: {maint ? "مفعّل" : "متوقف"}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {canEdit ? (
+              <form action={setMaintenanceMode.bind(null, !maint)}>
+                <SubmitButton>{maint ? "إيقاف وضع الصيانة" : "تفعيل وضع الصيانة"}</SubmitButton>
+              </form>
+            ) : null}
+            {maint ? <Link href="/maintenance" className="btn-danger">فتح منطقة الصيانة</Link> : null}
+          </div>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
+function NotificationsTab({ cfg, orgRow, canEdit }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; orgRow: any; canEdit: boolean }) {
+  const enabled = new Set((cfg.notificationTypes ?? []).map(String));
+  return (
+    <Card id="notifications-main" title="سياسة الإشعارات" description="منع التكرار مطبق عند إنشاء الإشعارات؛ ومدد الاحتفاظ تُستخدم في تنظيف السجلات المقروءة.">
+      <SettingsActionForm action={saveNotificationsAction} className="space-y-4">
+        <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
+          <div className="md:col-span-3">
+            <span className="label">الأنواع المفعلة</span>
+            <div className="mt-2 flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              {NOTIFICATION_TYPES.map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2">
+                  <input type="checkbox" name="notificationTypes" value={value} defaultChecked={enabled.has(value)} disabled={!canEdit} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <TextInput label="احتفاظ المقروءة" name="notifRetentionDays" type="number" min={1} max={3650} unit="يوم" defaultValue={orgRow?.notifRetentionDays ?? 30} required disabled={!canEdit} />
+          <TextInput label="احتفاظ غير المقروءة" name="notificationRetentionUnreadDays" type="number" min={1} max={3650} unit="يوم" defaultValue={cfg.notificationRetentionUnreadDays} required disabled={!canEdit} />
+          <TextInput label="منع التكرار" name="notificationDedupeMinutes" type="number" min={1} max={1440} unit="دقيقة" defaultValue={cfg.notificationDedupeMinutes} required disabled={!canEdit} />
+          <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 md:col-span-3">
+            <input type="checkbox" name="importantAlerts" defaultChecked={cfg.importantAlerts} disabled={!canEdit} />
+            تفعيل التنبيهات المهمة في الإشعارات النظامية
+          </label>
+        </fieldset>
+        {canEdit ? <SubmitButton>حفظ الإشعارات</SubmitButton> : null}
+      </SettingsActionForm>
+    </Card>
+  );
+}
+
+async function FilesTab({ cfg, canEdit, isAdmin }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean; isAdmin: boolean }) {
+  const [centers, displayDevices, therapyHalls, collabSettings] = await Promise.all([
+    prisma.center.findMany({ orderBy: { name: "asc" } }),
+    canEdit ? prisma.displayDevice.findMany({ include: { center: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
+    prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    collaborationSettings(),
+  ]);
+  return (
+    <div className="space-y-5">
+      <Card id="files-policy" title="الملفات العامة والطباعة" description="سياسة الرفع العامة مستخدمة عند حفظ المرفقات في أجزاء النظام. لا تسمح الصفحة بامتدادات تنفيذية خطرة.">
+        <SettingsActionForm action={saveFilesAction} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
+            <TextInput label="الحجم الأقصى للرفع" name="maxUploadMb" type="number" min={1} max={100} unit="ميغابايت" defaultValue={cfg.maxUploadMb} required disabled={!canEdit} />
+            <TextInput label="الأنواع المسموحة" name="fileTypes" defaultValue={cfg.fileTypes.join(",")} hint="اكتب الامتدادات مفصولة بفواصل، مثل pdf,jpg,png." disabled={!canEdit} />
+            <TextInput label="الأنواع الممنوعة" name="blockedFileTypes" defaultValue={cfg.blockedFileTypes.join(",")} hint="تُضاف الامتدادات التنفيذية الخطرة تلقائياً حتى لو حُذفت هنا." disabled={!canEdit} />
+            <TextInput label="بادئة الملفات" name="fileNumberPrefix" defaultValue={cfg.fileNumberPrefix} disabled={!canEdit} />
+            <TextInput label="بادئة التقارير" name="reportNumberPrefix" defaultValue={cfg.reportNumberPrefix} disabled={!canEdit} />
+            <SelectInput label="حجم صفحة PDF" name="pdfPageSize" defaultValue={cfg.pdfPageSize} disabled={!canEdit} options={[{ value: "A4", label: "A4" }, { value: "Letter", label: "Letter" }]} />
+            <label className="label md:col-span-3">
+              تذييل الطباعة
+              <textarea name="printFooter" className="input mt-1" rows={2} defaultValue={cfg.printFooter} disabled={!canEdit} />
+            </label>
+          </fieldset>
+
+          <div className="rounded-xl border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-800">مركز التعاون</h3>
+            <p className="mt-1 text-sm text-gray-500">هذه القيم تطبق على محادثات وملفات التعاون فقط.</p>
+            <fieldset disabled={!canEdit} className="mt-4 grid min-w-0 gap-4 md:grid-cols-3">
+              <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 md:col-span-3">
+                <input type="checkbox" name="servicePaused" defaultChecked={collabSettings.servicePaused} disabled={!canEdit} />
+                إيقاف خدمة التعاون مؤقتاً
+              </label>
+              <TextInput label="حجم ملف التعاون" name="collabMaxUploadMb" type="number" min={1} max={500} unit="ميغابايت" defaultValue={collabSettings.maxUploadMb} required disabled={!canEdit} />
+              <TextInput label="مدة تعديل الرسالة" name="editWindowMinutes" type="number" min={1} max={1440} unit="دقيقة" defaultValue={collabSettings.editWindowMinutes} required disabled={!canEdit} />
+              <TextInput label="احتفاظ الرسائل" name="messageRetentionDays" type="number" min={1} max={3650} unit="يوم" defaultValue={collabSettings.messageRetentionDays} required disabled={!canEdit} />
+              <TextInput label="احتفاظ سلة الملفات" name="trashRetentionDays" type="number" min={1} max={365} unit="يوم" defaultValue={collabSettings.trashRetentionDays} required disabled={!canEdit} />
+              <TextInput label="حصة المستخدم" name="userQuotaMb" type="number" min={1} max={102400} unit="ميغابايت" defaultValue={collabSettings.userQuotaMb} required disabled={!canEdit} />
+              <TextInput label="حصة القسم" name="departmentQuotaMb" type="number" min={1} max={1024000} unit="ميغابايت" defaultValue={collabSettings.departmentQuotaMb} required disabled={!canEdit} />
+              <TextInput label="حصة المركز" name="centerQuotaMb" type="number" min={1} max={1024000} unit="ميغابايت" defaultValue={collabSettings.centerQuotaMb} required disabled={!canEdit} />
+              <TextInput label="أنواع التعاون المسموحة" name="collabAllowedTypes" defaultValue={collabSettings.allowedTypes.join(",")} disabled={!canEdit} />
+              <TextInput label="أنواع التعاون الممنوعة" name="collabBlockedTypes" defaultValue={collabSettings.blockedTypes.join(",")} disabled={!canEdit} />
+            </fieldset>
+            <Link href="/collaboration/admin" className="btn-ghost mt-4 inline-flex">فتح إدارة التعاون</Link>
+          </div>
+          {canEdit ? <SubmitButton>حفظ الملفات والطباعة</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+
+      {canEdit ? (
+        <DisplaySettings
+          devices={JSON.parse(JSON.stringify(displayDevices))}
+          centers={centers}
+          halls={queueHallNames(therapyHalls.map((hall) => hall.name))}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function BackupTab({
+  cfg,
+  orgRow,
+  canEdit,
+  canBackup,
+  message,
+}: {
+  cfg: Awaited<ReturnType<typeof getAdminConfig>>;
+  orgRow: any;
+  canEdit: boolean;
+  canBackup: boolean;
+  message: any;
+}) {
+  return (
+    <div className="space-y-5">
+      <Card id="backup-main" title="النسخ التلقائي والاحتفاظ" description="هذه الصفحة لا تنفذ استعادة أو حذف نسخة. العمليات الفعلية تبقى في صفحة النسخ." message={message}>
+        {!canBackup ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">تحتاج صلاحية settings.backup لفتح روابط النسخ والاحتفاظ.</div> : null}
+        <SettingsActionForm action={saveBackupAction} className="space-y-4">
+          <fieldset disabled={!canEdit || !canBackup} className="grid min-w-0 gap-4 md:grid-cols-3">
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 md:col-span-3">
+              <input type="checkbox" name="autoBackup" defaultChecked={orgRow?.autoBackup ?? true} disabled={!canEdit || !canBackup} />
+              النسخ التلقائي اليومي
+            </label>
+            <TextInput label="عدد النسخ المحتفظ بها" name="backupRetentionDays" type="number" min={1} max={3650} defaultValue={cfg.backupRetentionDays} required disabled={!canEdit || !canBackup} />
+            <TextInput label="احتفاظ سجل الدخول" name="loginLogRetentionDays" type="number" min={1} max={3650} unit="يوم" defaultValue={orgRow?.loginLogRetentionDays ?? 180} required disabled={!canEdit || !canBackup} />
+          </fieldset>
+          {canEdit && canBackup ? <SubmitButton>حفظ النسخ والاحتفاظ</SubmitButton> : null}
+        </SettingsActionForm>
+        <div className="flex flex-wrap gap-2">
+          {canBackup ? <Link href="/backup" className="btn-ghost">فتح النسخ الاحتياطي</Link> : null}
+          {canBackup ? <Link href="/readiness" className="btn-ghost">فتح فحص الجاهزية</Link> : null}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+async function LookupsTab({ canEdit, isAdmin, message }: { canEdit: boolean; isAdmin: boolean; message: any }) {
+  const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks] = await Promise.all([
     prisma.branch.findMany({ include: { _count: { select: { users: true, patients: true } } }, orderBy: [{ isActive: "desc" }, { name: "asc" }] }),
     prisma.mobilityAid.findMany({ orderBy: { name: "asc" } }),
     prisma.prostheticType.findMany({ orderBy: { name: "asc" } }),
-    prisma.center.findMany({ orderBy: { name: "asc" } }),
-    prisma.injuryType.findMany({ orderBy: { name: "asc" } }),
-    prisma.governorate.findMany({ include: { districts: { orderBy: { name: "asc" } } }, orderBy: { name: "asc" } }),
-    prisma.formation.findMany({ orderBy: { name: "asc" } }),
+    prisma.center.findMany({ include: { _count: { select: { sessions: true, admissions: true, memberships: true, resources: true, programs: true } } }, orderBy: { name: "asc" } }),
+    prisma.injuryType.findMany({ include: { _count: { select: { patients: true } } }, orderBy: { name: "asc" } }),
+    prisma.governorate.findMany({ include: { districts: { include: { _count: { select: { patients: true } } }, orderBy: { name: "asc" } } }, orderBy: { name: "asc" } }),
+    prisma.formation.findMany({ include: { _count: { select: { patients: true } } }, orderBy: { name: "asc" } }),
     prisma.rank.findMany({ orderBy: { name: "asc" } }),
-    isAdmin ? prisma.displayDevice.findMany({ include: { center: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
-    isAdmin ? prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }) : Promise.resolve([]),
-    isAdmin ? collaborationSettings() : Promise.resolve(null),
   ]);
-
   return (
-    <div className="space-y-6">
-      <PageHeader title="الإعدادات" subtitle="هوية المركز والقوائم الثابتة" icon="🛠" />
-      {messages.saved && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{messages.saved}</div>}
-      {messages.error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{messages.error}</div>}
-      <nav className="flex gap-2 overflow-x-auto rounded-lg border bg-white p-2 text-sm" aria-label="أقسام الإعدادات">
-        {[["هوية النظام","هوية النظام"],["شاشات الانتظار","شاشات الانتظار"],["مركز التعاون","مركز التعاون"],["الدوام والمواعيد","سياسات النظام"],["العلاج والمراكز","سياسات النظام"],["الأمان والجلسات","الأمان والجلسات"],["الإشعارات","سياسات النظام"],["الملفات والطباعة","سياسات النظام"],["النسخ والاحتفاظ","النسخ والاحتفاظ"],["القوائم والفروع","القوائم والفروع"]].map(([label,target]) => <a key={label} href={`#${target}`} className="shrink-0 rounded px-3 py-2 hover:bg-gray-100">{label}</a>)}
-      </nav>
-
-      {isAdmin && <DisplaySettings devices={JSON.parse(JSON.stringify(displayDevices))} centers={centers} halls={queueHallNames(therapyHalls.map((hall) => hall.name))} />}
-
-      {isAdmin && collabSettings && (
-        <section id="مركز التعاون" className="card p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-semibold text-gray-800">مركز التعاون</h2>
-              <p className="text-sm text-gray-500">الإدارة التفصيلية للقنوات والفحص والحصص تتم من صفحة إدارة التعاون.</p>
-            </div>
-            <Link href="/collaboration/admin" className="btn-primary">فتح إدارة التعاون</Link>
-          </div>
-          <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
-            <div className="rounded-lg border p-3"><div className="text-gray-500">الحالة</div><div className="font-semibold">{collabSettings.servicePaused ? "متوقفة مؤقتاً" : "تعمل"}</div></div>
-            <div className="rounded-lg border p-3"><div className="text-gray-500">أقصى ملف</div><div className="font-semibold">{collabSettings.maxUploadMb} MB</div></div>
-            <div className="rounded-lg border p-3"><div className="text-gray-500">مدة تعديل الرسالة</div><div className="font-semibold">{collabSettings.editWindowMinutes} دقيقة</div></div>
-            <div className="rounded-lg border p-3"><div className="text-gray-500">حصة المستخدم</div><div className="font-semibold">{collabSettings.userQuotaMb} MB</div></div>
-          </div>
-        </section>
-      )}
-
-      {isAdmin && <form id="سياسات النظام" action={saveAdminConfig} className="card grid gap-4 p-5 md:grid-cols-3">
-        <div className="md:col-span-3"><h2 className="font-semibold text-gray-800">سياسات التشغيل والعلاج والأمان</h2><p className="text-sm text-gray-500">قيم افتراضية مركزية مع تحقق خادمي وسجل للقيمة السابقة والجديدة.</p></div>
-        <label className="label">المنطقة الزمنية<Combobox name="timezone" allowFree={false} defaultValue={cfg.timezone ?? "Asia/Baghdad"} options={[{value:"Asia/Baghdad",label:"بغداد"},{value:"UTC",label:"UTC"}]} /></label>
-        <label className="label">اللغة<Combobox name="locale" allowFree={false} defaultValue={cfg.locale ?? "ar-IQ"} options={[{value:"ar-IQ",label:"العربية - العراق"},{value:"en-US",label:"English"}]} /></label>
-        <label className="label">تنسيق التاريخ<input name="dateFormat" className="input" defaultValue={cfg.dateFormat ?? "yyyy/MM/dd"} /></label>
-        <div className="md:col-span-3"><span className="label">أيام الدوام</span><div className="flex flex-wrap gap-3">{["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"].map((d,i)=><label key={d} className="text-sm"><input type="checkbox" name="workDays" value={i} defaultChecked={(cfg.workDays ?? [0,1,2,3,4]).includes(String(i))} /> {d}</label>)}</div></div>
-        <label className="label">بداية الدوام<input type="time" name="workStart" className="input" defaultValue={cfg.workStart ?? "08:00"} /></label>
-        <label className="label">نهاية الدوام<input type="time" name="workEnd" className="input" defaultValue={cfg.workEnd ?? "15:00"} /></label>
-        <label className="label">العطل الرسمية<input name="holidays" className="input" defaultValue={cfg.holidays ?? ""} placeholder="2026-01-01, 2026-..." /></label>
-        {[['appointmentMinutes','مدة الموعد الافتراضية',30],['defaultSessions','عدد الجلسات الافتراضي',10],['defaultPlanDays','مدة الخطة الافتراضية',30],['evaluationEvery','دورية التقييم الافتراضية',5],['weakImprovementThreshold','تنبيه ضعف التحسن %',20],['loginAttempts','محاولات الدخول',5],['lockMinutes','مدة قفل الحساب',15],['sessionMinutes','مدة الجلسة',480],['maxUploadMb','أقصى رفع (MB)',10],['backupRetentionDays','احتفاظ النسخ (يوم)',30]].map(([key,label,def])=><label key={String(key)} className="label">{label}<input type="number" name={String(key)} className="input" defaultValue={cfg[String(key)] ?? def} /></label>)}
-        <label className="label">أنواع الملفات<input name="fileTypes" className="input" defaultValue={(cfg.fileTypes ?? ['pdf','jpg','jpeg','png']).join(',')} /></label>
-        <label className="label">بادئة الملفات<input name="fileNumberPrefix" className="input" defaultValue={cfg.fileNumberPrefix ?? "PAT"} /></label>
-        <label className="label">بادئة التقارير<input name="reportNumberPrefix" className="input" defaultValue={cfg.reportNumberPrefix ?? "REP"} /></label>
-        <div className="md:col-span-3"><button className="btn-primary">حفظ سياسات النظام</button></div>
-      </form>}
-
-      {isAdmin && (
-        <div id="الأمان والجلسات" className={`card border p-5 ${maint ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
-          <h2 className="mb-1 font-semibold text-gray-800">وضع الصيانة <span className="text-sm font-normal text-red-600">(خطر — للأدمن فقط)</span></h2>
-          <p className="mb-3 text-sm text-gray-600">عند التفعيل تظهر «منطقة الصيانة» التي تسمح بمسح البيانات بشكل انتقائي (لترتيب النظام قبل الإطلاق). أطفئه فور الانتهاء.</p>
-          <div className="flex flex-wrap items-center gap-3">
-            <form action={setMaintenanceMode.bind(null, !maint)}>
-              <button className={maint ? "rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800" : "rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"} type="submit">
-                {maint ? "إيقاف وضع الصيانة" : "تفعيل وضع الصيانة"}
-              </button>
-            </form>
-            {maint && <Link href="/maintenance" className="btn-danger">افتح منطقة الصيانة ←</Link>}
-            <span className={`badge ${maint ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"}`}>{maint ? "مُفعّل" : "متوقف"}</span>
-          </div>
-        </div>
-      )}
-
-      <div id="هوية النظام" className="card p-5">
-        <h2 className="mb-3 font-semibold text-gray-700">هوية المركز (تظهر في التقارير والوصولات والبطاقات)</h2>
-        <form action={saveOrg} className="grid gap-3 md:grid-cols-2">
-          <div><label className="label">اسم المركز</label><input name="name" className="input" defaultValue={org.name} /></div>
-          <div><label className="label">العنوان الفرعي</label><input name="subtitle" className="input" defaultValue={org.subtitle} placeholder="مثل: دائرة صحة..." /></div>
-          <div><label className="label">العنوان</label><input name="address" className="input" defaultValue={org.address} /></div>
-          <div><label className="label">الهاتف</label><input name="phone" className="input" defaultValue={org.phone} /></div>
-          <div className="md:col-span-2"><label className="label">رابط الشعار</label><input name="logoUrl" className="input" defaultValue={org.logoUrl} placeholder="/official/hashd-logo.png أو رابط داخلي" /></div>
-          <div className="md:col-span-2"><button className="btn-primary" type="submit">حفظ هوية المركز</button></div>
-        </form>
+    <div className="space-y-5">
+      <Card id="lookups-search" title="بحث القوائم" description="البحث يفلتر العناصر الظاهرة في كل بطاقات القوائم دون حفظ أي تغيير.">
+        <LookupSearchInput />
+      </Card>
+      <DistrictsCard governorates={governorates} canEdit={canEdit} isAdmin={isAdmin} message={message} />
+      <BranchCard items={branches} canEdit={canEdit} isAdmin={isAdmin} message={message} />
+      <div className="grid gap-5 lg:grid-cols-2">
+        <LookupCard card="mobility" title="مساعدات الحركة" items={mobilityAids} action={addMobilityAid} del={deleteMobilityAid} canEdit={canEdit} isAdmin={isAdmin} message={message} />
+        <LookupCard card="prosthetic" title="الأطراف الصناعية" items={prostheticTypes} action={addProstheticType} del={deleteProstheticType} canEdit={canEdit} isAdmin={isAdmin} message={message} />
+        <LookupCard card="centers" title="المراكز العلاجية" items={centers} action={addCenter} del={deleteCenter} canEdit={canEdit} isAdmin={isAdmin} message={message} />
+        <LookupCard card="injuries" title="أنواع الإصابات" items={injuries} action={addInjuryType} del={deleteInjuryType} canEdit={canEdit} isAdmin={isAdmin} message={message} />
+        <LookupCard card="formations" title="التشكيلات" items={formations} action={addFormation} del={deleteFormation} canEdit={canEdit} isAdmin={isAdmin} message={message} />
+        <LookupCard card="ranks" title="الصفات" items={ranks} action={addRank} del={deleteRank} canEdit={canEdit} isAdmin={isAdmin} message={message} />
       </div>
-
-      {isAdmin && (
-        <div className="card p-5">
-          <h2 className="mb-1 font-semibold text-gray-700">حالة التهيئة الأولية</h2>
-          <p className="text-sm text-gray-500">النظام مهيأ مسبقاً إذا كان يوجد مدير فعّال وهوية مركز محفوظة. صفحة الإعدادات هي مكان تعديل هذه القيم بعد أول تشغيل.</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            <span className="badge-success">تسجيل الدخول الحالي محفوظ</span>
-            <Link href="/readiness" className="rounded-lg bg-brand-50 px-3 py-1.5 text-brand-700 hover:bg-brand-100">فحص الجاهزية ←</Link>
-          </div>
-        </div>
-      )}
-
-      {isAdmin && (
-        <div id="النسخ والاحتفاظ" className="card p-5">
-          <h2 className="mb-1 font-semibold text-gray-700">مدد الاحتفاظ بالسجلات</h2>
-          <p className="mb-3 text-sm text-gray-500">
-            يُنظّف النظام السجلات القديمة تلقائياً مع النسخة الاحتياطية اليومية.
-            <span className="font-medium text-gray-700"> سجل التدقيق (المساءلة الرسمية) محفوظ دائماً ولا يُمسّ.</span>
-          </p>
-          <form action={saveRetention} className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="label">الإشعارات المقروءة (يوم)</label>
-              <input name="notifRetentionDays" type="number" min={1} max={3650} className="input" defaultValue={retention?.notifRetentionDays ?? 30} />
-              <p className="mt-1 text-xs text-gray-400">تُحذف الإشعارات المقروءة الأقدم من هذه المدة.</p>
-            </div>
-            <div>
-              <label className="label">سجل الدخول (يوم)</label>
-              <input name="loginLogRetentionDays" type="number" min={1} max={3650} className="input" defaultValue={retention?.loginLogRetentionDays ?? 180} />
-              <p className="mt-1 text-xs text-gray-400">يُحذف سجل محاولات الدخول الأقدم من هذه المدة.</p>
-            </div>
-            <div className="md:col-span-2"><button className="btn-primary" type="submit">حفظ مدد الاحتفاظ</button></div>
-          </form>
-        </div>
-      )}
-
-      {isAdmin && <div className="card p-5"><h2 className="font-semibold text-gray-700">سياسة اعتماد صرفيات الجرحى</h2><p className="mt-1 text-sm text-gray-500">حدد عدد مستويات الاعتماد المطلوبة قبل تجهيز السند للصرف.</p><form action={saveExpenseApprovalLevels} className="mt-3 flex items-end gap-3"><label className="label">عدد المستويات<input name="expenseApprovalLevels" type="number" min="1" max="5" className="input mt-1 !w-28" defaultValue={retention?.expenseApprovalLevels||1}/></label><button className="btn-primary">حفظ السياسة</button></form></div>}
-
-      <h2 id="القوائم والفروع" className="text-lg font-bold text-gray-800">القوائم الثابتة</h2>
-      <p className="text-sm text-gray-500">القوائم تُستخدم لتوحيد الإدخال في بطاقة المريض والجلسات والوصفات.</p>
-
-      <div className="card p-5">
-        <h2 className="mb-3 font-semibold text-gray-700">المحافظات والمناطق</h2>
-        <form action={addDistrict} className="mb-4 flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
-          <div>
-            <label className="label">المحافظة</label>
-<Combobox name="governorateId" allowFree={false} options={governorates.map((g:any)=>({value:String(g.id),label:g.name}))} />
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <label className="label">اسم المنطقة الجديدة</label>
-            <input name="name" className="input" placeholder="مثال: مدينة الصدر" />
-          </div>
-          <button className="btn-primary" type="submit">إضافة منطقة</button>
-        </form>
-        <div className="grid gap-3 md:grid-cols-3">
-          {governorates.map((g) => (
-            <div key={g.id} className="rounded-lg border border-gray-200 p-3">
-              <div className="mb-2 font-medium text-gray-800">{g.name} <span className="text-xs text-gray-400">({g.districts.length})</span></div>
-              <div className="flex flex-wrap gap-1">
-                {g.districts.map((d) => (
-                  <span key={d.id} className="badge flex items-center gap-1 bg-gray-100 text-gray-600">
-                    {d.name}
-                    <form action={deleteDistrict.bind(null, d.id)}><button className="text-red-500 hover:text-red-700" title="حذف">×</button></form>
-                  </span>
-                ))}
-                {g.districts.length === 0 && <span className="text-xs text-gray-400">لا مناطق</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <BranchCard items={branches} />
-
-      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-        <LookupCard title="مساعدات الحركة" items={mobilityAids} action={addMobilityAid} del={deleteMobilityAid} />
-        <LookupCard title="الأطراف الصناعية (أنواع)" items={prostheticTypes} action={addProstheticType} del={deleteProstheticType} />
-        <LookupCard title="المراكز العلاجية" items={centers} action={addCenter} del={deleteCenter} />
-        <LookupCard title="أنواع الإصابات" items={injuries} action={addInjuryType} del={deleteInjuryType} />
-        <LookupCard title="التشكيلات" items={formations} action={addFormation} del={deleteFormation} />
-        <LookupCard title="الصفات" items={ranks} action={addRank} del={deleteRank} />
-      </div>
-
     </div>
   );
 }
 
-function BranchCard({ items }: any) {
-  const active = items.filter((b: any) => b.isActive).length;
-  const users = items.reduce((sum: number, b: any) => sum + (b._count?.users ?? 0), 0);
-  const patients = items.reduce((sum: number, b: any) => sum + (b._count?.patients ?? 0), 0);
+function DistrictsCard({ governorates, canEdit, isAdmin, message }: { governorates: any[]; canEdit: boolean; isAdmin: boolean; message: any }) {
   return (
-    <div className="card p-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-semibold text-gray-800">إدارة الفروع</h2>
-          <p className="mt-1 text-sm text-gray-500">تعطيل الفرع يخفيه من قوائم الاختيار الجديدة دون حذف السجلات المرتبطة.</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className="badge-success">{active} فعّال</span>
-          <span className="badge-neutral">{users} مستخدم</span>
-          <span className="badge-neutral">{patients} مراجع</span>
-        </div>
-      </div>
-      <form action={addBranch} className="mb-4 flex flex-wrap items-end gap-2 rounded-xl bg-gray-50 p-3">
-        <div className="min-w-[220px] flex-1">
-          <label className="label">اسم الفرع الجديد</label>
-          <input name="name" className="input" placeholder="مثال: فرع بغداد" />
-        </div>
-        <button className="btn-primary" type="submit">إضافة فرع</button>
-      </form>
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {items.map((b: any) => {
-          const used = (b._count?.users ?? 0) + (b._count?.patients ?? 0);
-          return (
-            <div key={b.id} className={`rounded-xl border p-4 ${b.isActive ? "border-gray-200 bg-white" : "border-gray-200 bg-gray-50 opacity-80"}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="font-semibold text-gray-800">{b.name}</div>
-                  <div className="mt-1 flex flex-wrap gap-1 text-xs">
-                    <span className={b.isActive ? "badge-success" : "badge-neutral"}>{b.isActive ? "فعّال" : "معطّل"}</span>
-                    <span className="badge-neutral">{b._count?.users ?? 0} مستخدم</span>
-                    <span className="badge-neutral">{b._count?.patients ?? 0} مراجع</span>
-                  </div>
-                </div>
-                <form action={toggleBranch.bind(null, b.id, !b.isActive)}>
-                  <button className={b.isActive ? "btn-warning btn-sm" : "btn-primary btn-sm"} type="submit">{b.isActive ? "تعطيل" : "تفعيل"}</button>
-                </form>
-              </div>
-              {used === 0 ? (
-                <form action={deleteBranch.bind(null, b.id)} className="mt-3">
-                  <button className="text-xs font-medium text-red-600 hover:underline" type="submit">حذف نهائي</button>
-                </form>
-              ) : (
-                <p className="mt-3 text-xs text-gray-400">الحذف غير مفضل لأن الفرع مرتبط بسجلات. استخدم التعطيل.</p>
-              )}
+    <Card id="districts" title="المناطق" description="لا يمكن حذف منطقة مستخدمة في بيانات مراجع." message={message}>
+      {canEdit ? (
+        <form action={addDistrict} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[220px_1fr_auto]">
+          <SelectInput label="المحافظة" name="governorateId" options={governorates.map((g) => ({ value: g.id, label: g.name }))} />
+          <TextInput label="اسم المنطقة الجديدة" name="name" required />
+          <div className="self-end"><SmallSubmitButton>إضافة منطقة</SmallSubmitButton></div>
+        </form>
+      ) : null}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {governorates.map((g) => (
+          <div key={g.id} className="rounded-lg border border-gray-200 p-3" data-lookup-item data-lookup-text={`${g.name} ${g.districts.map((d: any) => d.name).join(" ")}`}>
+            <div className="mb-2 font-medium text-gray-800">{g.name} <span className="text-xs text-gray-400">({g.districts.length})</span></div>
+            <div className="flex flex-wrap gap-2">
+              {g.districts.map((district: any) => (
+                <span key={district.id} className="badge flex items-center gap-2 bg-gray-100 text-gray-700">
+                  {district.name}
+                  {district._count?.patients ? <span className="text-gray-400">{district._count.patients}</span> : null}
+                  {canEdit && isAdmin && !district._count?.patients ? (
+                    <form action={deleteDistrict.bind(null, district.id)}>
+                      <ConfirmSubmitButton message="حذف المنطقة؟" className="text-red-600 hover:text-red-800">×</ConfirmSubmitButton>
+                    </form>
+                  ) : null}
+                </span>
+              ))}
             </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function BranchCard({ items, canEdit, isAdmin, message }: { items: any[]; canEdit: boolean; isAdmin: boolean; message: any }) {
+  const active = items.filter((b) => b.isActive).length;
+  const users = items.reduce((sum, b) => sum + (b._count?.users ?? 0), 0);
+  const patients = items.reduce((sum, b) => sum + (b._count?.patients ?? 0), 0);
+  return (
+    <Card id="branches" title="الفروع" description="تعطيل الفرع يخفيه من الاختيارات الجديدة دون حذف السجلات المرتبطة." message={message}>
+      <div className="flex flex-wrap gap-2 text-xs">
+        <span className="badge-success">{active} فعّال</span>
+        <span className="badge-neutral">{users} مستخدم</span>
+        <span className="badge-neutral">{patients} مراجع</span>
+      </div>
+      {canEdit ? (
+        <form action={addBranch} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[1fr_auto]">
+          <TextInput label="اسم الفرع الجديد" name="name" required />
+          <div className="self-end"><SmallSubmitButton>إضافة فرع</SmallSubmitButton></div>
+        </form>
+      ) : null}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {items.map((branch) => {
+          const used = (branch._count?.users ?? 0) + (branch._count?.patients ?? 0);
+          return (
+            <article key={branch.id} className="rounded-lg border border-gray-200 p-3" data-lookup-item data-lookup-text={branch.name}>
+              <div className="font-semibold text-gray-800">{branch.name}</div>
+              <div className="mt-2 flex flex-wrap gap-1 text-xs">
+                <span className={branch.isActive ? "badge-success" : "badge-neutral"}>{branch.isActive ? "فعّال" : "معطّل"}</span>
+                <span className="badge-neutral">{branch._count?.users ?? 0} مستخدم</span>
+                <span className="badge-neutral">{branch._count?.patients ?? 0} مراجع</span>
+              </div>
+              {canEdit ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <form action={toggleBranch.bind(null, branch.id, !branch.isActive)}>
+                    <SmallSubmitButton>{branch.isActive ? "تعطيل" : "تفعيل"}</SmallSubmitButton>
+                  </form>
+                  {isAdmin && used === 0 ? (
+                    <form action={deleteBranch.bind(null, branch.id)}>
+                      <ConfirmSubmitButton message="حذف الفرع نهائياً؟">حذف</ConfirmSubmitButton>
+                    </form>
+                  ) : null}
+                </div>
+              ) : null}
+              {used > 0 ? <p className="mt-2 text-xs text-gray-400">لا يمكن حذف فرع مرتبط بسجلات؛ استخدم التعطيل.</p> : null}
+            </article>
           );
         })}
-        {items.length === 0 && <div className="rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-400">لا توجد فروع بعد.</div>}
       </div>
-    </div>
+    </Card>
   );
 }
 
-function LookupCard({ title, items, action, del }: any) {
+function LookupCard({
+  card,
+  title,
+  items,
+  action,
+  del,
+  canEdit,
+  isAdmin,
+  message,
+}: {
+  card: string;
+  title: string;
+  items: any[];
+  action: (fd: FormData) => Promise<void>;
+  del: (id: number) => Promise<void>;
+  canEdit: boolean;
+  isAdmin: boolean;
+  message: any;
+}) {
   return (
-    <div className="card p-4">
-      <h2 className="mb-3 font-semibold text-gray-700">{title}</h2>
-      <form action={action} className="mb-3 flex gap-2">
-        <input name="name" className="input" placeholder="إضافة جديد..." />
-        <button className="btn-primary" type="submit">+</button>
-      </form>
-      <ul className="space-y-1 text-sm">
-        {items.map((i: any) => (
-          <li key={i.id} className="flex items-center justify-between rounded bg-gray-50 px-3 py-1.5">
-            <span>{i.name}</span>
-            <form action={del.bind(null, i.id)}><button className="text-red-500 hover:text-red-700" title="حذف">×</button></form>
-          </li>
-        ))}
-        {items.length === 0 && <li className="text-gray-400">فارغة.</li>}
+    <Card id={card} title={title} description="العناصر المستخدمة لا تُحذف؛ تظهر رسالة واضحة عند الارتباط بسجلات." message={message}>
+      {canEdit ? (
+        <form action={action} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[1fr_auto]">
+          <TextInput label={`إضافة إلى ${title}`} name="name" required />
+          <div className="self-end"><SmallSubmitButton>إضافة</SmallSubmitButton></div>
+        </form>
+      ) : null}
+      <ul className="space-y-2 text-sm">
+        {items.map((item) => {
+          const used = canDeleteCount(item);
+          return (
+            <li key={item.id} className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2" data-lookup-item data-lookup-text={item.name}>
+              <div className="min-w-0">
+                <span className="break-words">{item.name}</span>
+                {used ? <span className="mr-2 text-xs text-gray-400">مرتبط بـ {used} سجل</span> : null}
+              </div>
+              {canEdit && isAdmin && used === 0 ? (
+                <form action={del.bind(null, item.id)} className="shrink-0">
+                  <ConfirmSubmitButton message={`حذف ${item.name}؟`}>حذف</ConfirmSubmitButton>
+                </form>
+              ) : null}
+            </li>
+          );
+        })}
+        {items.length === 0 ? <li className="text-gray-400">فارغة.</li> : null}
       </ul>
-    </div>
+    </Card>
   );
 }

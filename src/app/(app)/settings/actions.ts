@@ -1,210 +1,514 @@
 "use server";
-import { requireSession } from "@/lib/access";
-import { assertAdminDelete } from "@/lib/access";
+
+import { assertAdminDelete, assertPerm, requireSession } from "@/lib/access";
+import { logAudit } from "@/lib/audit";
+import { getAdminConfig, type AdminConfig } from "@/lib/admin-config";
+import { DEFAULT_ALLOWED_FILE_TYPES, DEFAULT_BLOCKED_FILE_TYPES } from "@/lib/collaboration-rules";
 import { prisma } from "@/lib/db";
-import { canManageUsers } from "@/lib/permissions";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
-import { logAudit } from "@/lib/audit";
 
-async function requireAdmin() {
-  const s = await requireSession();
-  if (!canManageUsers((s?.user as any)?.role)) throw new Error("غير مصرّح");
-}
-export async function addMobilityAid(fd: FormData) { await requireAdmin(); await prisma.mobilityAid.create({ data: { name: fd.get("name")?.toString() || "" } }); revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 }); }
-export async function deleteMobilityAid(id: number) { await assertAdminDelete(); await requireAdmin(); await prisma.mobilityAid.delete({ where: { id } }); revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 }); }
-export async function addProstheticType(fd: FormData) { await requireAdmin(); await prisma.prostheticType.create({ data: { name: fd.get("name")?.toString() || "" } }); revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 }); }
-export async function deleteProstheticType(id: number) { await assertAdminDelete(); await requireAdmin(); await prisma.prostheticType.delete({ where: { id } }); revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 }); }
-export async function addBranch(fd: FormData) {
-  await requireAdmin();
-  const name = fd.get("name")?.toString().trim();
-  if (name) await prisma.branch.create({ data: { name } }).catch(() => {});
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function toggleBranch(id: number, isActive: boolean) {
-  await requireAdmin();
-  await prisma.branch.update({ where: { id }, data: { isActive } });
-  await logAudit({ action: "UPDATE", tableName: "branches", recordId: String(id), newValue: { isActive } });
-  revalidatePath("/settings"); revalidatePath("/users"); revalidatePath("/patients"); revalidateTag("lookups", { expire: 0 });
-}
-export async function deleteBranch(id: number) {
-  await assertAdminDelete();
-  await requireAdmin();
-  await prisma.branch.delete({ where: { id } });
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function addCenter(fd: FormData) {
-  await requireAdmin();
-  await prisma.center.create({ data: { name: fd.get("name")?.toString() || "" } });
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function addInjuryType(fd: FormData) {
-  await requireAdmin();
-  await prisma.injuryType.create({ data: { name: fd.get("name")?.toString() || "" } });
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function addMedication(fd: FormData) {
-  await requireAdmin();
-  await prisma.medication.create({ data: { name: fd.get("name")?.toString() || "" } });
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
+export type SettingsActionState = {
+  ok?: boolean;
+  message?: string;
+  values?: Record<string, string>;
+};
+
+const TAB_LOOKUPS = "/settings?tab=lookups";
+const DANGEROUS_FILE_TYPES = new Set(DEFAULT_BLOCKED_FILE_TYPES);
+
+function state(ok: boolean, message: string, values?: Record<string, string>): SettingsActionState {
+  return { ok, message, values };
 }
 
-export async function addDistrict(fd: FormData) {
-  await requireAdmin();
-  const governorateId = Number(fd.get("governorateId"));
-  const name = fd.get("name")?.toString().trim() || "";
-  if (!governorateId || !name) return;
-  await prisma.district.create({ data: { name, governorateId } });
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
+function formValues(fd: FormData, keys: string[]) {
+  return Object.fromEntries(keys.map((key) => [key, fd.get(key)?.toString() ?? ""]));
 }
 
-export async function addFormation(fd: FormData) {
-  await requireAdmin();
-  await prisma.formation.create({ data: { name: fd.get("name")?.toString().trim() || "" } });
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
+async function requireSettingsEdit() {
+  const session = await requireSession();
+  await assertPerm("settings.edit");
+  return (session.user as any)?.id as string | undefined;
 }
 
-const inUse = "/settings?saved=" + encodeURIComponent("لا يمكن الحذف — العنصر مستخدم في سجلات");
-
-export async function addEmployee(fd: FormData) {
-  await requireAdmin();
-  const name = fd.get("name")?.toString().trim();
-  const job = fd.get("job")?.toString().trim() || null;
-  if (name) await prisma.employee.create({ data: { name, job } });
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function deleteEmployee(id: number) {
-  await assertAdminDelete();
-  await requireAdmin();
-  try { await prisma.employee.delete({ where: { id } }); } catch { redirect(inUse); }
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
+async function requireSettingsBackupEdit() {
+  const session = await requireSession();
+  await assertPerm("settings.edit");
+  await assertPerm("settings.backup");
+  return (session.user as any)?.id as string | undefined;
 }
 
-export async function addRank(fd: FormData) {
-  await requireAdmin();
-  const name = fd.get("name")?.toString().trim();
-  if (name) await prisma.rank.create({ data: { name } }).catch(() => {});
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function deleteRank(id: number) {
-  await assertAdminDelete();
-  await requireAdmin();
-  try { await prisma.rank.delete({ where: { id } }); } catch { redirect(inUse); }
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
+async function requireAdminEdit() {
+  const session = await requireSession();
+  await assertPerm("settings.edit");
+  const user = await prisma.user.findUnique({
+    where: { id: (session.user as any)?.id },
+    select: { role: true, isActive: true },
+  });
+  if (!user?.isActive || user.role !== "ADMIN") throw new Error("غير مصرّح — الأدمن فقط");
+  return (session.user as any)?.id as string | undefined;
 }
 
-export async function deleteCenter(id: number) {
-  await assertAdminDelete();
-  await requireAdmin();
-  try { await prisma.center.delete({ where: { id } }); } catch { redirect(inUse); }
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function deleteInjuryType(id: number) {
-  await assertAdminDelete();
-  await requireAdmin();
-  try { await prisma.injuryType.delete({ where: { id } }); } catch { redirect(inUse); }
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function deleteMedication(id: number) {
-  await assertAdminDelete();
-  await requireAdmin();
-  try { await prisma.medication.delete({ where: { id } }); } catch { redirect(inUse); }
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function deleteFormation(id: number) {
-  await assertAdminDelete();
-  await requireAdmin();
-  try { await prisma.formation.delete({ where: { id } }); } catch { redirect(inUse); }
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-}
-export async function deleteDistrict(id: number) {
-  await assertAdminDelete();
-  await requireAdmin();
-  try { await prisma.district.delete({ where: { id } }); } catch { redirect(inUse); }
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
+function text(fd: FormData, key: string, max = 500) {
+  return (fd.get(key)?.toString() ?? "").trim().slice(0, max);
 }
 
-export async function saveOrg(fd: FormData) {
-  await requireAdmin();
-  const data = {
-    name: fd.get("name")?.toString().trim() || "المجمع التأهيلي الطبي",
-    subtitle: fd.get("subtitle")?.toString() || null,
-    address: fd.get("address")?.toString() || null,
-    phone: fd.get("phone")?.toString() || null,
-    logoUrl: fd.get("logoUrl")?.toString().trim() || null,
-  };
-  await prisma.orgSetting.upsert({ where: { id: 1 }, update: data, create: { id: 1, ...data } });
-  revalidatePath("/settings"); revalidateTag("lookups", { expire: 0 });
-  redirect("/settings?saved=" + encodeURIComponent("تم حفظ هوية النظام"));
+function optionalText(fd: FormData, key: string, max = 500) {
+  const value = text(fd, key, max);
+  return value || null;
+}
+
+function intRange(fd: FormData, key: string, label: string, min: number, max: number) {
+  const value = Number(fd.get(key));
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${label} يجب أن يكون بين ${min} و ${max}`);
+  }
+  return value;
+}
+
+function bool(fd: FormData, key: string) {
+  return fd.get(key) === "on" || fd.get(key) === "1";
+}
+
+function parseExtensions(raw: string, label: string, allowEmpty = false) {
+  const values = Array.from(new Set(raw.split(/[,\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)));
+  if (!values.length && allowEmpty) return values;
+  if (!values.length) throw new Error(`${label} مطلوب`);
+  if (values.some((x) => !/^[a-z0-9]{1,12}$/.test(x))) throw new Error(`${label} يحتوي امتداداً غير صالح`);
+  return values;
+}
+
+function parseAllowedExtensions(raw: string, label: string) {
+  const values = parseExtensions(raw, label);
+  if (values.some((x) => DANGEROUS_FILE_TYPES.has(x))) {
+    throw new Error("لا يمكن السماح بامتداد تنفيذي خطر");
+  }
+  return values;
+}
+
+function parseBlockedExtensions(raw: string, label: string) {
+  const values = parseExtensions(raw, label, true);
+  return Array.from(new Set([...DEFAULT_BLOCKED_FILE_TYPES, ...values]));
+}
+
+function validateLogoUrl(value: string | null) {
+  if (!value) return null;
+  if (value.startsWith("/") && !value.startsWith("//")) return value;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:" || url.protocol === "http:") return value;
+  } catch {
+    // handled below
+  }
+  throw new Error("رابط الشعار يجب أن يكون مساراً داخلياً أو رابط http/https");
+}
+
+function validateHolidays(value: string) {
+  const dates = value.split(/[,\n]+/).map((item) => item.trim()).filter(Boolean);
+  if (dates.length > 120) throw new Error("عدد العطل الرسمية كبير جداً");
+  const invalid = dates.find((item) => !/^\d{4}-\d{2}-\d{2}$/.test(item));
+  if (invalid) throw new Error("العطل الرسمية يجب أن تكون بصيغة YYYY-MM-DD ومفصولة بفواصل أو أسطر");
+  return dates.join(", ");
+}
+
+async function updateAdminConfig(userId: string | undefined, recordId: string, patch: Partial<AdminConfig>, paths: string[] = []) {
+  const oldConfig = await getAdminConfig();
+  const nextConfig = { ...oldConfig, ...patch };
+  const keys = Object.keys(patch) as (keyof AdminConfig)[];
+  await prisma.orgSetting.upsert({
+    where: { id: 1 },
+    update: { adminConfig: nextConfig },
+    create: { id: 1, adminConfig: nextConfig },
+  });
+  await logAudit({
+    userId,
+    action: "UPDATE",
+    tableName: "OrgSetting",
+    recordId,
+    oldValue: Object.fromEntries(keys.map((key) => [key, oldConfig[key]])),
+    newValue: patch,
+  });
+  revalidatePath("/settings");
+  for (const path of paths) revalidatePath(path);
+}
+
+function lookupRedirect(card: string, message: string, kind: "saved" | "error" = "saved") {
+  redirect(`${TAB_LOOKUPS}&card=${encodeURIComponent(card)}&${kind}=${encodeURIComponent(message)}`);
+}
+
+async function addLookup(card: string, tableName: string, create: () => Promise<unknown>) {
+  await requireSettingsEdit();
+  try {
+    await create();
+  } catch {
+    lookupRedirect(card, "تعذر إضافة العنصر. تحقق من أنه غير مكرر.", "error");
+  }
+  revalidatePath("/settings");
+  revalidateTag("lookups", { expire: 0 });
+  await logAudit({ action: "CREATE", tableName, recordId: card });
+  lookupRedirect(card, "تمت الإضافة");
+}
+
+async function deleteLookup(card: string, tableName: string, id: number, del: () => Promise<unknown>) {
+  await assertAdminDelete();
+  await requireSettingsEdit();
+  try {
+    await del();
+  } catch {
+    lookupRedirect(card, "لا يمكن الحذف لأن العنصر مستخدم في سجلات حالية.", "error");
+  }
+  revalidatePath("/settings");
+  revalidateTag("lookups", { expire: 0 });
+  await logAudit({ action: "DELETE", tableName, recordId: String(id) });
+  lookupRedirect(card, "تم الحذف");
+}
+
+export async function saveIdentityAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, [
+    "name", "subtitle", "address", "phone", "logoUrl",
+    "officialHeader1", "officialHeader2", "officialHeader3", "officialHeader4",
+    "officialMotto", "officialMottoSub", "officialAddress", "officialPhone",
+  ]);
+  try {
+    const userId = await requireSettingsEdit();
+    const data = {
+      name: text(fd, "name", 120) || "المجمع التأهيلي الطبي",
+      subtitle: optionalText(fd, "subtitle", 180),
+      address: optionalText(fd, "address", 250),
+      phone: optionalText(fd, "phone", 80),
+      logoUrl: validateLogoUrl(optionalText(fd, "logoUrl", 500)),
+      officialHeader1: optionalText(fd, "officialHeader1", 160),
+      officialHeader2: optionalText(fd, "officialHeader2", 160),
+      officialHeader3: optionalText(fd, "officialHeader3", 160),
+      officialHeader4: optionalText(fd, "officialHeader4", 160),
+      officialMotto: optionalText(fd, "officialMotto", 240),
+      officialMottoSub: optionalText(fd, "officialMottoSub", 160),
+      officialAddress: optionalText(fd, "officialAddress", 240),
+      officialPhone: optionalText(fd, "officialPhone", 80),
+    };
+    const old = await prisma.orgSetting.findUnique({ where: { id: 1 } });
+    await prisma.orgSetting.upsert({ where: { id: 1 }, update: data, create: { id: 1, ...data } });
+    await logAudit({ userId, action: "UPDATE", tableName: "OrgSetting", recordId: "identity", oldValue: old, newValue: data });
+    revalidatePath("/settings");
+    revalidateTag("lookups", { expire: 0 });
+    return state(true, "تم حفظ هوية النظام");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ هوية النظام", values);
+  }
+}
+
+export async function saveOperationsAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["timezone", "locale", "dateFormat", "workStart", "workEnd", "holidays", "appointmentMinutes"]);
+  try {
+    const userId = await requireSettingsEdit();
+    const timezone = text(fd, "timezone", 40) || "Asia/Baghdad";
+    const locale = text(fd, "locale", 20) || "ar-IQ";
+    const dateFormat = text(fd, "dateFormat", 20) || "yyyy/MM/dd";
+    if (!new Set(["Asia/Baghdad", "UTC"]).has(timezone)) throw new Error("المنطقة الزمنية غير مدعومة");
+    if (!new Set(["ar-IQ", "en-US"]).has(locale)) throw new Error("اللغة غير مدعومة");
+    if (!new Set(["yyyy/MM/dd", "dd/MM/yyyy", "yyyy-MM-dd"]).has(dateFormat)) throw new Error("تنسيق التاريخ غير مدعوم");
+    const workDays = fd.getAll("workDays").map(String).filter((x) => /^[0-6]$/.test(x));
+    if (!workDays.length) throw new Error("اختر يوم دوام واحداً على الأقل");
+    const workStart = text(fd, "workStart", 5) || "08:00";
+    const workEnd = text(fd, "workEnd", 5) || "15:00";
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(workStart) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(workEnd) || workStart >= workEnd) {
+      throw new Error("بداية ونهاية الدوام غير صالحة");
+    }
+    await updateAdminConfig(userId, "operations", {
+      timezone,
+      locale,
+      dateFormat,
+      workDays,
+      workStart,
+      workEnd,
+      holidays: validateHolidays(text(fd, "holidays", 2000)),
+      appointmentMinutes: intRange(fd, "appointmentMinutes", "مدة الموعد الافتراضية بالدقيقة", 5, 480),
+    }, ["/appointments", "/readiness"]);
+    return state(true, "تم حفظ الدوام والمواعيد");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ الدوام والمواعيد", values);
+  }
+}
+
+export async function saveTherapyAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["defaultSessions", "defaultPlanDays", "evaluationEvery", "weakImprovementThreshold"]);
+  try {
+    const userId = await requireSettingsEdit();
+    await updateAdminConfig(userId, "therapy", {
+      defaultSessions: intRange(fd, "defaultSessions", "عدد الجلسات الافتراضي", 1, 365),
+      defaultPlanDays: intRange(fd, "defaultPlanDays", "مدة الخطة باليوم", 1, 730),
+      evaluationEvery: intRange(fd, "evaluationEvery", "دورية التقييم بالجلسات", 1, 365),
+      weakImprovementThreshold: intRange(fd, "weakImprovementThreshold", "تنبيه ضعف التحسن بالنسبة المئوية", 0, 100),
+    }, ["/therapy", "/centers"]);
+    return state(true, "تم حفظ إعدادات العلاج والمراكز");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ إعدادات العلاج", values);
+  }
+}
+
+export async function saveSecurityAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["loginAttempts", "lockMinutes", "sessionMinutes", "passwordMinLength"]);
+  try {
+    const userId = await requireSettingsEdit();
+    const loginAttempts = intRange(fd, "loginAttempts", "محاولات الدخول", 3, 20);
+    const lockMinutes = intRange(fd, "lockMinutes", "مدة قفل الحساب بالدقيقة", 5, 1440);
+    const sessionMinutes = intRange(fd, "sessionMinutes", "مدة الجلسة بالدقيقة", 15, 10080);
+    const passwordMinLength = intRange(fd, "passwordMinLength", "طول كلمة المرور", 8, 64);
+    if (!bool(fd, "passwordRequireLetters") && !bool(fd, "passwordRequireNumbers")) {
+      throw new Error("يجب إبقاء شرط الحروف أو الأرقام مفعلاً على الأقل");
+    }
+    await updateAdminConfig(userId, "security", {
+      loginAttempts,
+      lockMinutes,
+      sessionMinutes,
+      passwordMinLength,
+      passwordRequireLetters: bool(fd, "passwordRequireLetters"),
+      passwordRequireNumbers: bool(fd, "passwordRequireNumbers"),
+      passwordRequireSymbols: bool(fd, "passwordRequireSymbols"),
+    }, ["/login", "/users"]);
+    return state(true, "تم حفظ إعدادات الأمان. مدة الجلسة تطبق على الجلسات الجديدة.");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ إعدادات الأمان", values);
+  }
+}
+
+export async function saveNotificationsAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["notifRetentionDays", "notificationRetentionUnreadDays", "notificationDedupeMinutes"]);
+  try {
+    const userId = await requireSettingsEdit();
+    const notificationTypes = fd.getAll("notificationTypes").map(String).filter((x) => /^[a-z]+$/.test(x));
+    if (!notificationTypes.length) throw new Error("اختر نوع إشعار واحداً على الأقل");
+    const notifRetentionDays = intRange(fd, "notifRetentionDays", "مدة احتفاظ الإشعارات المقروءة باليوم", 1, 3650);
+    const old = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { notifRetentionDays: true, adminConfig: true } });
+    await updateAdminConfig(userId, "notifications", {
+      notificationTypes,
+      notificationRetentionUnreadDays: intRange(fd, "notificationRetentionUnreadDays", "مدة احتفاظ الإشعارات غير المقروءة باليوم", 1, 3650),
+      importantAlerts: bool(fd, "importantAlerts"),
+      notificationDedupeMinutes: intRange(fd, "notificationDedupeMinutes", "منع تكرار الإشعارات بالدقيقة", 1, 1440),
+    });
+    await prisma.orgSetting.upsert({
+      where: { id: 1 },
+      update: { notifRetentionDays },
+      create: { id: 1, notifRetentionDays },
+    });
+    await logAudit({
+      userId,
+      action: "UPDATE",
+      tableName: "OrgSetting",
+      recordId: "notificationRetention",
+      oldValue: { notifRetentionDays: old?.notifRetentionDays },
+      newValue: { notifRetentionDays },
+    });
+    revalidatePath("/settings");
+    return state(true, "تم حفظ إعدادات الإشعارات");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ الإشعارات", values);
+  }
+}
+
+export async function saveFilesAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, [
+    "maxUploadMb", "fileTypes", "blockedFileTypes", "fileNumberPrefix", "reportNumberPrefix", "pdfPageSize",
+    "printFooter", "collabMaxUploadMb", "collabAllowedTypes", "collabBlockedTypes", "editWindowMinutes",
+    "messageRetentionDays", "trashRetentionDays", "userQuotaMb", "departmentQuotaMb", "centerQuotaMb",
+  ]);
+  try {
+    const userId = await requireSettingsEdit();
+    const fileTypes = parseAllowedExtensions(text(fd, "fileTypes", 500), "أنواع الملفات المسموحة");
+    const blockedFileTypes = parseBlockedExtensions(text(fd, "blockedFileTypes", 500), "أنواع الملفات الممنوعة");
+    await updateAdminConfig(userId, "files", {
+      maxUploadMb: intRange(fd, "maxUploadMb", "الحجم الأقصى بالميغابايت", 1, 100),
+      fileTypes,
+      blockedFileTypes,
+      fileNumberPrefix: text(fd, "fileNumberPrefix", 20) || "PAT",
+      reportNumberPrefix: text(fd, "reportNumberPrefix", 20) || "REP",
+      pdfPageSize: text(fd, "pdfPageSize", 10) === "Letter" ? "Letter" : "A4",
+      printFooter: text(fd, "printFooter", 240),
+    }, ["/patients", "/reports"]);
+
+    if (fd.has("collabMaxUploadMb")) {
+      const old = await prisma.collaborationSettings.findUnique({ where: { id: 1 } });
+      const collabAllowedTypes = parseAllowedExtensions(text(fd, "collabAllowedTypes", 700) || DEFAULT_ALLOWED_FILE_TYPES.join(","), "أنواع ملفات التعاون المسموحة");
+      const collabBlockedTypes = parseBlockedExtensions(text(fd, "collabBlockedTypes", 700), "أنواع ملفات التعاون الممنوعة");
+      const data = {
+        servicePaused: bool(fd, "servicePaused"),
+        maxUploadMb: intRange(fd, "collabMaxUploadMb", "حجم ملف التعاون بالميغابايت", 1, 500),
+        allowedTypes: collabAllowedTypes,
+        blockedTypes: collabBlockedTypes,
+        editWindowMinutes: intRange(fd, "editWindowMinutes", "مدة تعديل رسالة التعاون بالدقيقة", 1, 1440),
+        messageRetentionDays: intRange(fd, "messageRetentionDays", "احتفاظ رسائل التعاون باليوم", 1, 3650),
+        trashRetentionDays: intRange(fd, "trashRetentionDays", "احتفاظ سلة الملفات باليوم", 1, 365),
+        userQuotaMb: intRange(fd, "userQuotaMb", "حصة المستخدم بالميغابايت", 1, 102400),
+        departmentQuotaMb: intRange(fd, "departmentQuotaMb", "حصة القسم بالميغابايت", 1, 1024000),
+        centerQuotaMb: intRange(fd, "centerQuotaMb", "حصة المركز بالميغابايت", 1, 1024000),
+      };
+      await prisma.collaborationSettings.upsert({ where: { id: 1 }, update: data, create: { id: 1, ...data } });
+      await logAudit({ userId, action: "UPDATE", tableName: "collaboration_settings", recordId: "1", oldValue: old as any, newValue: data });
+      revalidatePath("/collaboration");
+    }
+    return state(true, "تم حفظ إعدادات الملفات والطباعة");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ إعدادات الملفات", values);
+  }
+}
+
+export async function saveBackupAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["backupRetentionDays", "loginLogRetentionDays"]);
+  try {
+    const userId = await requireSettingsBackupEdit();
+    const backupRetentionDays = intRange(fd, "backupRetentionDays", "عدد النسخ المحتفظ بها", 1, 3650);
+    const loginLogRetentionDays = intRange(fd, "loginLogRetentionDays", "مدة احتفاظ سجل الدخول باليوم", 1, 3650);
+    const old = await prisma.orgSetting.findUnique({
+      where: { id: 1 },
+      select: { autoBackup: true, loginLogRetentionDays: true },
+    });
+    await updateAdminConfig(userId, "backup", { backupRetentionDays }, ["/backup", "/readiness"]);
+    await prisma.orgSetting.upsert({
+      where: { id: 1 },
+      update: { autoBackup: bool(fd, "autoBackup"), loginLogRetentionDays },
+      create: { id: 1, autoBackup: bool(fd, "autoBackup"), loginLogRetentionDays },
+    });
+    await logAudit({
+      userId,
+      action: "UPDATE",
+      tableName: "OrgSetting",
+      recordId: "backupRetention",
+      oldValue: { autoBackup: old?.autoBackup, loginLogRetentionDays: old?.loginLogRetentionDays },
+      newValue: { autoBackup: bool(fd, "autoBackup"), loginLogRetentionDays },
+    });
+    revalidatePath("/settings");
+    return state(true, "تم حفظ إعدادات النسخ والاحتفاظ دون تنفيذ استعادة أو حذف");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ إعدادات النسخ", values);
+  }
 }
 
 export async function setMaintenanceMode(on: boolean) {
-  const s = await requireSession();
-  if ((s?.user as any)?.role !== "ADMIN") throw new Error("غير مصرّح — الأدمن فقط");
-  await prisma.orgSetting.upsert({ where: { id: 1 }, update: { maintenanceMode: on }, create: { id: 1, maintenanceMode: on } });
-  await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "maintenanceMode", newValue: { on } });
-  revalidatePath("/settings"); revalidatePath("/maintenance");
-}
-
-export async function saveRetention(fd: FormData) {
-  await requireAdmin();
-  // حدود آمنة: بين يوم واحد و3650 يوم (10 سنوات). سجل التدقيق غير مشمول — دائم.
-  const clamp = (v: number, def: number) => (Number.isFinite(v) && v >= 1 && v <= 3650 ? Math.floor(v) : def);
-  const notif = clamp(Number(fd.get("notifRetentionDays")), 30);
-  const login = clamp(Number(fd.get("loginLogRetentionDays")), 180);
+  const userId = await requireAdminEdit();
+  const old = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { maintenanceMode: true } });
   await prisma.orgSetting.upsert({
     where: { id: 1 },
-    update: { notifRetentionDays: notif, loginLogRetentionDays: login },
-    create: { id: 1, notifRetentionDays: notif, loginLogRetentionDays: login },
+    update: { maintenanceMode: on },
+    create: { id: 1, maintenanceMode: on },
   });
-  await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "retention", newValue: { notif, login } });
+  await logAudit({
+    userId,
+    action: "UPDATE",
+    tableName: "OrgSetting",
+    recordId: "maintenanceMode",
+    oldValue: { on: old?.maintenanceMode ?? false },
+    newValue: { on },
+  });
   revalidatePath("/settings");
+  revalidatePath("/maintenance");
+  redirect(`/settings?tab=security&card=maintenance&saved=${encodeURIComponent(on ? "تم تفعيل وضع الصيانة" : "تم إيقاف وضع الصيانة")}`);
 }
+
+export async function addMobilityAid(fd: FormData) {
+  const name = text(fd, "name", 100);
+  if (!name) lookupRedirect("mobility", "اسم مساعدة الحركة مطلوب", "error");
+  await addLookup("mobility", "mobility_aids", () => prisma.mobilityAid.create({ data: { name } }));
+}
+
+export async function deleteMobilityAid(id: number) {
+  await deleteLookup("mobility", "mobility_aids", id, () => prisma.mobilityAid.delete({ where: { id } }));
+}
+
+export async function addProstheticType(fd: FormData) {
+  const name = text(fd, "name", 100);
+  if (!name) lookupRedirect("prosthetic", "اسم نوع الطرف مطلوب", "error");
+  await addLookup("prosthetic", "prosthetic_types", () => prisma.prostheticType.create({ data: { name } }));
+}
+
+export async function deleteProstheticType(id: number) {
+  await deleteLookup("prosthetic", "prosthetic_types", id, () => prisma.prostheticType.delete({ where: { id } }));
+}
+
+export async function addBranch(fd: FormData) {
+  const name = text(fd, "name", 120);
+  if (!name) lookupRedirect("branches", "اسم الفرع مطلوب", "error");
+  await addLookup("branches", "branches", () => prisma.branch.create({ data: { name } }));
+}
+
+export async function toggleBranch(id: number, isActive: boolean) {
+  await requireSettingsEdit();
+  const old = await prisma.branch.findUnique({ where: { id }, select: { isActive: true } });
+  await prisma.branch.update({ where: { id }, data: { isActive } });
+  await logAudit({ action: "UPDATE", tableName: "branches", recordId: String(id), oldValue: old, newValue: { isActive } });
+  revalidatePath("/settings");
+  revalidatePath("/users");
+  revalidatePath("/patients");
+  revalidateTag("lookups", { expire: 0 });
+  lookupRedirect("branches", isActive ? "تم تفعيل الفرع" : "تم تعطيل الفرع");
+}
+
+export async function deleteBranch(id: number) {
+  await deleteLookup("branches", "branches", id, () => prisma.branch.delete({ where: { id } }));
+}
+
+export async function addCenter(fd: FormData) {
+  const name = text(fd, "name", 120);
+  if (!name) lookupRedirect("centers", "اسم المركز مطلوب", "error");
+  await addLookup("centers", "centers", () => prisma.center.create({ data: { name } }));
+}
+
+export async function deleteCenter(id: number) {
+  await deleteLookup("centers", "centers", id, () => prisma.center.delete({ where: { id } }));
+}
+
+export async function addInjuryType(fd: FormData) {
+  const name = text(fd, "name", 120);
+  if (!name) lookupRedirect("injuries", "نوع الإصابة مطلوب", "error");
+  await addLookup("injuries", "injury_types", () => prisma.injuryType.create({ data: { name } }));
+}
+
+export async function deleteInjuryType(id: number) {
+  await deleteLookup("injuries", "injury_types", id, () => prisma.injuryType.delete({ where: { id } }));
+}
+
+export async function addDistrict(fd: FormData) {
+  const governorateId = Number(fd.get("governorateId"));
+  const name = text(fd, "name", 120);
+  if (!Number.isInteger(governorateId) || governorateId <= 0 || !name) {
+    lookupRedirect("districts", "اختر المحافظة واكتب اسم المنطقة", "error");
+  }
+  await addLookup("districts", "districts", () => prisma.district.create({ data: { name, governorateId } }));
+}
+
+export async function deleteDistrict(id: number) {
+  await deleteLookup("districts", "districts", id, () => prisma.district.delete({ where: { id } }));
+}
+
+export async function addFormation(fd: FormData) {
+  const name = text(fd, "name", 120);
+  if (!name) lookupRedirect("formations", "اسم التشكيل مطلوب", "error");
+  await addLookup("formations", "formations", () => prisma.formation.create({ data: { name } }));
+}
+
+export async function deleteFormation(id: number) {
+  await deleteLookup("formations", "formations", id, () => prisma.formation.delete({ where: { id } }));
+}
+
+export async function addRank(fd: FormData) {
+  const name = text(fd, "name", 120);
+  if (!name) lookupRedirect("ranks", "اسم الصفة مطلوب", "error");
+  await addLookup("ranks", "ranks", () => prisma.rank.create({ data: { name } }));
+}
+
+export async function deleteRank(id: number) {
+  await deleteLookup("ranks", "ranks", id, () => prisma.rank.delete({ where: { id } }));
+}
+
 export async function saveExpenseApprovalLevels(fd: FormData) {
-  await requireAdmin();
+  await requireSettingsEdit();
   const levels = Math.max(1, Math.min(5, Number(fd.get("expenseApprovalLevels")) || 1));
-  await prisma.orgSetting.upsert({ where: { id: 1 }, update: { expenseApprovalLevels: levels }, create: { id: 1, expenseApprovalLevels: levels } });
-  await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "expenseApprovalLevels", newValue: { levels } });
+  const old = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { expenseApprovalLevels: true } });
+  await prisma.orgSetting.upsert({
+    where: { id: 1 },
+    update: { expenseApprovalLevels: levels },
+    create: { id: 1, expenseApprovalLevels: levels },
+  });
+  await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "expenseApprovalLevels", oldValue: old, newValue: { levels } });
   revalidatePath("/settings");
-}
-
-const allowedTimezones = new Set(["Asia/Baghdad", "UTC"]);
-const allowedLocales = new Set(["ar-IQ", "en-US"]);
-const intRange = (fd: FormData, key: string, min: number, max: number) => {
-  const value = Number(fd.get(key));
-  if (!Number.isInteger(value) || value < min || value > max) throw new Error(`قيمة ${key} غير صالحة`);
-  return value;
-};
-
-export async function saveAdminConfig(fd: FormData) {
-  await requireAdmin();
-  const timezone = fd.get("timezone")?.toString() || "Asia/Baghdad";
-  const locale = fd.get("locale")?.toString() || "ar-IQ";
-  if (!allowedTimezones.has(timezone) || !allowedLocales.has(locale)) throw new Error("اللغة أو المنطقة الزمنية غير صالحة");
-  const fileTypes = (fd.get("fileTypes")?.toString() || "pdf,jpg,jpeg,png").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
-  if (!fileTypes.length || fileTypes.some((x) => !/^[a-z0-9]{2,10}$/.test(x))) throw new Error("أنواع الملفات غير صالحة");
-  const workDays = fd.getAll("workDays").map(String).filter((x) => /^[0-6]$/.test(x));
-  if (!workDays.length) throw new Error("اختر يوم دوام واحداً على الأقل");
-  const workStart = fd.get("workStart")?.toString() || "08:00";
-  const workEnd = fd.get("workEnd")?.toString() || "15:00";
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(workStart) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(workEnd) || workStart >= workEnd) throw new Error("ساعات الدوام غير صالحة");
-  const dateFormat = fd.get("dateFormat")?.toString() || "yyyy/MM/dd";
-  if (!new Set(["yyyy/MM/dd", "dd/MM/yyyy", "yyyy-MM-dd"]).has(dateFormat)) throw new Error("تنسيق التاريخ غير مدعوم");
-  const config = {
-    timezone, locale, dateFormat, workDays,
-    workStart, workEnd,
-    holidays: fd.get("holidays")?.toString().trim() || "",
-    appointmentMinutes: intRange(fd, "appointmentMinutes", 5, 480),
-    defaultSessions: intRange(fd, "defaultSessions", 1, 365), defaultPlanDays: intRange(fd, "defaultPlanDays", 1, 730),
-    evaluationEvery: intRange(fd, "evaluationEvery", 1, 365), weakImprovementThreshold: intRange(fd, "weakImprovementThreshold", 0, 100),
-    loginAttempts: intRange(fd, "loginAttempts", 1, 20), lockMinutes: intRange(fd, "lockMinutes", 1, 1440), sessionMinutes: intRange(fd, "sessionMinutes", 5, 10080),
-    fileTypes, maxUploadMb: intRange(fd, "maxUploadMb", 1, 100), backupRetentionDays: intRange(fd, "backupRetentionDays", 1, 3650),
-    fileNumberPrefix: fd.get("fileNumberPrefix")?.toString().trim().slice(0, 20) || "PAT",
-    reportNumberPrefix: fd.get("reportNumberPrefix")?.toString().trim().slice(0, 20) || "REP",
-  };
-  const old = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { adminConfig: true } });
-  await prisma.orgSetting.upsert({ where: { id: 1 }, update: { adminConfig: config }, create: { id: 1, adminConfig: config } });
-  await logAudit({ action: "UPDATE", tableName: "OrgSetting", recordId: "adminConfig", oldValue: old?.adminConfig as any, newValue: config });
-  revalidatePath("/settings"); revalidatePath("/readiness"); revalidatePath("/backup");
-  redirect("/settings?saved=" + encodeURIComponent("تم حفظ الإعدادات وتفعيلها"));
+  redirect(`/settings?tab=backup&card=expense&saved=${encodeURIComponent("تم حفظ سياسة اعتماد الصرفيات")}`);
 }

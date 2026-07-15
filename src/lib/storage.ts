@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import path from "path";
 import crypto from "crypto";
 import { getAdminConfig } from "@/lib/admin-config";
+import { DEFAULT_BLOCKED_FILE_TYPES } from "@/lib/collaboration-rules";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "uploads";
 
@@ -10,6 +11,9 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || "uploads";
 export async function saveFile(file: File): Promise<{ key: string; name: string }> {
   const config = await getAdminConfig();
   const extension = path.extname(file.name || "").slice(1).toLowerCase();
+  if (DEFAULT_BLOCKED_FILE_TYPES.includes(extension) || config.blockedFileTypes.includes(extension)) {
+    throw new Error("نوع الملف التنفيذي أو الخطر غير مسموح");
+  }
   if (!config.fileTypes.includes(extension)) throw new Error("نوع الملف غير مسموح وفق إعدادات النظام");
   if (file.size > config.maxUploadMb * 1024 * 1024) throw new Error(`حجم الملف يتجاوز الحد المسموح (${config.maxUploadMb} MB)`);
   if (!existsSync(UPLOAD_DIR)) await mkdir(UPLOAD_DIR, { recursive: true });

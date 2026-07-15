@@ -10,13 +10,14 @@ import { generatePortalToken, revokePortalToken, archivePatient, restorePatient 
 import { createTask } from "../../tasks/actions";
 import { GENDER, MARITAL, PATIENT_STATUS, CASE_TYPE, ADMISSION, APPT_STATUS, THERAPY, fmtDate } from "@/lib/labels";
 import { ROLE_LABELS } from "@/lib/permissions";
+import { getAdminConfig } from "@/lib/admin-config";
 
 export const dynamic = "force-dynamic";
 
 export default async function PatientDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await requirePerm("patients.view");
-  const [patient, centers, medications, rooms, halls] = await Promise.all([
+  const [patient, centers, medications, rooms, halls, adminConfig] = await Promise.all([
     prisma.patient.findUnique({
       where: { id },
       include: {
@@ -45,6 +46,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     getMedicationsList(),
     getRooms(),
     prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    getAdminConfig(),
   ]);
   const taskUsers = await prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true }, orderBy: { fullName: "asc" } });
   const therapyStaff = await prisma.user.findMany({ where: { isActive: true, role: "THERAPIST" }, include: { _count: { select: { therapyPlansAssigned: { where: { status: "ACTIVE" } }, therapyAppointmentsAssigned: { where: { status: "SCHEDULED", scheduledAt: { gte: new Date(new Date().setHours(0,0,0,0)), lt: new Date(new Date().setHours(24,0,0,0)) } } } } } }, orderBy: { fullName: "asc" } });
@@ -265,7 +267,13 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
       </div>
 
       <PatientTabs patient={JSON.parse(JSON.stringify(patient))} editable={cEdit} perms={Array.from(perms)} role={myRole} slApprovals={JSON.parse(JSON.stringify(slApprovals))}
-        centers={centers} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} therapyStaff={therapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} expenseRows={JSON.parse(JSON.stringify(expenseRows))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
+        centers={centers} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} therapyDefaults={{
+          defaultSessions: adminConfig.defaultSessions,
+          defaultPlanDays: adminConfig.defaultPlanDays,
+          evaluationEvery: adminConfig.evaluationEvery,
+          workDays: adminConfig.workDays,
+          workStart: adminConfig.workStart,
+        }} therapyStaff={therapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} expenseRows={JSON.parse(JSON.stringify(expenseRows))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
     </div>
   );
 }

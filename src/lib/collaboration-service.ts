@@ -656,6 +656,13 @@ export async function updateCollaborationSettings(formData: FormData) {
   const actor = await collaborationActor("files.admin");
   const allowedTypes = asString(formData.get("allowedTypes")).split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
   const blockedTypes = asString(formData.get("blockedTypes")).split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const dangerousTypes = new Set(DEFAULT_BLOCKED_FILE_TYPES);
+  if (
+    allowedTypes.some((type) => !/^[a-z0-9]{1,12}$/.test(type) || dangerousTypes.has(type)) ||
+    blockedTypes.some((type) => !/^[a-z0-9]{1,12}$/.test(type))
+  ) {
+    throw new Error("أنواع الملفات غير صالحة أو تتضمن امتداداً تنفيذياً خطراً");
+  }
   const intValue = (key: string, min: number, max: number, fallback: number) => {
     const value = Number(formData.get(key));
     return Number.isInteger(value) && value >= min && value <= max ? value : fallback;

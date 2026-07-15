@@ -142,7 +142,7 @@ export const PERM_GROUPS: PermGroup[] = [
   ]},
   { section: "settings", title: "الإعدادات", items: [
     { key: "settings.view", label: "عرض الإعدادات" },
-    { key: "settings.edit", label: "تعديل القوائم وهوية المركز (أدمن فقط)", adminOnly: true },
+    { key: "settings.edit", label: "تعديل وحفظ الإعدادات" },
     { key: "settings.backup", label: "النسخ الاحتياطي والاستعادة" },
   ]},
   { section: "approvals", title: "سير الموافقات", items: [

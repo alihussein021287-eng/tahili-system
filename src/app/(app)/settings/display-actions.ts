@@ -1,6 +1,6 @@
 "use server";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/access";
+import { assertPerm, requireSession } from "@/lib/access";
 import { generatePairingCode, hashPairingCode } from "@/lib/display-auth";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
@@ -9,8 +9,9 @@ import { queueHallNames } from "@/lib/queue";
 async function requireAdmin() {
   const session = await requireSession();
   const id = (session.user as any)?.id as string | undefined;
+  await assertPerm("settings.edit");
   const user = id ? await prisma.user.findUnique({ where: { id }, select: { role: true, isActive: true } }) : null;
-  if (!user?.isActive || user.role !== "ADMIN") throw new Error("غير مصرّح — الأدمن فقط");
+  if (!user?.isActive) throw new Error("غير مصرّح");
   return id!;
 }
 

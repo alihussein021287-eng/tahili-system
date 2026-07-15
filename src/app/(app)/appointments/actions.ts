@@ -5,6 +5,7 @@ import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { parseOrThrow, appointmentCreateSchema, appointmentStatusSchema } from "@/lib/validate";
+import { getAdminConfig } from "@/lib/admin-config";
 
 function normalizeDateTime(value: Date) {
   const d = new Date(value);
@@ -38,6 +39,24 @@ async function appointmentConflict(params: { patientId: string; assignedTo?: str
   return null;
 }
 
+function dateKey(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function appointmentPolicyError(when: Date) {
+  const config = await getAdminConfig();
+  const day = String(when.getDay());
+  if (!config.workDays.map(String).includes(day)) return "الموعد خارج أيام الدوام المحددة في الإعدادات";
+  const holidaySet = new Set((config.holidays || "").split(/[,\n]+/).map((item) => item.trim()).filter(Boolean));
+  if (holidaySet.has(dateKey(when))) return "التاريخ المحدد عطلة رسمية حسب الإعدادات";
+  const time = `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
+  if (time < config.workStart || time >= config.workEnd) return "وقت الموعد خارج ساعات الدوام المحددة في الإعدادات";
+  return null;
+}
+
 async function linkedPlan(id: string) {
   return prisma.appointment.findUnique({ where: { id }, select: { session: { select: { treatmentPlanId: true, plan: { select: { status: true } } } } } });
 }
@@ -55,6 +74,8 @@ export async function createAppointment(fd: FormData) {
   const patientId = v.patientId;
   const assignedTo = v.assignedTo || null;
   const when = normalizeDateTime(new Date(v.scheduledAt));
+  const policyError = await appointmentPolicyError(when);
+  if (policyError) redirect(withSaved("/appointments", policyError));
   const conflict = await appointmentConflict({ patientId, assignedTo, scheduledAt: when });
   if (conflict) redirect(withSaved("/appointments", conflict));
   const created = await prisma.appointment.create({ data: {
@@ -97,6 +118,8 @@ export async function rescheduleAppointment(id: string, fd: FormData) {
   if (!current) redirect(withSaved("/appointments", "الموعد غير موجود"));
   if (current.session?.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
   const when = normalizeDateTime(new Date(t));
+  const policyError = await appointmentPolicyError(when);
+  if (policyError) redirect(withSaved("/appointments", policyError));
   const conflict = await appointmentConflict({ patientId: current.patientId, assignedTo: current.assignedTo, scheduledAt: when, excludeId: id });
   if (conflict) redirect(withSaved("/appointments", conflict));
   await prisma.appointment.update({ where: { id }, data: { scheduledAt: when } });

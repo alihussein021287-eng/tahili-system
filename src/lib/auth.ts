@@ -15,6 +15,12 @@ export function applyUserClaims(token: Record<string, unknown>, user?: Record<st
   };
 }
 
+function isDynamicSessionExpired(token: Record<string, unknown>) {
+  const startedAt = typeof token.sessionStartedAt === "number" ? token.sessionStartedAt : 0;
+  const maxAgeSeconds = typeof token.sessionMaxAgeSeconds === "number" ? token.sessionMaxAgeSeconds : 0;
+  return Boolean(startedAt && maxAgeSeconds && Date.now() > startedAt + maxAgeSeconds * 1000);
+}
+
 export function loginLogWriteFailure(error: unknown) {
   const candidate = error as { code?: unknown; name?: unknown; constructor?: { name?: string } } | null;
   const code = typeof candidate?.code === "string" ? candidate.code : undefined;
@@ -84,9 +90,24 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user }) {
-      return applyUserClaims(token, user as any) as any;
+      if (user) {
+        const security = await getAdminConfig();
+        const maxAgeSeconds = Math.max(15, Math.min(10080, security.sessionMinutes || 480)) * 60;
+        return {
+          ...applyUserClaims(token, user as any),
+          sessionStartedAt: Date.now(),
+          sessionMaxAgeSeconds: maxAgeSeconds,
+        } as any;
+      }
+      if (isDynamicSessionExpired(token as Record<string, unknown>)) {
+        return { sessionExpired: true } as any;
+      }
+      return token as any;
     },
     async session({ session, token }) {
+      if ((token as any).sessionExpired) {
+        return { ...session, user: undefined as any };
+      }
       if (session.user) {
         (session.user as any).role = token.role;
         (session.user as any).id = token.uid;
