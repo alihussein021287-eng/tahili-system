@@ -68,3 +68,4 @@ Run in order:
 ## Report
 
 Use at most eight lines covering: change, files, migration if any, tests, commit, development VM status, production untouched, and at most one remaining item. Do not repeat the request or include long logs, commands, images, or redundant explanation.
+- If an environment or operational blocker repeats twice or consumes more than 10 minutes, include it as a "lesson learned" in the final report. After the task succeeds or stops cleanly, add one concise, generic, non-secret line to the most relevant Tahili skill only; never update skills mid-task, and skip one-off or unclear issues.

@@ -18,5 +18,6 @@ description: Release a Tahili change to the development VM only. Use automatical
 - Do not create rollback images or backups unless requested.
 - Never clean images, volumes, or data without an explicit request.
 - Never touch the production VM.
+- If an environment or operational blocker repeats twice or consumes more than 10 minutes, include it as a "lesson learned" in the final report. After release succeeds or stops cleanly, add one concise, generic, non-secret line to the most relevant Tahili skill only; never update skills mid-task, and skip one-off or unclear issues.
 - Report only the commit, application status, and applied change.
 - Ignore a pre-existing untracked `skills-lock.json`; do not modify or stage it.
