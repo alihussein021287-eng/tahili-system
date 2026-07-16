@@ -1,4 +1,4 @@
 interface:
   display_name: "Tahili Production Release"
-  short_description: "نشر Tahili صراحة إلى بيئة الإنتاج"
+  short_description: "Deploy Tahili to production only when explicit."
   default_prompt: "Use $tahili-production-release to deploy the specified Tahili commit to production."

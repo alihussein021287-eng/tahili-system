@@ -1,10 +1,12 @@
 ---
 name: tahili-quality-check
-description: Test and inspect changes in tahili-system. Use automatically when a user asks to test, validate, verify, audit, or quality-check an application change.
+description: Test and inspect Tahili changes on the development VM. Use automatically when the user asks to test, validate, verify, audit, visually inspect, or quality-check an application change, release candidate, page, workflow, or admin screen without touching production.
 ---
 
 # Tahili Quality Check
 
+- Work in `/tahili-system` on the development VM. Do not use the Windows checkout as the execution source unless explicitly requested.
+- Confirm `HEAD` matches the intended commit and note any untracked files before testing.
 - Run TypeScript checks and related tests first; run the full suite for shared or high-risk changes.
 - Inspect Server Actions, server-side permissions, and center isolation.
 - Visually inspect only changed pages, on desktop and mobile, for RTL and horizontal clipping.
@@ -12,6 +14,10 @@ description: Test and inspect changes in tahili-system. Use automatically when a
 - Do not repeat heavy E2E tests without a reason.
 - Distinguish environment failures from application failures.
 - Inspect application logs for HTTP 500 and Prisma errors.
+- For Docker-applied app changes, verify app is running, `/login` returns 200, and the changed route loads or redirects correctly for unauthenticated users.
+- For collaboration/files changes, verify ClamAV behavior only when the change affects upload, scan, download, permissions, or sharing.
+- For admin pages, verify tabs, save buttons, readonly permissions, and mobile layout.
 - Report only: passed, failed, and required fixes.
 - Ignore a pre-existing untracked `skills-lock.json`; do not modify or stage it.
+- Ignore pre-existing `analysis/` artifacts unless they are part of the current request.
 - Never delete, reset, wipe, deploy, or touch production as part of validation.

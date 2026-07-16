@@ -1,4 +1,4 @@
 interface:
   display_name: "Tahili Quality Check"
-  short_description: "فحص تغييرات Tahili واختبارها بأمان"
-  default_prompt: "Use $tahili-quality-check to validate the requested Tahili change."
+  short_description: "Validate Tahili changes without touching production."
+  default_prompt: "Use $tahili-quality-check to validate the requested Tahili change on the development VM."
