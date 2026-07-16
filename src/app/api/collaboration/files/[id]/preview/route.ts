@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
+import { OfficePreviewError, getOrCreatePreviewPdf } from "@/lib/collaboration-office-preview";
 import { previewCollaborationFile } from "@/lib/collaboration-service";
 import { MAX_TEXT_PREVIEW_BYTES, collaborationPreviewPolicy } from "@/lib/collaboration-preview";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const BASE_HEADERS = {
   "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
@@ -15,8 +17,22 @@ function disposition(name: string) {
   return `inline; filename*=UTF-8''${encodeURIComponent(safe)}`;
 }
 
+function pdfPreviewName(name: string) {
+  const base = name.replace(/\.[^.]+$/, "").replace(/["\r\n]/g, " ").trim().slice(0, 160) || "preview";
+  return `${base}.pdf`;
+}
+
 function textFromBuffer(buffer: Buffer) {
   return new TextDecoder("utf-8", { fatal: false }).decode(buffer.subarray(0, MAX_TEXT_PREVIEW_BYTES));
+}
+
+function previewStreamUrl(fileId: string, requestedVersion: string | null) {
+  return `/api/collaboration/files/${fileId}/preview?stream=1${requestedVersion ? `&version=${encodeURIComponent(requestedVersion)}` : ""}`;
+}
+
+function officePreviewFailureReason(error: unknown) {
+  if (error instanceof OfficePreviewError && error.message) return error.message;
+  return "المعاينة غير متاحة لهذا الملف.";
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +49,72 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       scanStatus: resolvedVersion.scanStatus,
       size: resolvedVersion.size,
     });
+
+    if (policy.kind === "office") {
+      if (!policy.canPreview) {
+        return Response.json({
+          ok: false,
+          kind: policy.kind,
+          mimeType: policy.contentType,
+          previewMimeType: "application/pdf",
+          name: file.displayName,
+          size: resolvedVersion.size,
+          version: resolvedVersion.version,
+          streamUrl: null,
+          reason: policy.reason,
+        }, { status: stream ? 415 : 200, headers: BASE_HEADERS });
+      }
+      try {
+        const preview = await getOrCreatePreviewPdf({
+          fileId: file.id,
+          version: resolvedVersion.version,
+          originalName: file.originalName || file.displayName,
+          mimeType: resolvedVersion.mimeType,
+          scanStatus: resolvedVersion.scanStatus,
+          size: resolvedVersion.size,
+          sha256: resolvedVersion.sha256,
+          buffer,
+        });
+
+        if (stream) {
+          return new Response(new Uint8Array(preview.buffer), {
+            headers: {
+              ...BASE_HEADERS,
+              "Content-Type": "application/pdf",
+              "Content-Length": String(preview.buffer.length),
+              "Content-Disposition": disposition(pdfPreviewName(file.displayName || file.originalName)),
+              "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'",
+            },
+          });
+        }
+
+        return Response.json({
+          ok: true,
+          kind: policy.kind,
+          mimeType: "application/pdf",
+          originalMimeType: policy.contentType,
+          previewMimeType: "application/pdf",
+          name: file.displayName,
+          size: resolvedVersion.size,
+          version: resolvedVersion.version,
+          cached: preview.cached,
+          streamUrl: previewStreamUrl(file.id, requestedVersion),
+          reason: "تم تجهيز معاينة PDF داخلية لهذا الملف.",
+        }, { headers: BASE_HEADERS });
+      } catch (error) {
+        return Response.json({
+          ok: false,
+          kind: policy.kind,
+          mimeType: policy.contentType,
+          previewMimeType: "application/pdf",
+          name: file.displayName,
+          size: resolvedVersion.size,
+          version: resolvedVersion.version,
+          streamUrl: null,
+          reason: officePreviewFailureReason(error),
+        }, { status: stream ? 422 : 200, headers: BASE_HEADERS });
+      }
+    }
 
     if (stream) {
       if (!policy.canStream) {
@@ -70,7 +152,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       name: file.displayName,
       size: resolvedVersion.size,
       version: resolvedVersion.version,
-      streamUrl: policy.canStream ? `/api/collaboration/files/${file.id}/preview?stream=1${requestedVersion ? `&version=${encodeURIComponent(requestedVersion)}` : ""}` : null,
+      streamUrl: policy.canStream ? previewStreamUrl(file.id, requestedVersion) : null,
       reason: policy.reason,
     }, { headers: BASE_HEADERS });
   } catch (error) {

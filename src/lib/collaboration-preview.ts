@@ -9,6 +9,7 @@ export type FilePreviewPolicy = {
 };
 
 export const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024;
+export const MAX_OFFICE_PREVIEW_BYTES = 25 * 1024 * 1024;
 
 const IMAGE_PREVIEW_MIME_TYPES = new Set([
   "image/bmp",
@@ -31,11 +32,15 @@ export const TEXT_PREVIEW_MIME_TYPES = new Set([
   "text/xml",
 ]);
 
-const OFFICE_PREVIEW_MIME_TYPES = new Set([
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-]);
+export type OfficePreviewType = "docx" | "xlsx" | "pptx";
+
+const OFFICE_PREVIEW_TYPES: Record<OfficePreviewType, string> = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+const OFFICE_ZIP_MIME_TYPE = "application/zip";
 
 const BLOCKED_INLINE_MIME_TYPES = new Set([
   "application/ecmascript",
@@ -80,6 +85,25 @@ export function fileExtension(name: string | null | undefined) {
   const safeName = (name || "").toLowerCase().trim();
   const dotIndex = safeName.lastIndexOf(".");
   return dotIndex > -1 ? safeName.slice(dotIndex + 1).replace(/[^a-z0-9]/g, "") : "";
+}
+
+export function officePreviewType(input: { mimeType: string | null | undefined; name?: string | null }): OfficePreviewType | null {
+  const contentType = baseMimeType(input.mimeType);
+  const extension = fileExtension(input.name) as OfficePreviewType;
+  if (!Object.prototype.hasOwnProperty.call(OFFICE_PREVIEW_TYPES, extension)) return null;
+  if (contentType === OFFICE_PREVIEW_TYPES[extension] || contentType === OFFICE_ZIP_MIME_TYPE) return extension;
+  return null;
+}
+
+export function isOfficePreviewSupported(input: {
+  mimeType: string | null | undefined;
+  name?: string | null;
+  scanStatus: string | null | undefined;
+  size?: number | null;
+}) {
+  return input.scanStatus === "SAFE"
+    && Boolean(officePreviewType(input))
+    && (!input.size || input.size <= MAX_OFFICE_PREVIEW_BYTES);
 }
 
 export function collaborationPreviewPolicy(input: {
@@ -131,13 +155,22 @@ export function collaborationPreviewPolicy(input: {
         : "يفتح كنص مقروء داخل النظام بدون تفسير HTML.",
     };
   }
-  if (OFFICE_PREVIEW_MIME_TYPES.has(contentType)) {
+  if (officePreviewType(input)) {
+    if (input.size && input.size > MAX_OFFICE_PREVIEW_BYTES) {
+      return {
+        kind: "office",
+        canPreview: false,
+        canStream: false,
+        contentType,
+        reason: "حجم ملف Office يتجاوز حد المعاينة الداخلية 25MB.",
+      };
+    }
     return {
       kind: "office",
-      canPreview: false,
+      canPreview: true,
       canStream: false,
       contentType,
-      reason: "معاينة Office الداخلية تحتاج LibreOffice أو محولاً محلياً آمناً غير مثبت حالياً.",
+      reason: "يحوّل إلى PDF محلياً ثم يفتح داخل عارض PDF الآمن.",
     };
   }
   return {

@@ -8,7 +8,7 @@ RUN npx prisma generate && npm run build
 
 # مرحلة التشغيل
 FROM public.ecr.aws/docker/library/node:20-alpine AS runner
-RUN apk add --no-cache postgresql16-client
+RUN apk add --no-cache postgresql16-client libreoffice font-noto font-noto-arabic
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/.next ./.next

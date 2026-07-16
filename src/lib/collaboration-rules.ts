@@ -49,6 +49,12 @@ const EXECUTABLE_MAGIC = [
   Buffer.from([0x7f, 0x45, 0x4c, 0x46]), // ELF
 ];
 
+const OOXML_ZIP_MARKERS: { marker: string; mimeType: string }[] = [
+  { marker: "word/document.xml", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+  { marker: "xl/workbook.xml", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  { marker: "ppt/presentation.xml", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
+];
+
 export function directConversationKey(a: string, b: string) {
   const [first, second] = [a, b].sort();
   return `direct:${first}:${second}`;
@@ -141,7 +147,14 @@ export function detectMime(buffer: Buffer, declaredType?: string | null) {
   if (buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WAVE") return "audio/wav";
   if (buffer.subarray(0, 3).toString("ascii") === "ID3" || buffer.subarray(0, 2).equals(Buffer.from([0xff, 0xfb]))) return "audio/mpeg";
   if (buffer.length > 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") return "video/mp4";
-  if (buffer.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) return "application/zip";
+  if (buffer.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) {
+    const sample = buffer.subarray(0, Math.min(buffer.length, 4 * 1024 * 1024)).toString("latin1");
+    if (sample.includes("[Content_Types].xml")) {
+      const officeType = OOXML_ZIP_MARKERS.find((item) => sample.includes(item.marker));
+      if (officeType) return officeType.mimeType;
+    }
+    return "application/zip";
+  }
   if (buffer.subarray(0, 7).equals(Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00]))) return "application/vnd.rar";
   const cleanDeclared = declaredType?.split(";")[0]?.trim().toLowerCase();
   return cleanDeclared && cleanDeclared !== "application/octet-stream" ? cleanDeclared : "application/octet-stream";

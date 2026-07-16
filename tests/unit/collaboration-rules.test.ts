@@ -13,7 +13,12 @@ import {
   shareKey,
   validateCollaborationUpload,
 } from "@/lib/collaboration-rules";
-import { collaborationPreviewPolicy } from "@/lib/collaboration-preview";
+import {
+  MAX_OFFICE_PREVIEW_BYTES,
+  collaborationPreviewPolicy,
+  isOfficePreviewSupported,
+  officePreviewType,
+} from "@/lib/collaboration-preview";
 import { scanBufferWithClamAv } from "@/lib/collaboration-scan";
 
 const actor = (overrides: Partial<any> = {}) => ({
@@ -30,6 +35,17 @@ const settings = {
   allowedTypes: ["pdf", "jpg", "jpeg", "png", "zip", "mp4"],
   blockedTypes: ["exe", "msi", "bat", "cmd", "com", "ps1", "sh", "js", "jar", "scr", "dll"],
 };
+
+const docxMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const xlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const pptxMime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+function officeZip(marker: string) {
+  return Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.from(` [Content_Types].xml ${marker}`, "latin1"),
+  ]);
+}
 
 describe("collaboration conversation rules", () => {
   it("uses one stable key for a direct conversation between two users", () => {
@@ -66,6 +82,12 @@ describe("collaboration file security rules", () => {
     expect(detectMime(png, "application/pdf")).toBe("image/png");
     const result = validateCollaborationUpload({ name: "safe.png", size: png.length, buffer: png, declaredType: "application/pdf", settings });
     expect(result.mimeType).toBe("image/png");
+  });
+
+  it("detects supported Office files inside OOXML zip containers", () => {
+    expect(detectMime(officeZip("word/document.xml"), "application/zip")).toBe(docxMime);
+    expect(detectMime(officeZip("xl/workbook.xml"), "application/zip")).toBe(xlsxMime);
+    expect(detectMime(officeZip("ppt/presentation.xml"), "application/zip")).toBe(pptxMime);
   });
 
   it("keeps empty or failed-scan files quarantined", async () => {
@@ -146,11 +168,36 @@ describe("collaboration file preview policy", () => {
     expect(collaborationPreviewPolicy({ mimeType: "application/pdf", name: "pending.pdf", scanStatus: "PENDING_SCAN" })).toMatchObject({ kind: "blocked", canPreview: false });
   });
 
-  it("keeps Office files as details/download until a local converter is available", () => {
+  it("prepares supported Office files for local PDF preview", () => {
     expect(collaborationPreviewPolicy({
-      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      mimeType: docxMime,
       name: "letter.docx",
       scanStatus: "SAFE",
+      size: 1000,
+    })).toMatchObject({ kind: "office", canPreview: true, canStream: false });
+    expect(collaborationPreviewPolicy({
+      mimeType: "application/zip",
+      name: "sheet.xlsx",
+      scanStatus: "SAFE",
+      size: 1000,
+    })).toMatchObject({ kind: "office", canPreview: true, canStream: false });
+    expect(officePreviewType({ mimeType: pptxMime, name: "slides.pptx" })).toBe("pptx");
+    expect(isOfficePreviewSupported({ mimeType: xlsxMime, name: "sheet.xlsx", scanStatus: "SAFE", size: 1000 })).toBe(true);
+  });
+
+  it("rejects Office preview when MIME, extension, status, or size are unsafe", () => {
+    expect(collaborationPreviewPolicy({
+      mimeType: docxMime,
+      name: "letter.xlsx",
+      scanStatus: "SAFE",
+      size: 1000,
+    })).toMatchObject({ kind: "unsupported", canPreview: false });
+    expect(collaborationPreviewPolicy({
+      mimeType: docxMime,
+      name: "letter.docx",
+      scanStatus: "SAFE",
+      size: MAX_OFFICE_PREVIEW_BYTES + 1,
     })).toMatchObject({ kind: "office", canPreview: false, canStream: false });
+    expect(isOfficePreviewSupported({ mimeType: docxMime, name: "letter.docx", scanStatus: "PENDING_SCAN", size: 1000 })).toBe(false);
   });
 });

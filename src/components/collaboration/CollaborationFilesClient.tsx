@@ -667,6 +667,14 @@ function FileThumb({ file }: { file: FileItem }) {
       </div>
     );
   }
+  if (policy.kind === "office" && policy.canPreview) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center bg-emerald-50 text-emerald-700">
+        <Icon name="pdf" className="h-8 w-8" />
+        <span className="mt-1 text-xs font-bold">معاينة PDF</span>
+      </div>
+    );
+  }
   return (
     <div className="flex h-full w-full items-center justify-center bg-gray-50 text-gray-500">
       <Icon name={fileIconFor(file.mimeType, file.displayName)} className="h-9 w-9" />
@@ -691,6 +699,7 @@ function FileCard({
   onContext: (event: React.MouseEvent) => void;
   onFavorite: () => void;
 }) {
+  const previewPolicy = previewPolicyFor(file);
   return (
     <div
       role="button"
@@ -720,6 +729,7 @@ function FileCard({
           <span className={scanClass(file.scanStatus)}>{scanLabel[file.scanStatus] || file.scanStatus}</span>
           {file._count.shares > 0 && <span className="badge-info">مشترك</span>}
           {file.favorites.length > 0 && <span className="badge-brand">مفضل</span>}
+          {previewPolicy.kind === "office" && previewPolicy.canPreview && <span className="badge-info">معاينة PDF</span>}
         </div>
         <div className="mt-2 flex items-center justify-between gap-2 text-xs text-gray-500">
           <span>{sizeLabel(file.size)}</span>
@@ -838,12 +848,15 @@ type PreviewPayload = {
   ok?: boolean;
   kind?: string;
   mimeType?: string;
+  originalMimeType?: string;
+  previewMimeType?: string;
   name?: string;
   size?: number;
   version?: number;
   text?: string;
   truncated?: boolean;
   streamUrl?: string | null;
+  cached?: boolean;
   reason?: string;
   error?: string;
 };
@@ -856,7 +869,7 @@ function FilePreviewModal({ open, onClose, file, version, canDownload }: { open:
   const policy = useMemo(() => (file ? previewPolicyFor(file, selectedVersion) : null), [file, selectedVersion]);
 
   useEffect(() => {
-    if (!open || !file || !policy || file.scanStatus !== "SAFE" || (policy.canStream && policy.kind !== "text")) {
+    if (!open || !file || !policy || policy.kind === "blocked" || (policy.canStream && policy.kind !== "text")) {
       setPayload(null);
       setLoading(false);
       return;
@@ -946,7 +959,47 @@ function FilePreviewModal({ open, onClose, file, version, canDownload }: { open:
               )}
             </div>
           )}
-          {policy && !policy.canStream && policy.kind !== "text" && (
+          {policy?.kind === "office" && (
+            <div className="min-h-[60vh]">
+              {loading && (
+                <div className="flex min-h-[60vh] items-center justify-center text-center">
+                  <div className="max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                      <Icon name="pdf" className="h-8 w-8" />
+                    </div>
+                    <h3 className="mt-4 font-bold text-gray-900">جاري تجهيز معاينة PDF...</h3>
+                    <p className="mt-2 text-sm leading-6 text-gray-500">يتم تحويل نسخة مؤقتة داخلية من الملف، وسيبقى الملف الأصلي بدون تغيير.</p>
+                  </div>
+                </div>
+              )}
+              {!loading && payload?.streamUrl && (
+                <>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    <span className="font-semibold">معاينة PDF</span>
+                    <span>{payload.cached ? "جاهزة من cache مؤقت" : "تم تجهيزها الآن"}</span>
+                  </div>
+                  <iframe src={payload.streamUrl} title={file.displayName} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" referrerPolicy="same-origin" />
+                </>
+              )}
+              {!loading && !payload?.streamUrl && (
+                <div className="flex min-h-[60vh] items-center justify-center text-center">
+                  <div className="max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gray-50 text-gray-600">
+                      <Icon name={fileIconFor(file.mimeType, file.displayName)} className="h-8 w-8" />
+                    </div>
+                    <h3 className="mt-4 font-bold text-gray-900">المعاينة غير متاحة</h3>
+                    <p className="mt-2 text-sm leading-6 text-gray-500">{displayReason}</p>
+                    {file.scanStatus === "SAFE" && canDownload && (
+                      <a href={downloadUrl(file, version)} className="btn-primary mt-4 inline-flex">
+                        <Icon name="download" className="h-4 w-4" /> تنزيل الملف
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {policy && !policy.canStream && policy.kind !== "text" && policy.kind !== "office" && (
             <div className="flex min-h-[60vh] items-center justify-center text-center">
               <div className="max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gray-50 text-gray-600">
