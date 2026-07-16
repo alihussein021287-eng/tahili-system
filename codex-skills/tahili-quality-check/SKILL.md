@@ -14,6 +14,7 @@ description: Test and inspect Tahili changes on the development VM. Use automati
 - Do not repeat heavy E2E tests without a reason.
 - Distinguish environment failures from application failures.
 - If Playwright CLI cannot start because npm access or browser channels are unavailable, use the repo's installed `@playwright/test` Chromium in a small headless check. Do not install browsers unless necessary.
+- If sandbox blocks local ports, Docker, browser launch, or localhost DB access during visual checks, rerun that read/verify step with escalation and classify it as environment-only unless the app still fails outside sandbox.
 - Inspect application logs for HTTP 500 and Prisma errors.
 - For Docker-applied app changes, verify app is running, `/login` returns 200, and the changed route loads or redirects correctly for unauthenticated users.
 - For collaboration/files changes, verify ClamAV behavior only when the change affects upload, scan, download, permissions, or sharing.
