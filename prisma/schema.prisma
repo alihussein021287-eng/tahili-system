@@ -361,6 +361,7 @@ model User {
   isActive         Boolean   @default(true) // فعّال؟
   needsActivation  Boolean   @default(false) // يتطلب تعيين كلمة سر بأول دخول
   lastLoginAt      DateTime?
+  lastSeenAt       DateTime?
   email            String? // البريد الإلكتروني
   phone            String? // الهاتف
   jobTitle         String? // المسمّى الوظيفي

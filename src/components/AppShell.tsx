@@ -7,6 +7,7 @@ import { signOut } from "next-auth/react";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { IdleTimeout } from "./IdleTimeout";
 import { CommandPalette } from "./CommandPalette";
+import { PresencePing } from "./PresencePing";
 import { canOpenNotification, notificationTone } from "@/lib/notifications";
 
 type Item = { href: string; label: string; icon: string; perm: string };
@@ -203,6 +204,7 @@ export function AppShell({ role, name, alerts, perms = [], notifs = [], children
     <div className="flex min-h-screen">
       <CommandPalette items={allItems} />
       <IdleTimeout minutes={20} />
+      <PresencePing />
       {/* القائمة الجانبية — ثابتة على الشاشات الكبيرة */}
       <aside className="no-print hidden bg-brand-900 text-white md:flex md:w-60 md:shrink-0 md:flex-col md:overflow-y-auto">
         <Brand />

@@ -6,7 +6,15 @@ import { PageHeader } from "@/components/PageHeader";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
 import { canManageUsers, ROLE_LABELS } from "@/lib/permissions";
 import { createUser } from "./actions";
-import { fmtDate } from "@/lib/labels";
+import { fmtDateTime } from "@/lib/labels";
+import {
+  getPresenceStatus,
+  presenceBadgeClass,
+  PRESENCE_IDLE_WINDOW_MS,
+  PRESENCE_LABELS,
+  PRESENCE_ONLINE_WINDOW_MS,
+  type PresenceStatus,
+} from "@/lib/presence";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -28,32 +36,66 @@ function tabHref(key: UserTab) {
   return `/users?tab=${key}`;
 }
 
-export default async function Users({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string; role?: string; status?: string; branch?: string }> }) {
+function normalizePresence(raw?: string): PresenceStatus | "" {
+  return raw === "online" || raw === "idle" || raw === "offline" ? raw : "";
+}
+
+function presenceWhere(status: PresenceStatus, onlineSince: Date, idleSince: Date) {
+  if (status === "online") return { lastSeenAt: { gte: onlineSince } };
+  if (status === "idle") return { lastSeenAt: { gte: idleSince, lt: onlineSince } };
+  return { OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: idleSince } }] };
+}
+
+export default async function Users({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string; role?: string; status?: string; branch?: string; presence?: string }> }) {
   const session = await requireSession();
   if (!canManageUsers((session?.user as any)?.role)) redirect("/");
   const sp = await searchParams;
   const activeTab = normalizeTab(sp.tab);
   const activeInfo = USER_TABS.find((tab) => tab.key === activeTab)!;
   const navTabs = USER_TABS.map((tab) => ({ key: tab.key, label: tab.label, href: tabHref(tab.key) }));
-  const where: any = {};
+  const baseWhere: any = {};
   const q = (sp.q ?? "").trim();
-  if (q) where.OR = [
+  if (q) baseWhere.OR = [
     { username: { contains: q, mode: "insensitive" } },
     { fullName: { contains: q, mode: "insensitive" } },
     { department: { contains: q, mode: "insensitive" } },
     { jobTitle: { contains: q, mode: "insensitive" } },
   ];
-  if (sp.role) where.role = sp.role;
-  if (sp.status === "active") where.isActive = true;
-  if (sp.status === "disabled") where.isActive = false;
-  if (sp.branch) where.branchId = Number(sp.branch);
+  if (sp.role) baseWhere.role = sp.role;
+  if (sp.status === "active") baseWhere.isActive = true;
+  if (sp.status === "disabled") baseWhere.isActive = false;
+  if (sp.branch) baseWhere.branchId = Number(sp.branch);
 
-  const [branches, users, total, active, disabled] = await Promise.all([
+  const now = new Date();
+  const onlineSince = new Date(now.getTime() - PRESENCE_ONLINE_WINDOW_MS);
+  const idleSince = new Date(now.getTime() - PRESENCE_IDLE_WINDOW_MS);
+  const presence = normalizePresence(sp.presence);
+  const filteredWhere = presence ? { AND: [baseWhere, presenceWhere(presence, onlineSince, idleSince)] } : baseWhere;
+
+  const [branches, users, total, active, disabled, onlineCount, idleCount, offlineCount] = await Promise.all([
     prisma.branch.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    prisma.user.findMany({ where, include: { branch: true }, orderBy: [{ isActive: "desc" }, { createdAt: "desc" }] }),
+    prisma.user.findMany({
+      where: filteredWhere,
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        lastLoginAt: true,
+        lastSeenAt: true,
+        department: true,
+        jobTitle: true,
+        branch: { select: { name: true } },
+      },
+      orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
+    }),
     prisma.user.count(),
     prisma.user.count({ where: { isActive: true } }),
     prisma.user.count({ where: { isActive: false } }),
+    prisma.user.count({ where: { AND: [baseWhere, presenceWhere("online", onlineSince, idleSince)] } }),
+    prisma.user.count({ where: { AND: [baseWhere, presenceWhere("idle", onlineSince, idleSince)] } }),
+    prisma.user.count({ where: { AND: [baseWhere, presenceWhere("offline", onlineSince, idleSince)] } }),
   ]);
   return (
     <div className="min-w-0 space-y-6">
@@ -63,10 +105,13 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
       <AdminIntro title={activeInfo.title} description={activeInfo.description} />
 
       {activeTab === "overview" ? (
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <StatCard label="إجمالي المستخدمين" value={total} />
           <StatCard label="حسابات فعالة" value={active} tone="text-emerald-700" />
           <StatCard label="حسابات معطلة" value={disabled} tone="text-red-700" />
+          <StatCard label="المتصلون الآن" value={onlineCount} tone="text-emerald-700" description="آخر 3 دقائق" />
+          <StatCard label="الخاملون" value={idleCount} tone="text-amber-700" description="آخر 15 دقيقة" />
+          <StatCard label="غير المتصلين" value={offlineCount} tone="text-gray-700" description="أقدم من 15 دقيقة" />
         </section>
       ) : null}
 
@@ -123,8 +168,14 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
 
       {activeTab === "list" ? (
         <>
+          <section className="grid gap-3 sm:grid-cols-3">
+            <StatCard label="المتصلون الآن" value={onlineCount} tone="text-emerald-700" description="آخر 3 دقائق" />
+            <StatCard label="الخاملون" value={idleCount} tone="text-amber-700" description="آخر 15 دقيقة" />
+            <StatCard label="غير المتصلين" value={offlineCount} tone="text-gray-700" description="أقدم من 15 دقيقة أو بدون ظهور" />
+          </section>
+
           <AdminSection id="filters" title="البحث والتصفية" description="استخدم الحقول التالية لتقليل النتائج قبل الدخول إلى إدارة حساب محدد.">
-            <form action="/users" className="grid gap-2 md:grid-cols-5">
+            <form action="/users" className="grid gap-2 md:grid-cols-6">
               <input type="hidden" name="tab" value="list" />
               <div className="md:col-span-2">
                 <label className="label">بحث</label>
@@ -133,7 +184,8 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
               <Combobox name="role" label="الدور" allowFree={false} defaultValue={sp.role ?? ""} placeholder="كل الأدوار" options={[{ value: "", label: "كل الأدوار" }, ...ROLE_OPTIONS]} />
               <Combobox name="status" label="الحالة" allowFree={false} defaultValue={sp.status ?? ""} options={[{ value: "", label: "كل الحالات" }, { value: "active", label: "فعّال" }, { value: "disabled", label: "معطّل" }]} />
               <Combobox name="branch" label="الفرع" allowFree={false} defaultValue={sp.branch ?? ""} placeholder="كل الفروع" options={[{ value: "", label: "كل الفروع" }, ...branches.map((b: any) => ({ value: String(b.id), label: b.name }))]} />
-              <div className="flex flex-wrap items-end gap-2 md:col-span-5">
+              <Combobox name="presence" label="التواجد" allowFree={false} defaultValue={presence} options={[{ value: "", label: "الكل" }, { value: "online", label: "أونلاين" }, { value: "idle", label: "خامل" }, { value: "offline", label: "أوفلاين" }]} />
+              <div className="flex flex-wrap items-end gap-2 md:col-span-6">
                 <button className="btn-primary" type="submit">تصفية</button>
                 <Link href="/users?tab=list" className="btn-ghost">مسح</Link>
                 <span className="self-center text-sm text-gray-400">المعروض: {users.length}</span>
@@ -151,35 +203,45 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
                     <th className="th">الدور</th>
                     <th className="th">القسم/الفرع</th>
                     <th className="th">الحالة</th>
-                    <th className="th">آخر دخول</th>
+                    <th className="th">التواجد</th>
+                    <th className="th">آخر ظهور</th>
                     <th className="th">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-gray-50">
-                      <td className="td">{u.username}</td>
-                      <td className="td">
-                        <Link href={`/users/${u.id}`} className="font-medium text-brand-700 hover:underline">{u.fullName}</Link>
-                        {u.jobTitle ? <div className="text-xs text-gray-400">{u.jobTitle}</div> : null}
-                      </td>
-                      <td className="td">{ROLE_LABELS[u.role]}</td>
-                      <td className="td">
-                        <div>{u.department || "—"}</div>
-                        <div className="text-xs text-gray-400">{u.branch?.name || "بدون فرع"}</div>
-                      </td>
-                      <td className="td">{u.isActive ? <span className="badge-success">فعّال</span> : <span className="badge-danger">معطّل</span>}</td>
-                      <td className="td">{fmtDate(u.lastLoginAt)}</td>
-                      <td className="td">
-                        <div className="flex flex-wrap gap-2">
-                          <Link href={`/users/${u.id}`} className="rounded bg-brand-50 px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100">إدارة</Link>
-                          <Link href={`/users/${u.id}?tab=security`} className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200">الأمان</Link>
-                          <Link href={`/users/${u.id}?tab=perms`} className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200">الصلاحيات</Link>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {users.length === 0 ? <tr><td className="td text-center text-gray-400" colSpan={7}>لا توجد نتائج مطابقة.</td></tr> : null}
+                  {users.map((u) => {
+                    const userPresence = getPresenceStatus(u.lastSeenAt, now);
+                    return (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="td">{u.username}</td>
+                        <td className="td">
+                          <Link href={`/users/${u.id}`} className="font-medium text-brand-700 hover:underline">{u.fullName}</Link>
+                          {u.jobTitle ? <div className="text-xs text-gray-400">{u.jobTitle}</div> : null}
+                        </td>
+                        <td className="td">{ROLE_LABELS[u.role]}</td>
+                        <td className="td">
+                          <div>{u.department || "—"}</div>
+                          <div className="text-xs text-gray-400">{u.branch?.name || "بدون فرع"}</div>
+                        </td>
+                        <td className="td">{u.isActive ? <span className="badge-success">فعّال</span> : <span className="badge-danger">معطّل</span>}</td>
+                        <td className="td">
+                          <span className={presenceBadgeClass(userPresence)}>{PRESENCE_LABELS[userPresence]}</span>
+                        </td>
+                        <td className="td">
+                          <div>{fmtDateTime(u.lastSeenAt)}</div>
+                          <div className="text-xs text-gray-400">آخر دخول: {fmtDateTime(u.lastLoginAt)}</div>
+                        </td>
+                        <td className="td">
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={`/users/${u.id}`} className="rounded bg-brand-50 px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100">إدارة</Link>
+                            <Link href={`/users/${u.id}?tab=security`} className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200">الأمان</Link>
+                            <Link href={`/users/${u.id}?tab=perms`} className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200">الصلاحيات</Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {users.length === 0 ? <tr><td className="td text-center text-gray-400" colSpan={8}>لا توجد نتائج مطابقة.</td></tr> : null}
                 </tbody>
               </table>
             </div>
