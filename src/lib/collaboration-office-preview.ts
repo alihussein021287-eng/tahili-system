@@ -242,7 +242,12 @@ export async function convertOfficeToPdfPreview(input: ConversionInput) {
 
 export async function getOrCreatePreviewPdf(input: OfficePreviewInput) {
   const type = officePreviewType({ mimeType: input.mimeType, name: input.originalName });
-  if (!type || !isOfficePreviewSupported(input)) {
+  if (!type || !isOfficePreviewSupported({
+    mimeType: input.mimeType,
+    name: input.originalName,
+    scanStatus: input.scanStatus,
+    size: input.size,
+  })) {
     throw new OfficePreviewError("UNSUPPORTED", "المعاينة غير متاحة لهذا النوع من الملفات.");
   }
   if (input.size > MAX_OFFICE_PREVIEW_BYTES || input.buffer.length > MAX_OFFICE_PREVIEW_BYTES) {
