@@ -11,6 +11,7 @@ description: Release a Tahili change to the development VM only. Use automatical
 - If new migrations exist, apply them only with `prisma migrate deploy`. On the development VM, `.env` may use Docker hostname `postgres`; host-side Prisma commands should use the localhost-published database URL without printing secrets.
 - Build the application image from the latest Git source.
 - Expect Docker build to repeat `prisma generate` and `next build`; long layer export is normal unless it errors.
+- If the image installs LibreOffice or large Alpine packages, `apk add` may be silent for 30+ minutes; verify the process is alive before aborting, and run the build outside the sandbox if sandboxed Docker output stalls.
 - Recreate only the app service with `--no-deps`.
 - Do not restart PostgreSQL or MinIO without an explicit need.
 - If ClamAV was added or changed, recreate only the needed service too; otherwise leave supporting services untouched.
