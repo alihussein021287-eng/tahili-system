@@ -167,7 +167,7 @@ export async function saveIdentityAction(_: SettingsActionState, fd: FormData): 
   const values = formValues(fd, [
     "name", "subtitle", "address", "phone", "logoUrl",
     "officialHeader1", "officialHeader2", "officialHeader3", "officialHeader4",
-    "officialMotto", "officialMottoSub", "officialAddress", "officialPhone",
+    "officialMotto", "officialMottoSub", "officialAddress", "officialPhone", "officialToOffice",
   ]);
   try {
     const userId = await requireSettingsEdit();
@@ -185,6 +185,7 @@ export async function saveIdentityAction(_: SettingsActionState, fd: FormData): 
       officialMottoSub: optionalText(fd, "officialMottoSub", 160),
       officialAddress: optionalText(fd, "officialAddress", 240),
       officialPhone: optionalText(fd, "officialPhone", 80),
+      officialToOffice: optionalText(fd, "officialToOffice", 180),
     };
     const old = await prisma.orgSetting.findUnique({ where: { id: 1 } });
     await prisma.orgSetting.upsert({ where: { id: 1 }, update: data, create: { id: 1, ...data } });
@@ -194,6 +195,24 @@ export async function saveIdentityAction(_: SettingsActionState, fd: FormData): 
     return state(true, "تم حفظ هوية النظام");
   } catch (error) {
     return state(false, error instanceof Error ? error.message : "تعذر حفظ هوية النظام", values);
+  }
+}
+
+export async function savePresenceAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["onlineMinutes", "idleMinutes", "pingIntervalSeconds"]);
+  try {
+    const userId = await requireSettingsEdit();
+    const onlineMinutes = intRange(fd, "onlineMinutes", "مدة الأونلاين بالدقائق", 1, 60);
+    const idleMinutes = intRange(fd, "idleMinutes", "مدة الخمول بالدقائق", 2, 240);
+    if (idleMinutes <= onlineMinutes) throw new Error("مدة الخمول يجب أن تكون أكبر من مدة الأونلاين");
+    await updateAdminConfig(userId, "presence", {
+      onlineMinutes,
+      idleMinutes,
+      pingIntervalSeconds: intRange(fd, "pingIntervalSeconds", "فاصل تحديث التواجد بالثواني", 15, 600),
+    }, ["/users"]);
+    return state(true, "تم حفظ إعدادات التواجد");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ إعدادات التواجد", values);
   }
 }
 
@@ -352,6 +371,36 @@ export async function saveFilesAction(_: SettingsActionState, fd: FormData): Pro
   }
 }
 
+export async function saveOfficePreviewAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["officePreviewMaxMb", "officePreviewTimeoutSeconds", "officePreviewCacheRetentionHours"]);
+  try {
+    const userId = await requireSettingsEdit();
+    await updateAdminConfig(userId, "officePreview", {
+      officePreviewEnabled: bool(fd, "officePreviewEnabled"),
+      officePreviewMaxMb: intRange(fd, "officePreviewMaxMb", "حد معاينة Office بالميغابايت", 1, 100),
+      officePreviewTimeoutSeconds: intRange(fd, "officePreviewTimeoutSeconds", "مهلة تحويل Office بالثواني", 5, 120),
+      officePreviewCacheRetentionHours: intRange(fd, "officePreviewCacheRetentionHours", "احتفاظ معاينات Office المؤقتة بالساعات", 1, 720),
+    }, ["/collaboration/files", "/collaboration", "/readiness"]);
+    return state(true, "تم حفظ إعدادات معاينة Office");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ إعدادات معاينة Office", values);
+  }
+}
+
+export async function saveClamAvAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["clamavScanTimeoutSeconds"]);
+  try {
+    const userId = await requireSettingsEdit();
+    await updateAdminConfig(userId, "clamav", {
+      clamavScanTimeoutSeconds: intRange(fd, "clamavScanTimeoutSeconds", "مهلة فحص ClamAV بالثواني", 1, 60),
+      clamavFailClosed: bool(fd, "clamavFailClosed"),
+    }, ["/collaboration/files", "/collaboration", "/readiness"]);
+    return state(true, "تم حفظ إعدادات ClamAV");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ إعدادات ClamAV", values);
+  }
+}
+
 export async function saveBackupAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
   const values = formValues(fd, ["backupRetentionDays", "loginLogRetentionDays"]);
   try {
@@ -380,6 +429,27 @@ export async function saveBackupAction(_: SettingsActionState, fd: FormData): Pr
     return state(true, "تم حفظ إعدادات النسخ والاحتفاظ دون تنفيذ استعادة أو حذف");
   } catch (error) {
     return state(false, error instanceof Error ? error.message : "تعذر حفظ إعدادات النسخ", values);
+  }
+}
+
+export async function saveReadinessAction(_: SettingsActionState, fd: FormData): Promise<SettingsActionState> {
+  const values = formValues(fd, ["dbBackupStaleHours", "uploadsBackupStaleHours", "diskWarnPercent", "diskCriticalPercent"]);
+  try {
+    const userId = await requireSettingsBackupEdit();
+    const diskWarnPercent = intRange(fd, "diskWarnPercent", "تحذير القرص بالنسبة المئوية", 1, 99);
+    const diskCriticalPercent = intRange(fd, "diskCriticalPercent", "خطر القرص بالنسبة المئوية", 2, 100);
+    if (diskCriticalPercent <= diskWarnPercent) throw new Error("حد خطر القرص يجب أن يكون أكبر من حد التحذير");
+    await updateAdminConfig(userId, "readiness", {
+      dbBackupStaleHours: intRange(fd, "dbBackupStaleHours", "قدم نسخة قاعدة البيانات بالساعات", 1, 720),
+      uploadsBackupStaleHours: intRange(fd, "uploadsBackupStaleHours", "قدم نسخة المرفقات بالساعات", 1, 2160),
+      diskWarnPercent,
+      diskCriticalPercent,
+      requireClamav: bool(fd, "requireClamav"),
+      requireLibreOffice: bool(fd, "requireLibreOffice"),
+    }, ["/readiness"]);
+    return state(true, "تم حفظ عتبات الجاهزية");
+  } catch (error) {
+    return state(false, error instanceof Error ? error.message : "تعذر حفظ عتبات الجاهزية", values);
   }
 }
 

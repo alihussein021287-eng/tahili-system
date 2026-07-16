@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
-import { OfficePreviewError, getOrCreatePreviewPdf } from "@/lib/collaboration-office-preview";
+import { OfficePreviewError, getOrCreatePreviewPdfWithConfig } from "@/lib/collaboration-office-preview";
 import { previewCollaborationFile } from "@/lib/collaboration-service";
 import { MAX_TEXT_PREVIEW_BYTES, collaborationPreviewPolicy } from "@/lib/collaboration-preview";
+import { getAdminConfig } from "@/lib/admin-config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,13 +43,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const requestedVersion = url.searchParams.get("version");
     const version = requestedVersion ? Number(requestedVersion) : undefined;
     const stream = url.searchParams.get("stream") === "1";
-    const { file, version: resolvedVersion, buffer } = await previewCollaborationFile(id, version);
+    const [{ file, version: resolvedVersion, buffer }, previewConfig] = await Promise.all([
+      previewCollaborationFile(id, version),
+      getAdminConfig(),
+    ]);
     const policy = collaborationPreviewPolicy({
       mimeType: resolvedVersion.mimeType,
       name: file.originalName || file.displayName,
       scanStatus: resolvedVersion.scanStatus,
       size: resolvedVersion.size,
-    });
+    }, previewConfig);
 
     if (policy.kind === "office") {
       if (!policy.canPreview) {
@@ -65,7 +69,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }, { status: stream ? 415 : 200, headers: BASE_HEADERS });
       }
       try {
-        const preview = await getOrCreatePreviewPdf({
+        const preview = await getOrCreatePreviewPdfWithConfig({
           fileId: file.id,
           version: resolvedVersion.version,
           originalName: file.originalName || file.displayName,
@@ -74,7 +78,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           size: resolvedVersion.size,
           sha256: resolvedVersion.sha256,
           buffer,
-        });
+        }, previewConfig);
 
         if (stream) {
           return new Response(new Uint8Array(preview.buffer), {

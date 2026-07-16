@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-
-const PING_INTERVAL_MS = 60_000;
+import { presenceWindows, type PresenceConfig } from "@/lib/presence";
 
 async function pingPresence() {
   try {
@@ -17,8 +16,9 @@ async function pingPresence() {
   }
 }
 
-export function PresencePing() {
+export function PresencePing({ config }: { config?: PresenceConfig }) {
   useEffect(() => {
+    const intervalMs = presenceWindows(config).pingIntervalMs;
     let stopped = false;
     const pingIfVisible = () => {
       if (stopped || document.visibilityState === "hidden") return;
@@ -26,12 +26,12 @@ export function PresencePing() {
     };
 
     pingIfVisible();
-    const interval = window.setInterval(pingIfVisible, PING_INTERVAL_MS);
+    const interval = window.setInterval(pingIfVisible, intervalMs);
     return () => {
       stopped = true;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [config?.onlineMinutes, config?.idleMinutes, config?.pingIntervalSeconds]);
 
   return null;
 }

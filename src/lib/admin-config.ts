@@ -8,6 +8,10 @@ export type AdminConfig = {
   passwordMinLength: number; passwordRequireLetters: boolean; passwordRequireNumbers: boolean; passwordRequireSymbols: boolean;
   notificationTypes: string[]; notificationRetentionUnreadDays: number; importantAlerts: boolean; notificationDedupeMinutes: number;
   blockedFileTypes: string[]; pdfPageSize: string; printFooter: string;
+  onlineMinutes: number; idleMinutes: number; pingIntervalSeconds: number;
+  officePreviewEnabled: boolean; officePreviewMaxMb: number; officePreviewTimeoutSeconds: number; officePreviewCacheRetentionHours: number;
+  clamavScanTimeoutSeconds: number; clamavFailClosed: boolean;
+  dbBackupStaleHours: number; uploadsBackupStaleHours: number; diskWarnPercent: number; diskCriticalPercent: number; requireClamav: boolean; requireLibreOffice: boolean;
 };
 export const ADMIN_CONFIG_DEFAULTS: AdminConfig = {
   timezone: "Asia/Baghdad", locale: "ar-IQ", dateFormat: "yyyy/MM/dd", workDays: ["0", "1", "2", "3", "4"], workStart: "08:00", workEnd: "15:00", holidays: "",
@@ -18,6 +22,10 @@ export const ADMIN_CONFIG_DEFAULTS: AdminConfig = {
   notificationTypes: ["appointments", "tasks", "results", "inventory", "system"], notificationRetentionUnreadDays: 180, importantAlerts: true, notificationDedupeMinutes: 10,
   blockedFileTypes: ["exe", "msi", "bat", "cmd", "com", "ps1", "sh", "js", "jar", "scr", "dll"],
   pdfPageSize: "A4", printFooter: "",
+  onlineMinutes: 3, idleMinutes: 15, pingIntervalSeconds: 60,
+  officePreviewEnabled: true, officePreviewMaxMb: 25, officePreviewTimeoutSeconds: 30, officePreviewCacheRetentionHours: 48,
+  clamavScanTimeoutSeconds: 8, clamavFailClosed: false,
+  dbBackupStaleHours: 48, uploadsBackupStaleHours: 168, diskWarnPercent: 85, diskCriticalPercent: 95, requireClamav: true, requireLibreOffice: true,
 };
 export async function getAdminConfig(): Promise<AdminConfig> {
   const row = await prisma.orgSetting.findUnique({ where: { id: 1 }, select: { adminConfig: true } }).catch(() => null);

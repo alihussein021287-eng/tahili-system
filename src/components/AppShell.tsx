@@ -9,6 +9,7 @@ import { IdleTimeout } from "./IdleTimeout";
 import { CommandPalette } from "./CommandPalette";
 import { PresencePing } from "./PresencePing";
 import { canOpenNotification, notificationTone } from "@/lib/notifications";
+import type { PresenceConfig } from "@/lib/presence";
 
 type Item = { href: string; label: string; icon: string; perm: string };
 type AlertCounts = {
@@ -80,7 +81,23 @@ const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[
 ];
 const MOBILE_QUICK_HREFS = ["/visits", "/queue", "/tasks", "/appointments"];
 
-export function AppShell({ role, name, alerts, perms = [], notifs = [], children }: { role?: any; name: string; alerts?: AlertCounts; perms?: string[]; notifs?: any[]; children: React.ReactNode }) {
+export function AppShell({
+  role,
+  name,
+  alerts,
+  perms = [],
+  notifs = [],
+  presenceConfig,
+  children,
+}: {
+  role?: any;
+  name: string;
+  alerts?: AlertCounts;
+  perms?: string[];
+  notifs?: any[];
+  presenceConfig?: PresenceConfig;
+  children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
 
@@ -204,7 +221,7 @@ export function AppShell({ role, name, alerts, perms = [], notifs = [], children
     <div className="flex min-h-screen">
       <CommandPalette items={allItems} />
       <IdleTimeout minutes={20} />
-      <PresencePing />
+      <PresencePing config={presenceConfig} />
       {/* القائمة الجانبية — ثابتة على الشاشات الكبيرة */}
       <aside className="no-print hidden bg-brand-900 text-white md:flex md:w-60 md:shrink-0 md:flex-col md:overflow-y-auto">
         <Brand />

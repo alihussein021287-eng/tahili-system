@@ -15,6 +15,7 @@ export async function getOrg() {
     officialHeader4: o?.officialHeader4 || "",
     officialAddress: o?.officialAddress || "",
     officialPhone: o?.officialPhone || "",
+    officialToOffice: o?.officialToOffice || "",
     officialMotto: o?.officialMotto || "",
     officialMottoSub: o?.officialMottoSub || "",
   };

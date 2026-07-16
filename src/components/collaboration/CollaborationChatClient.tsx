@@ -16,7 +16,7 @@ import {
 } from "@/app/(app)/collaboration/actions";
 import { ConversationPoller } from "@/components/collaboration/ConversationPoller";
 import { Icon, fmtDate, fmtDateTime, fmtTime, initials, scanClass, scanLabel, sizeLabel } from "@/components/collaboration/CollaborationUi";
-import { collaborationPreviewPolicy } from "@/lib/collaboration-preview";
+import { collaborationPreviewPolicy, type OfficePreviewPolicyConfig } from "@/lib/collaboration-preview";
 
 type Actor = {
   id: string;
@@ -108,6 +108,7 @@ type Props = {
   canManage: boolean;
   canModerate: boolean;
   canDownload: boolean;
+  previewConfig?: OfficePreviewPolicyConfig;
 };
 
 const typeLabel: Record<Conversation["type"], string> = {
@@ -173,7 +174,7 @@ function Avatar({ name, muted }: { name: string; muted?: boolean }) {
   );
 }
 
-export function CollaborationChatClient({ actor, conversations, selected, messages: initialMessages, users, centers, canCreate, canSend, canManage, canModerate, canDownload }: Props) {
+export function CollaborationChatClient({ actor, conversations, selected, messages: initialMessages, users, centers, canCreate, canSend, canManage, canModerate, canDownload, previewConfig }: Props) {
   const router = useRouter();
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationKind, setConversationKind] = useState<"all" | "direct" | "groups">("all");
@@ -419,7 +420,7 @@ export function CollaborationChatClient({ actor, conversations, selected, messag
                           <>
                             {message.body && <p className="whitespace-pre-wrap break-words text-sm leading-7">{message.body}</p>}
                             {message.attachmentFile && (
-                              <AttachmentCard attachment={message.attachmentFile} mine={mine} canDownload={canDownload} />
+                              <AttachmentCard attachment={message.attachmentFile} mine={mine} canDownload={canDownload} previewConfig={previewConfig} />
                             )}
                           </>
                         )}
@@ -518,8 +519,18 @@ export function CollaborationChatClient({ actor, conversations, selected, messag
   );
 }
 
-function AttachmentCard({ attachment, mine, canDownload }: { attachment: NonNullable<Message["attachmentFile"]>; mine: boolean; canDownload: boolean }) {
-  const policy = collaborationPreviewPolicy({ mimeType: attachment.mimeType, name: attachment.displayName, scanStatus: attachment.scanStatus, size: attachment.size });
+function AttachmentCard({
+  attachment,
+  mine,
+  canDownload,
+  previewConfig,
+}: {
+  attachment: NonNullable<Message["attachmentFile"]>;
+  mine: boolean;
+  canDownload: boolean;
+  previewConfig?: OfficePreviewPolicyConfig;
+}) {
+  const policy = collaborationPreviewPolicy({ mimeType: attachment.mimeType, name: attachment.displayName, scanStatus: attachment.scanStatus, size: attachment.size }, previewConfig);
   const safe = attachment.scanStatus === "SAFE";
   const isImage = policy.kind === "image" && policy.canStream;
   const isPdf = policy.kind === "pdf" && policy.canStream;

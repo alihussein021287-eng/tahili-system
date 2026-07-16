@@ -9,12 +9,13 @@ import { createUser } from "./actions";
 import { fmtDateTime } from "@/lib/labels";
 import {
   getPresenceStatus,
+  normalizePresenceConfig,
   presenceBadgeClass,
-  PRESENCE_IDLE_WINDOW_MS,
   PRESENCE_LABELS,
-  PRESENCE_ONLINE_WINDOW_MS,
+  presenceWindows,
   type PresenceStatus,
 } from "@/lib/presence";
+import { getAdminConfig } from "@/lib/admin-config";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -66,9 +67,12 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
   if (sp.status === "disabled") baseWhere.isActive = false;
   if (sp.branch) baseWhere.branchId = Number(sp.branch);
 
+  const adminConfig = await getAdminConfig();
+  const presenceConfig = normalizePresenceConfig(adminConfig);
+  const presenceWindowConfig = presenceWindows(presenceConfig);
   const now = new Date();
-  const onlineSince = new Date(now.getTime() - PRESENCE_ONLINE_WINDOW_MS);
-  const idleSince = new Date(now.getTime() - PRESENCE_IDLE_WINDOW_MS);
+  const onlineSince = new Date(now.getTime() - presenceWindowConfig.onlineWindowMs);
+  const idleSince = new Date(now.getTime() - presenceWindowConfig.idleWindowMs);
   const presence = normalizePresence(sp.presence);
   const filteredWhere = presence ? { AND: [baseWhere, presenceWhere(presence, onlineSince, idleSince)] } : baseWhere;
 
@@ -109,9 +113,9 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
           <StatCard label="إجمالي المستخدمين" value={total} />
           <StatCard label="حسابات فعالة" value={active} tone="text-emerald-700" />
           <StatCard label="حسابات معطلة" value={disabled} tone="text-red-700" />
-          <StatCard label="المتصلون الآن" value={onlineCount} tone="text-emerald-700" description="آخر 3 دقائق" />
-          <StatCard label="الخاملون" value={idleCount} tone="text-amber-700" description="آخر 15 دقيقة" />
-          <StatCard label="غير المتصلين" value={offlineCount} tone="text-gray-700" description="أقدم من 15 دقيقة" />
+          <StatCard label="المتصلون الآن" value={onlineCount} tone="text-emerald-700" description={`آخر ${presenceConfig.onlineMinutes} دقيقة`} />
+          <StatCard label="الخاملون" value={idleCount} tone="text-amber-700" description={`آخر ${presenceConfig.idleMinutes} دقيقة`} />
+          <StatCard label="غير المتصلين" value={offlineCount} tone="text-gray-700" description={`أقدم من ${presenceConfig.idleMinutes} دقيقة`} />
         </section>
       ) : null}
 
@@ -169,9 +173,9 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
       {activeTab === "list" ? (
         <>
           <section className="grid gap-3 sm:grid-cols-3">
-            <StatCard label="المتصلون الآن" value={onlineCount} tone="text-emerald-700" description="آخر 3 دقائق" />
-            <StatCard label="الخاملون" value={idleCount} tone="text-amber-700" description="آخر 15 دقيقة" />
-            <StatCard label="غير المتصلين" value={offlineCount} tone="text-gray-700" description="أقدم من 15 دقيقة أو بدون ظهور" />
+            <StatCard label="المتصلون الآن" value={onlineCount} tone="text-emerald-700" description={`آخر ${presenceConfig.onlineMinutes} دقيقة`} />
+            <StatCard label="الخاملون" value={idleCount} tone="text-amber-700" description={`آخر ${presenceConfig.idleMinutes} دقيقة`} />
+            <StatCard label="غير المتصلين" value={offlineCount} tone="text-gray-700" description={`أقدم من ${presenceConfig.idleMinutes} دقيقة أو بدون ظهور`} />
           </section>
 
           <AdminSection id="filters" title="البحث والتصفية" description="استخدم الحقول التالية لتقليل النتائج قبل الدخول إلى إدارة حساب محدد.">
@@ -210,7 +214,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
                 </thead>
                 <tbody>
                   {users.map((u) => {
-                    const userPresence = getPresenceStatus(u.lastSeenAt, now);
+                    const userPresence = getPresenceStatus(u.lastSeenAt, now, presenceConfig);
                     return (
                       <tr key={u.id} className="hover:bg-gray-50">
                         <td className="td">{u.username}</td>

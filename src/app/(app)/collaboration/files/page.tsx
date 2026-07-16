@@ -2,6 +2,7 @@ import { CollaborationFilesClient } from "@/components/collaboration/Collaborati
 import { CollaborationTopNav } from "@/components/collaboration/CollaborationUi";
 import { prisma } from "@/lib/db";
 import { collaborationActor, listConversations, listFiles } from "@/lib/collaboration-service";
+import { getAdminConfig } from "@/lib/admin-config";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,7 @@ export default async function CollaborationFilesPage({ searchParams }: { searchP
   const params = await searchParams;
   const filter = params.filter || "all";
   const currentFolderId = params.folder || null;
-  const [files, users, centers, conversations, folders, patients] = await Promise.all([
+  const [files, users, centers, conversations, folders, patients, adminConfig] = await Promise.all([
     listFiles(actor, filter, params.q || ""),
     prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, username: true }, orderBy: { fullName: "asc" }, take: 200 }),
     prisma.center.findMany({ orderBy: { name: "asc" }, take: 100 }),
@@ -81,6 +82,7 @@ export default async function CollaborationFilesPage({ searchParams }: { searchP
       take: 200,
     }),
     prisma.patient.findMany({ where: { archivedAt: null }, select: { id: true, fullName: true, fileNumber: true }, orderBy: { fullName: "asc" }, take: 200 }),
+    getAdminConfig(),
   ]);
   const canAdmin = actor.role === "ADMIN" || actor.permissions.has("files.admin");
   const totalBytes = files.reduce((sum, file: any) => sum + file.size, 0);
@@ -108,6 +110,7 @@ export default async function CollaborationFilesPage({ searchParams }: { searchP
         canRestore={actor.permissions.has("files.restore")}
         canPermanentDelete={actor.permissions.has("files.delete.permanent") || canAdmin}
         canAdmin={canAdmin}
+        previewConfig={{ officePreviewEnabled: adminConfig.officePreviewEnabled, officePreviewMaxMb: adminConfig.officePreviewMaxMb }}
       />
     </div>
   );

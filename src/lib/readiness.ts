@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/db";
 import { ALL_PERMS } from "@/lib/perms";
 import { getBackupOverview } from "@/lib/backup";
+import { getAdminConfig, type AdminConfig } from "@/lib/admin-config";
+import { checkClamAvStatus } from "@/lib/collaboration-scan";
+import { getLibreOfficeStatus } from "@/lib/collaboration-office-preview";
 import fs from "fs/promises";
 import path from "path";
 
@@ -60,12 +63,12 @@ async function checkMinio() {
   return warn("minio", "MinIO", "إعدادات MinIO ناقصة.", "أكمل MINIO_ENDPOINT/MINIO_ACCESS_KEY/MINIO_SECRET_KEY");
 }
 
-async function checkLastBackup() {
+async function checkLastBackup(config: AdminConfig) {
   const latest = getBackupOverview().latestDb;
   if (!latest) {
     return warn("backup", "آخر نسخة احتياطية", "لم يتم العثور على نسخة قاعدة بيانات.", "شغّل backup.sh أو أنشئ نسخة من صفحة النسخ الاحتياطي", "/backup");
   }
-  const stale = Date.now() - latest.mtime.getTime() > 48 * 3600000;
+  const stale = Date.now() - latest.mtime.getTime() > config.dbBackupStaleHours * 3600000;
   const source = latest.location === "app" ? "واجهة التطبيق" : "سكربت السيرفر";
   const detail = `${latest.name} (${Math.ceil(latest.size / 1024)} KB) - ${ageLabel(latest.mtime)} - ${source}`;
   return stale ? warn("backup", "آخر نسخة احتياطية", detail, "أنشئ نسخة جديدة", "/backup") : ok("backup", "آخر نسخة احتياطية", detail);
@@ -98,8 +101,26 @@ async function checkPermissions() {
   return ok("permissions", "الصلاحيات الأساسية", explicit > 0 ? "كتالوج الصلاحيات موجود والمدير لديه استثناءات مخصصة." : "كتالوج الصلاحيات موجود ودور ADMIN يملك كل الصلاحيات افتراضياً.");
 }
 
+async function checkClamAv(config: AdminConfig) {
+  const status = await checkClamAvStatus(Math.min(3, config.clamavScanTimeoutSeconds));
+  if (status.available) return ok("clamav", "ClamAV", `متاح: ${status.detail}`);
+  const detail = `غير متاح: ${status.detail}`;
+  return config.requireClamav
+    ? fail("clamav", "ClamAV", detail, "راجع حاوية الفحص أو إعدادات الشبكة الداخلية")
+    : warn("clamav", "ClamAV", detail, "الفحص غير إلزامي حسب إعدادات الجاهزية");
+}
+
+async function checkLibreOffice(config: AdminConfig) {
+  const status = await getLibreOfficeStatus();
+  if (status.available) return ok("libreoffice", "LibreOffice", status.version ? `متاح: ${status.version}` : "متاح.");
+  return config.requireLibreOffice
+    ? fail("libreoffice", "LibreOffice", "غير متاح داخل بيئة التطبيق.", "تأكد أن Docker image تحتوي LibreOffice")
+    : warn("libreoffice", "LibreOffice", "غير متاح داخل بيئة التطبيق.", "معاينة Office اختيارية حسب إعدادات الجاهزية");
+}
+
 export async function getReadinessChecks(): Promise<ReadinessCheck[]> {
   const checks: ReadinessCheck[] = [];
+  const config = await getAdminConfig();
 
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -117,9 +138,11 @@ export async function getReadinessChecks(): Promise<ReadinessCheck[]> {
 
   checks.push(await checkUploads());
   checks.push(await checkMinio());
-  checks.push(await checkLastBackup());
+  checks.push(await checkLastBackup(config));
   checks.push(await checkAutoBackup());
   checks.push(await checkPermissions());
+  checks.push(await checkClamAv(config));
+  checks.push(await checkLibreOffice(config));
 
   return checks;
 }

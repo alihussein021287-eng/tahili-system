@@ -3,10 +3,12 @@ import type { ReactNode } from "react";
 import { currentPerms, getSession, requirePerm } from "@/lib/access";
 import { getAdminConfig } from "@/lib/admin-config";
 import { collaborationSettings } from "@/lib/collaboration-service";
+import { checkClamAvStatus } from "@/lib/collaboration-scan";
 import { prisma } from "@/lib/db";
 import { maintenanceOn } from "@/lib/maintenance";
 import { getOrg } from "@/lib/org";
 import { queueHallNames } from "@/lib/queue";
+import { getLibreOfficeStatus } from "@/lib/collaboration-office-preview";
 import { PageHeader } from "@/components/PageHeader";
 import { DisplaySettings } from "./DisplaySettings";
 import {
@@ -27,10 +29,15 @@ import {
   deleteProstheticType,
   deleteRank,
   saveBackupAction,
+  saveClamAvAction,
+  saveExpenseApprovalLevels,
   saveFilesAction,
   saveIdentityAction,
   saveNotificationsAction,
+  saveOfficePreviewAction,
   saveOperationsAction,
+  savePresenceAction,
+  saveReadinessAction,
   saveSecurityAction,
   saveTherapyAction,
   setMaintenanceMode,
@@ -297,6 +304,7 @@ function IdentityTab({ org, canEdit, message }: { org: Awaited<ReturnType<typeof
             <TextInput label="مصدر الشعار" name="officialMottoSub" defaultValue={org.officialMottoSub} disabled={!canEdit} />
             <TextInput label="عنوان الطباعة الرسمي" name="officialAddress" defaultValue={org.officialAddress} disabled={!canEdit} />
             <TextInput label="هاتف الطباعة الرسمي" name="officialPhone" defaultValue={org.officialPhone} disabled={!canEdit} />
+            <TextInput label="جهة المخاطبة الرسمية" name="officialToOffice" defaultValue={org.officialToOffice} hint="تظهر في النماذج الرسمية التي تستخدم صيغة إلى/مكتب." disabled={!canEdit} />
           </div>
           {canEdit ? <SubmitButton>حفظ هوية النظام</SubmitButton> : null}
         </SettingsActionForm>
@@ -317,7 +325,7 @@ function OperationsTab({ cfg, canEdit }: { cfg: Awaited<ReturnType<typeof getAdm
             <SelectInput label="تنسيق التاريخ" name="dateFormat" defaultValue={cfg.dateFormat} disabled={!canEdit} options={[{ value: "yyyy/MM/dd", label: "yyyy/MM/dd" }, { value: "dd/MM/yyyy", label: "dd/MM/yyyy" }, { value: "yyyy-MM-dd", label: "yyyy-MM-dd" }]} />
             <TextInput label="بداية الدوام" name="workStart" type="time" defaultValue={cfg.workStart} disabled={!canEdit} />
             <TextInput label="نهاية الدوام" name="workEnd" type="time" defaultValue={cfg.workEnd} disabled={!canEdit} />
-            <TextInput label="مدة الموعد الافتراضية" name="appointmentMinutes" type="number" min={5} max={480} unit="دقيقة" defaultValue={cfg.appointmentMinutes} required disabled={!canEdit} />
+            <TextInput label="مدة الموعد الافتراضية" name="appointmentMinutes" type="number" min={5} max={480} unit="دقيقة" defaultValue={cfg.appointmentMinutes} hint="محفوظة كسياسة افتراضية؛ تعارض المواعيد الحالي يعتمد على وقت البداية فقط." required disabled={!canEdit} />
             <div className="md:col-span-3">
               <span className="label">أيام الدوام <span className="text-red-600">*</span></span>
               <div className="mt-2 flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -363,7 +371,7 @@ async function TherapyTab({ cfg, canEdit }: { cfg: Awaited<ReturnType<typeof get
             <TextInput label="عدد الجلسات الافتراضي" name="defaultSessions" type="number" min={1} max={365} defaultValue={cfg.defaultSessions} required disabled={!canEdit} />
             <TextInput label="مدة الخطة" name="defaultPlanDays" type="number" min={1} max={730} unit="يوم" defaultValue={cfg.defaultPlanDays} required disabled={!canEdit} />
             <TextInput label="دورية التقييم" name="evaluationEvery" type="number" min={1} max={365} unit="جلسة" defaultValue={cfg.evaluationEvery} required disabled={!canEdit} />
-            <TextInput label="تنبيه ضعف التحسن" name="weakImprovementThreshold" type="number" min={0} max={100} unit="نسبة مئوية" defaultValue={cfg.weakImprovementThreshold} required disabled={!canEdit} />
+            <TextInput label="تنبيه ضعف التحسن" name="weakImprovementThreshold" type="number" min={0} max={100} unit="نسبة مئوية" defaultValue={cfg.weakImprovementThreshold} hint="محفوظة كعتبة إدارية؛ التنبيه الآلي حسبها يحتاج ربط لاحق." required disabled={!canEdit} />
           </fieldset>
           {canEdit ? <SubmitButton>حفظ إعدادات العلاج</SubmitButton> : null}
         </SettingsActionForm>
@@ -435,6 +443,17 @@ async function SecurityTab({ cfg, canEdit, isAdmin, message }: { cfg: Awaited<Re
         </SettingsActionForm>
       </Card>
 
+      <Card id="presence-policy" title="تواجد المستخدمين" description="هذه القيم تطبق على /users وعلى ping العام بعد تسجيل الدخول.">
+        <SettingsActionForm action={savePresenceAction} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
+            <TextInput label="أونلاين خلال" name="onlineMinutes" type="number" min={1} max={60} unit="دقيقة" defaultValue={cfg.onlineMinutes} required disabled={!canEdit} />
+            <TextInput label="خامل خلال" name="idleMinutes" type="number" min={2} max={240} unit="دقيقة" defaultValue={cfg.idleMinutes} hint="يجب أن تكون أكبر من مدة الأونلاين." required disabled={!canEdit} />
+            <TextInput label="فاصل ping" name="pingIntervalSeconds" type="number" min={15} max={600} unit="ثانية" defaultValue={cfg.pingIntervalSeconds} required disabled={!canEdit} />
+          </fieldset>
+          {canEdit ? <SubmitButton>حفظ تواجد المستخدمين</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+
       {isAdmin ? (
         <Card id="maintenance" title="وضع الصيانة" description="يبقى حصرياً للأدمن لأنه يفتح منطقة عمليات خطرة. لا يؤثر على صلاحية settings.edit." message={message}>
           <div className={`rounded-lg border p-3 text-sm ${maint ? "border-red-200 bg-red-50 text-red-800" : "border-gray-200 bg-gray-50 text-gray-700"}`}>
@@ -458,6 +477,9 @@ function NotificationsTab({ cfg, orgRow, canEdit }: { cfg: Awaited<ReturnType<ty
   const enabled = new Set((cfg.notificationTypes ?? []).map(String));
   return (
     <Card id="notifications-main" title="سياسة الإشعارات" description="منع التكرار مطبق عند إنشاء الإشعارات؛ ومدد الاحتفاظ تُستخدم في تنظيف السجلات المقروءة.">
+      <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">
+        الأنواع، احتفاظ غير المقروءة، والتنبيهات المهمة محفوظة كسياسة إدارية، وتحتاج ربطاً أوسع قبل أن تتحكم بكل الإشعارات.
+      </div>
       <SettingsActionForm action={saveNotificationsAction} className="space-y-4">
         <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
           <div className="md:col-span-3">
@@ -486,15 +508,17 @@ function NotificationsTab({ cfg, orgRow, canEdit }: { cfg: Awaited<ReturnType<ty
 }
 
 async function FilesTab({ cfg, canEdit, isAdmin }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean; isAdmin: boolean }) {
-  const [centers, displayDevices, therapyHalls, collabSettings] = await Promise.all([
+  const [centers, displayDevices, therapyHalls, collabSettings, libreOfficeStatus, clamAvStatus] = await Promise.all([
     prisma.center.findMany({ orderBy: { name: "asc" } }),
     canEdit ? prisma.displayDevice.findMany({ include: { center: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
     prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     collaborationSettings(),
+    getLibreOfficeStatus(),
+    checkClamAvStatus(Math.min(3, cfg.clamavScanTimeoutSeconds)),
   ]);
   return (
     <div className="space-y-5">
-      <Card id="files-policy" title="الملفات العامة والطباعة" description="سياسة الرفع العامة مستخدمة عند حفظ المرفقات في أجزاء النظام. لا تسمح الصفحة بامتدادات تنفيذية خطرة.">
+      <Card id="files-policy" title="الملفات العامة والطباعة" description="سياسة الرفع العامة مستخدمة عند حفظ المرفقات في أجزاء النظام. إعدادات PDF والبادئات تطبقها النماذج التي تدعمها حالياً فقط.">
         <SettingsActionForm action={saveFilesAction} className="space-y-4">
           <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
             <TextInput label="الحجم الأقصى للرفع" name="maxUploadMb" type="number" min={1} max={100} unit="ميغابايت" defaultValue={cfg.maxUploadMb} required disabled={!canEdit} />
@@ -512,6 +536,7 @@ async function FilesTab({ cfg, canEdit, isAdmin }: { cfg: Awaited<ReturnType<typ
           <div className="rounded-xl border border-gray-200 p-4">
             <h3 className="font-semibold text-gray-800">مركز التعاون</h3>
             <p className="mt-1 text-sm text-gray-500">هذه القيم تطبق على محادثات وملفات التعاون فقط.</p>
+            <p className="mt-1 text-xs text-amber-700">مدد احتفاظ الرسائل والسلة محفوظة كسياسة؛ التنظيف الآلي حسبها يحتاج ربط مهمة تنظيف لاحقة.</p>
             <fieldset disabled={!canEdit} className="mt-4 grid min-w-0 gap-4 md:grid-cols-3">
               <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 md:col-span-3">
                 <input type="checkbox" name="servicePaused" defaultChecked={collabSettings.servicePaused} disabled={!canEdit} />
@@ -530,6 +555,48 @@ async function FilesTab({ cfg, canEdit, isAdmin }: { cfg: Awaited<ReturnType<typ
             <Link href="/collaboration/admin" className="btn-ghost mt-4 inline-flex">فتح إدارة التعاون</Link>
           </div>
           {canEdit ? <SubmitButton>حفظ الملفات والطباعة</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+
+      <Card id="office-preview" title="معاينة Office" description="لا يفتح Office مباشرة؛ يحول محلياً إلى PDF عند المعاينة. مسار LibreOffice يبقى من بيئة التشغيل ولا يدار من الواجهة.">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+          <div className="font-medium text-gray-800">LibreOffice</div>
+          <div className="mt-1 text-gray-600">
+            الحالة: <span className={libreOfficeStatus.available ? "font-semibold text-emerald-700" : "font-semibold text-red-700"}>{libreOfficeStatus.available ? "موجود" : "غير موجود"}</span>
+            {libreOfficeStatus.version ? <span> · {libreOfficeStatus.version}</span> : null}
+          </div>
+        </div>
+        <SettingsActionForm action={saveOfficePreviewAction} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-4">
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 md:col-span-4">
+              <input type="checkbox" name="officePreviewEnabled" defaultChecked={cfg.officePreviewEnabled} disabled={!canEdit} />
+              تفعيل معاينة docx/xlsx/pptx كـ PDF داخلي
+            </label>
+            <TextInput label="حد الحجم" name="officePreviewMaxMb" type="number" min={1} max={100} unit="ميغابايت" defaultValue={cfg.officePreviewMaxMb} required disabled={!canEdit} />
+            <TextInput label="مهلة التحويل" name="officePreviewTimeoutSeconds" type="number" min={5} max={120} unit="ثانية" defaultValue={cfg.officePreviewTimeoutSeconds} required disabled={!canEdit} />
+            <TextInput label="احتفاظ cache المؤقت" name="officePreviewCacheRetentionHours" type="number" min={1} max={720} unit="ساعة" defaultValue={cfg.officePreviewCacheRetentionHours} required disabled={!canEdit} />
+          </fieldset>
+          {canEdit ? <SubmitButton>حفظ معاينة Office</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+
+      <Card id="clamav-scan" title="فحص ClamAV" description="الواجهة لا تعدّل host أو port؛ تتحكم فقط بالمهلة وسلوك فشل الفحص. الملفات غير SAFE لا تفتح ولا تنزل.">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+          <div className="font-medium text-gray-800">حالة الفاحص</div>
+          <div className="mt-1 text-gray-600">
+            الحالة: <span className={clamAvStatus.available ? "font-semibold text-emerald-700" : "font-semibold text-red-700"}>{clamAvStatus.available ? "يعمل" : "غير متاح"}</span>
+            <span> · {clamAvStatus.detail}</span>
+          </div>
+        </div>
+        <SettingsActionForm action={saveClamAvAction} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
+            <TextInput label="مهلة الفحص" name="clamavScanTimeoutSeconds" type="number" min={1} max={60} unit="ثانية" defaultValue={cfg.clamavScanTimeoutSeconds} required disabled={!canEdit} />
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 md:col-span-2">
+              <input type="checkbox" name="clamavFailClosed" defaultChecked={cfg.clamavFailClosed} disabled={!canEdit} />
+              عند فشل الفحص علّم الملف FAILED بدلاً من PENDING_SCAN
+            </label>
+          </fieldset>
+          {canEdit ? <SubmitButton>حفظ فحص ClamAV</SubmitButton> : null}
         </SettingsActionForm>
       </Card>
 
@@ -576,6 +643,36 @@ function BackupTab({
           {canBackup ? <Link href="/backup" className="btn-ghost">فتح النسخ الاحتياطي</Link> : null}
           {canBackup ? <Link href="/readiness" className="btn-ghost">فتح فحص الجاهزية</Link> : null}
         </div>
+      </Card>
+
+      <Card id="readiness-thresholds" title="عتبات الجاهزية" description="تستخدم في /readiness والتنبيهات التشغيلية، ولا تغيّر النسخ أو الخدمات مباشرة.">
+        {!canBackup ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">تعديل عتبات الجاهزية يتطلب صلاحية settings.backup.</div> : null}
+        <SettingsActionForm action={saveReadinessAction} className="space-y-4">
+          <fieldset disabled={!canEdit || !canBackup} className="grid min-w-0 gap-4 md:grid-cols-4">
+            <TextInput label="قدم نسخة قاعدة البيانات" name="dbBackupStaleHours" type="number" min={1} max={720} unit="ساعة" defaultValue={cfg.dbBackupStaleHours} required disabled={!canEdit || !canBackup} />
+            <TextInput label="قدم نسخة uploads" name="uploadsBackupStaleHours" type="number" min={1} max={2160} unit="ساعة" defaultValue={cfg.uploadsBackupStaleHours} required disabled={!canEdit || !canBackup} />
+            <TextInput label="تحذير القرص" name="diskWarnPercent" type="number" min={1} max={99} unit="%" defaultValue={cfg.diskWarnPercent} required disabled={!canEdit || !canBackup} />
+            <TextInput label="خطر القرص" name="diskCriticalPercent" type="number" min={2} max={100} unit="%" defaultValue={cfg.diskCriticalPercent} required disabled={!canEdit || !canBackup} />
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 md:col-span-2">
+              <input type="checkbox" name="requireClamav" defaultChecked={cfg.requireClamav} disabled={!canEdit || !canBackup} />
+              اعتبر ClamAV متطلباً إلزامياً في الجاهزية
+            </label>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 md:col-span-2">
+              <input type="checkbox" name="requireLibreOffice" defaultChecked={cfg.requireLibreOffice} disabled={!canEdit || !canBackup} />
+              اعتبر LibreOffice متطلباً إلزامياً في الجاهزية
+            </label>
+          </fieldset>
+          {canEdit && canBackup ? <SubmitButton>حفظ عتبات الجاهزية</SubmitButton> : null}
+        </SettingsActionForm>
+      </Card>
+
+      <Card id="expense" title="سياسة اعتماد الصرفيات" description="تحدد عدد مستويات الاعتماد المطلوبة عند إنشاء صرفية جديدة؛ لا تغيّر الصرفيات القديمة." message={message}>
+        <form action={saveExpenseApprovalLevels} className="space-y-4">
+          <fieldset disabled={!canEdit} className="grid min-w-0 gap-4 md:grid-cols-3">
+            <TextInput label="مستويات الاعتماد" name="expenseApprovalLevels" type="number" min={1} max={5} defaultValue={orgRow?.expenseApprovalLevels ?? 1} required disabled={!canEdit} />
+          </fieldset>
+          {canEdit ? <SubmitButton>حفظ سياسة الصرفيات</SubmitButton> : null}
+        </form>
       </Card>
     </div>
   );

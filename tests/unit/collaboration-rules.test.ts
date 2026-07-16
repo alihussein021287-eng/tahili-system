@@ -185,6 +185,27 @@ describe("collaboration file preview policy", () => {
     expect(isOfficePreviewSupported({ mimeType: xlsxMime, name: "sheet.xlsx", scanStatus: "SAFE", size: 1000 })).toBe(true);
   });
 
+  it("honors configured Office preview enablement and size limit", () => {
+    expect(collaborationPreviewPolicy({
+      mimeType: docxMime,
+      name: "letter.docx",
+      scanStatus: "SAFE",
+      size: 1000,
+    }, { officePreviewEnabled: false, officePreviewMaxMb: 25 })).toMatchObject({ kind: "office", canPreview: false });
+    expect(collaborationPreviewPolicy({
+      mimeType: docxMime,
+      name: "letter.docx",
+      scanStatus: "SAFE",
+      size: 2 * 1024 * 1024,
+    }, { officePreviewEnabled: true, officePreviewMaxMb: 1 })).toMatchObject({ kind: "office", canPreview: false });
+    expect(isOfficePreviewSupported({
+      mimeType: docxMime,
+      name: "letter.docx",
+      scanStatus: "SAFE",
+      size: 2 * 1024 * 1024,
+    }, { officePreviewMaxMb: 1 })).toBe(false);
+  });
+
   it("rejects Office preview when MIME, extension, status, or size are unsafe", () => {
     expect(collaborationPreviewPolicy({
       mimeType: docxMime,

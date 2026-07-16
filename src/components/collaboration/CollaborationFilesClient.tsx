@@ -17,7 +17,7 @@ import {
   uploadVersionAction,
 } from "@/app/(app)/collaboration/actions";
 import { Icon, fileIconFor, fmtDateTime, scanClass, scanLabel, sizeLabel } from "@/components/collaboration/CollaborationUi";
-import { collaborationPreviewPolicy } from "@/lib/collaboration-preview";
+import { collaborationPreviewPolicy, type OfficePreviewPolicyConfig } from "@/lib/collaboration-preview";
 
 type Actor = {
   id: string;
@@ -128,6 +128,7 @@ type Props = {
   canRestore: boolean;
   canPermanentDelete: boolean;
   canAdmin: boolean;
+  previewConfig?: OfficePreviewPolicyConfig;
 };
 
 type ModalName = "upload" | "folder" | "share" | "rename" | "move" | "delete" | "details" | "preview" | "version" | "patient" | "owner" | null;
@@ -220,13 +221,13 @@ function downloadUrl(file: FileItem, version?: number | null) {
   return `/api/collaboration/files/${file.id}/download${query ? `?${query}` : ""}`;
 }
 
-function previewPolicyFor(file: FileItem, version?: FileItem["versions"][number]) {
+function previewPolicyFor(file: FileItem, version?: FileItem["versions"][number], previewConfig?: OfficePreviewPolicyConfig) {
   return collaborationPreviewPolicy({
     mimeType: version?.mimeType || file.mimeType,
     name: file.originalName || file.displayName,
     scanStatus: version?.scanStatus || file.scanStatus,
     size: version?.size || file.size,
-  });
+  }, previewConfig);
 }
 
 export function CollaborationFilesClient({
@@ -248,6 +249,7 @@ export function CollaborationFilesClient({
   canRestore,
   canPermanentDelete,
   canAdmin,
+  previewConfig,
 }: Props) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -455,6 +457,7 @@ export function CollaborationFilesClient({
                     file={file}
                     selected={selectedIds.includes(file.id)}
                     canDownload={canDownload}
+                    previewConfig={previewConfig}
                     onSelect={(event) => selectFile(file.id, event)}
                     onOpen={() => openPreview(file)}
                     onContext={(event) => {
@@ -515,7 +518,7 @@ export function CollaborationFilesClient({
       <RenameModal open={modal === "rename"} onClose={() => setModal(null)} file={primaryFile} />
       <MoveModal open={modal === "move"} onClose={() => setModal(null)} files={selectedFiles} folders={folders} />
       <DeleteModal open={modal === "delete"} onClose={() => setModal(null)} files={selectedFiles} filter={filter} canRestore={canRestore} canPermanentDelete={canPermanentDelete} selectedCanDelete={selectedCanDelete} />
-      <FilePreviewModal open={modal === "preview"} onClose={() => setModal(null)} file={primaryFile} version={previewVersion} canDownload={canDownload} />
+      <FilePreviewModal open={modal === "preview"} onClose={() => setModal(null)} file={primaryFile} version={previewVersion} canDownload={canDownload} previewConfig={previewConfig} />
       <DetailsDrawer
         open={modal === "details"}
         onClose={() => setModal(null)}
@@ -654,8 +657,8 @@ function FolderCard({ folder, href }: { folder: FolderItem; href: string }) {
   );
 }
 
-function FileThumb({ file }: { file: FileItem }) {
-  const policy = previewPolicyFor(file);
+function FileThumb({ file, previewConfig }: { file: FileItem; previewConfig?: OfficePreviewPolicyConfig }) {
+  const policy = previewPolicyFor(file, undefined, previewConfig);
   if (policy.kind === "image" && policy.canStream) {
     return <img src={previewApiUrl(file, null, true)} alt="" className="h-full w-full object-cover" loading="lazy" />;
   }
@@ -686,6 +689,7 @@ function FileCard({
   file,
   selected,
   canDownload,
+  previewConfig,
   onSelect,
   onOpen,
   onContext,
@@ -694,12 +698,13 @@ function FileCard({
   file: FileItem;
   selected: boolean;
   canDownload: boolean;
+  previewConfig?: OfficePreviewPolicyConfig;
   onSelect: (event: React.MouseEvent | React.KeyboardEvent) => void;
   onOpen: () => void;
   onContext: (event: React.MouseEvent) => void;
   onFavorite: () => void;
 }) {
-  const previewPolicy = previewPolicyFor(file);
+  const previewPolicy = previewPolicyFor(file, undefined, previewConfig);
   return (
     <div
       role="button"
@@ -718,7 +723,7 @@ function FileCard({
       aria-selected={selected}
     >
       <div className="relative aspect-[4/3] overflow-hidden rounded-lg border border-gray-100">
-        <FileThumb file={file} />
+        <FileThumb file={file} previewConfig={previewConfig} />
         <button type="button" onClick={(event) => { event.stopPropagation(); onFavorite(); }} className={`absolute left-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 shadow-sm ${file.favorites.length ? "text-amber-600" : "text-gray-400"}`} aria-label={file.favorites.length ? "إزالة من المفضلة" : "إضافة للمفضلة"}>
           <Icon name="star" className="h-4 w-4" />
         </button>
@@ -861,12 +866,29 @@ type PreviewPayload = {
   error?: string;
 };
 
-function FilePreviewModal({ open, onClose, file, version, canDownload }: { open: boolean; onClose: () => void; file: FileItem | null; version: number | null; canDownload: boolean }) {
+function FilePreviewModal({
+  open,
+  onClose,
+  file,
+  version,
+  canDownload,
+  previewConfig,
+}: {
+  open: boolean;
+  onClose: () => void;
+  file: FileItem | null;
+  version: number | null;
+  canDownload: boolean;
+  previewConfig?: OfficePreviewPolicyConfig;
+}) {
   const [payload, setPayload] = useState<PreviewPayload | null>(null);
   const [loading, setLoading] = useState(false);
 
   const selectedVersion = useMemo(() => (file && version ? file.versions.find((item) => item.version === version) : undefined), [file, version]);
-  const policy = useMemo(() => (file ? previewPolicyFor(file, selectedVersion) : null), [file, selectedVersion]);
+  const policy = useMemo(
+    () => (file ? previewPolicyFor(file, selectedVersion, previewConfig) : null),
+    [file, previewConfig?.officePreviewEnabled, previewConfig?.officePreviewMaxMb, selectedVersion],
+  );
 
   useEffect(() => {
     if (!open || !file || !policy || policy.kind === "blocked" || (policy.canStream && policy.kind !== "text")) {

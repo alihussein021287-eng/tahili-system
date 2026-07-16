@@ -6,6 +6,7 @@ import { getBackupOverview } from "@/lib/backup";
 import { fmtDateTime } from "@/lib/labels";
 import Link from "next/link";
 import { getSystemStatus } from "@/lib/system-status";
+import { getAdminConfig } from "@/lib/admin-config";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function Readiness() {
   const backupOverview = getBackupOverview();
   const systemStatus = await getSystemStatus();
 
-  const [systemChecks, incompletePatients, devicesDue, rxPending, expiringSoon, lowStock, pendingLeaves, urgentTasks, admissions, officialApproval, org, failedLogins24h, successLogins24h, recentAudits] = await Promise.all([
+  const [systemChecks, incompletePatients, devicesDue, rxPending, expiringSoon, lowStock, pendingLeaves, urgentTasks, admissions, officialApproval, org, failedLogins24h, successLogins24h, recentAudits, adminConfig] = await Promise.all([
     getReadinessChecks(),
     prisma.patient.count({ where: { archivedAt: null, OR: [{ phone: null }, { governorateId: null }, { injuryTypeId: null }] } }),
     prisma.device.count({ where: { nextMaintenanceAt: { lte: now }, status: { not: "REPLACED" } } }),
@@ -43,6 +44,7 @@ export default async function Readiness() {
       orderBy: { createdAt: "desc" },
       take: 8,
     }) : Promise.resolve([]),
+    getAdminConfig(),
   ]);
 
   const lowCount = lowStock.filter((m: any) => (m.quantity ?? 0) <= (m.minQuantity ?? 0)).length;
@@ -72,8 +74,10 @@ export default async function Readiness() {
   const uploadsCheck = checkByKey.get("uploads");
   const backupAgeHours = backupOverview.latestDb ? (now.getTime() - backupOverview.latestDb.mtime.getTime()) / 3600000 : Infinity;
   const uploadsAgeHours = backupOverview.latestUploads ? (now.getTime() - backupOverview.latestUploads.mtime.getTime()) / 3600000 : Infinity;
-  const dbBackupStale = backupAgeHours > 48;
-  const uploadsBackupStale = uploadsAgeHours > 168;
+  const dbBackupStale = backupAgeHours > adminConfig.dbBackupStaleHours;
+  const uploadsBackupStale = uploadsAgeHours > adminConfig.uploadsBackupStaleHours;
+  const diskUsedPercent = systemStatus.disk.total > 0 ? ((systemStatus.disk.total - systemStatus.disk.free) / systemStatus.disk.total) * 100 : 0;
+  const diskTone = diskUsedPercent >= adminConfig.diskCriticalPercent ? "fail" : diskUsedPercent >= adminConfig.diskWarnPercent ? "warn" : "ok";
   const autoBackupStopped = canSeeBackup && org?.autoBackup === false;
   const failedLoginHigh = failedLogins24h >= 10;
   const envChecks = [
@@ -84,8 +88,8 @@ export default async function Readiness() {
     { key: "MINIO", label: "MINIO_*", ok: Boolean(process.env.MINIO_ENDPOINT || process.env.MINIO_ACCESS_KEY || process.env.MINIO_SECRET_KEY), required: false },
   ];
   const actions = [
-    !backupOverview.latestDb || dbBackupStale ? { label: "لا توجد نسخة قاعدة بيانات حديثة", detail: backupOverview.latestDb ? "آخر نسخة أقدم من 48 ساعة." : "لا توجد نسخة قاعدة بيانات.", href: "/backup", perm: "settings.backup" } : null,
-    !backupOverview.latestUploads || uploadsBackupStale ? { label: "نسخة uploads غير حديثة", detail: backupOverview.latestUploads ? "آخر نسخة مرفقات أقدم من 7 أيام." : "لا توجد نسخة مرفقات.", href: "/backup", perm: "settings.backup" } : null,
+    !backupOverview.latestDb || dbBackupStale ? { label: "لا توجد نسخة قاعدة بيانات حديثة", detail: backupOverview.latestDb ? `آخر نسخة أقدم من ${adminConfig.dbBackupStaleHours} ساعة.` : "لا توجد نسخة قاعدة بيانات.", href: "/backup", perm: "settings.backup" } : null,
+    !backupOverview.latestUploads || uploadsBackupStale ? { label: "نسخة uploads غير حديثة", detail: backupOverview.latestUploads ? `آخر نسخة مرفقات أقدم من ${adminConfig.uploadsBackupStaleHours} ساعة.` : "لا توجد نسخة مرفقات.", href: "/backup", perm: "settings.backup" } : null,
     autoBackupStopped ? { label: "النسخ التلقائي متوقف", detail: "فعّل النسخ التلقائي اليومي من صفحة النسخ الاحتياطي.", href: "/backup", perm: "settings.backup" } : null,
     failedLoginHigh ? { label: "محاولات دخول فاشلة مرتفعة", detail: `${failedLogins24h} محاولة فاشلة خلال آخر 24 ساعة.`, href: "/login-log", perm: "audit.view" } : null,
     !process.env.REMINDER_KEY ? { label: "REMINDER_KEY غير موجود", detail: "تذكيرات cron لن تعمل بدون هذا المفتاح.", href: "/readiness", perm: "settings.view" } : null,
@@ -103,7 +107,7 @@ export default async function Readiness() {
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         <HealthCard title="migrations" value={systemStatus.migrations.pendingOrFailed ? "غير متطابقة" : "متطابقة"} detail={`${systemStatus.migrations.count} · ${systemStatus.migrations.latest}`} tone={systemStatus.migrations.pendingOrFailed ? "fail" : "ok"} />
-        <HealthCard title="مساحة القرص" value={`${Math.round(systemStatus.disk.free / 1073741824)} GB متاح`} detail={`من ${Math.round(systemStatus.disk.total / 1073741824)} GB`} tone={systemStatus.disk.free / systemStatus.disk.total < .1 ? "fail" : "ok"} />
+        <HealthCard title="مساحة القرص" value={`${Math.round(systemStatus.disk.free / 1073741824)} GB متاح`} detail={`${Math.round(diskUsedPercent)}% مستخدم من ${Math.round(systemStatus.disk.total / 1073741824)} GB`} tone={diskTone} />
         <HealthCard title="الذاكرة" value={`${Math.round(systemStatus.memory.free / 1048576)} MB متاح`} detail={`وقت التشغيل ${Math.round(systemStatus.uptimeSeconds / 60)} دقيقة`} tone="neutral" />
         <HealthCard title="الخدمات" value="app + PostgreSQL" detail={`MinIO: ${systemStatus.services.minio} · Caddy: ${systemStatus.services.caddy}`} tone="neutral" />
       </div>

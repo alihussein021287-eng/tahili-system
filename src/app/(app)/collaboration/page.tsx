@@ -2,6 +2,7 @@ import { CollaborationChatClient } from "@/components/collaboration/Collaboratio
 import { CollaborationTopNav } from "@/components/collaboration/CollaborationUi";
 import { prisma } from "@/lib/db";
 import { collaborationActor, listConversations, listMessages } from "@/lib/collaboration-service";
+import { getAdminConfig } from "@/lib/admin-config";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +79,7 @@ function serializeMessage(message: any) {
 export default async function CollaborationPage({ searchParams }: { searchParams: Promise<{ conversation?: string }> }) {
   const actor = await collaborationActor("collaboration.view");
   const params = await searchParams;
-  const [conversationRows, users, centers] = await Promise.all([
+  const [conversationRows, users, centers, adminConfig] = await Promise.all([
     listConversations(actor),
     prisma.user.findMany({
       where: { isActive: true },
@@ -87,6 +88,7 @@ export default async function CollaborationPage({ searchParams }: { searchParams
       take: 200,
     }),
     prisma.center.findMany({ orderBy: { name: "asc" }, take: 100 }),
+    getAdminConfig(),
   ]);
 
   const selectedSummary = conversationRows.find((conversation) => conversation.id === params.conversation) || conversationRows[0] || null;
@@ -135,6 +137,7 @@ export default async function CollaborationPage({ searchParams }: { searchParams
         canManage={!!canManage}
         canModerate={!!canModerate}
         canDownload={actor.permissions.has("files.download")}
+        previewConfig={{ officePreviewEnabled: adminConfig.officePreviewEnabled, officePreviewMaxMb: adminConfig.officePreviewMaxMb }}
       />
     </div>
   );

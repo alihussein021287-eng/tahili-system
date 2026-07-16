@@ -10,6 +10,10 @@ export type FilePreviewPolicy = {
 
 export const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024;
 export const MAX_OFFICE_PREVIEW_BYTES = 25 * 1024 * 1024;
+export type OfficePreviewPolicyConfig = {
+  officePreviewEnabled?: boolean;
+  officePreviewMaxMb?: number;
+};
 
 const IMAGE_PREVIEW_MIME_TYPES = new Set([
   "image/bmp",
@@ -77,6 +81,15 @@ const BLOCKED_INLINE_EXTENSIONS = new Set([
 
 const TEXT_EXTENSIONS = new Set(["csv", "json", "log", "md", "txt", "xml"]);
 
+function intInRange(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
+}
+
+export function officePreviewLimitBytes(config?: OfficePreviewPolicyConfig | null) {
+  return intInRange(config?.officePreviewMaxMb, 25, 1, 100) * 1024 * 1024;
+}
+
 export function baseMimeType(mimeType: string | null | undefined) {
   return mimeType?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
 }
@@ -100,10 +113,12 @@ export function isOfficePreviewSupported(input: {
   name?: string | null;
   scanStatus: string | null | undefined;
   size?: number | null;
-}) {
+}, config?: OfficePreviewPolicyConfig | null) {
+  if (config?.officePreviewEnabled === false) return false;
+  const maxBytes = officePreviewLimitBytes(config);
   return input.scanStatus === "SAFE"
     && Boolean(officePreviewType(input))
-    && (!input.size || input.size <= MAX_OFFICE_PREVIEW_BYTES);
+    && (!input.size || input.size <= maxBytes);
 }
 
 export function collaborationPreviewPolicy(input: {
@@ -111,9 +126,11 @@ export function collaborationPreviewPolicy(input: {
   name?: string | null;
   scanStatus: string | null | undefined;
   size?: number | null;
-}): FilePreviewPolicy {
+}, config?: OfficePreviewPolicyConfig | null): FilePreviewPolicy {
   const contentType = baseMimeType(input.mimeType);
   const extension = fileExtension(input.name);
+  const officeMaxBytes = officePreviewLimitBytes(config);
+  const officeMaxMb = Math.round(officeMaxBytes / 1024 / 1024);
   if (input.scanStatus !== "SAFE") {
     return {
       kind: "blocked",
@@ -156,13 +173,22 @@ export function collaborationPreviewPolicy(input: {
     };
   }
   if (officePreviewType(input)) {
-    if (input.size && input.size > MAX_OFFICE_PREVIEW_BYTES) {
+    if (config?.officePreviewEnabled === false) {
       return {
         kind: "office",
         canPreview: false,
         canStream: false,
         contentType,
-        reason: "حجم ملف Office يتجاوز حد المعاينة الداخلية 25MB.",
+        reason: "معاينة ملفات Office متوقفة من إعدادات النظام.",
+      };
+    }
+    if (input.size && input.size > officeMaxBytes) {
+      return {
+        kind: "office",
+        canPreview: false,
+        canStream: false,
+        contentType,
+        reason: `حجم ملف Office يتجاوز حد المعاينة الداخلية ${officeMaxMb}MB.`,
       };
     }
     return {
