@@ -13,10 +13,12 @@ description: Test and inspect Tahili changes on the development VM. Use automati
 - Do not capture or send images unless the user explicitly requests images.
 - Do not repeat heavy E2E tests without a reason.
 - Distinguish environment failures from application failures.
+- If Playwright CLI cannot start because npm access or browser channels are unavailable, use the repo's installed `@playwright/test` Chromium in a small headless check. Do not install browsers unless necessary.
 - Inspect application logs for HTTP 500 and Prisma errors.
 - For Docker-applied app changes, verify app is running, `/login` returns 200, and the changed route loads or redirects correctly for unauthenticated users.
 - For collaboration/files changes, verify ClamAV behavior only when the change affects upload, scan, download, permissions, or sharing.
 - For admin pages, verify tabs, save buttons, readonly permissions, and mobile layout.
+- For visual checks, report viewport, visible labels, console errors, HTTP 5xx, and horizontal overflow instead of sending screenshots unless requested.
 - Report only: passed, failed, and required fixes.
 - Ignore a pre-existing untracked `skills-lock.json`; do not modify or stage it.
 - Ignore pre-existing `analysis/` artifacts unless they are part of the current request.

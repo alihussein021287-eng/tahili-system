@@ -55,6 +55,7 @@ Run in order:
 - Run Playwright only for the changed scenario; never run all E2E without cause.
 - Never capture images unless explicitly requested.
 - For UI-only admin changes, verify desktop and mobile layout for RTL and horizontal clipping.
+- For protected local visual checks, prefer `localhost` over `127.0.0.1`. If `NEXTAUTH_URL` points to production, set `NEXTAUTH_ALLOW_HTTP_LOGIN=true` only for the local check. Do not depend on the real admin password; create a temporary active admin test user when needed and delete it immediately after.
 
 ## Git and development
 

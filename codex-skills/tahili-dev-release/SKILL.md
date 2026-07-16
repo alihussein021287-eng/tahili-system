@@ -8,8 +8,9 @@ description: Release a Tahili change to the development VM only. Use automatical
 - Work only on the development VM at `/tahili-system`; never on production.
 - Confirm the requested commit exists in `origin/main` and the working tree has no relevant uncommitted tracked changes.
 - Fast-forward to the requested commit from `origin/main`; do not merge manually.
-- If new migrations exist, apply them only with `prisma migrate deploy`.
+- If new migrations exist, apply them only with `prisma migrate deploy`. On the development VM, `.env` may use Docker hostname `postgres`; host-side Prisma commands should use the localhost-published database URL without printing secrets.
 - Build the application image from the latest Git source.
+- Expect Docker build to repeat `prisma generate` and `next build`; long layer export is normal unless it errors.
 - Recreate only the app service with `--no-deps`.
 - Do not restart PostgreSQL or MinIO without an explicit need.
 - If ClamAV was added or changed, recreate only the needed service too; otherwise leave supporting services untouched.
