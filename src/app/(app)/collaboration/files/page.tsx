@@ -32,6 +32,7 @@ function serializeFile(file: any) {
     owner: { fullName: file.owner.fullName },
     center: file.center ? { name: file.center.name } : null,
     folder: file.folder ? { name: file.folder.name } : null,
+    patient: file.patient ? { fullName: file.patient.fullName, fileNumber: file.patient.fileNumber } : null,
     versions: (file.versions || []).map((version: any) => ({
       id: version.id,
       version: version.version,
@@ -50,6 +51,9 @@ function serializeFile(file: any) {
       targetType: share.targetType,
       shareKey: share.shareKey,
       canEdit: share.canEdit,
+      targetUserId: share.targetUserId,
+      targetConversationId: share.targetConversationId,
+      targetCenterId: share.targetCenterId,
       targetUser: share.targetUser ? { fullName: share.targetUser.fullName } : null,
       targetConversation: share.targetConversation ? { title: share.targetConversation.title } : null,
       targetCenter: share.targetCenter ? { name: share.targetCenter.name } : null,
@@ -63,7 +67,7 @@ function serializeFile(file: any) {
 export default async function CollaborationFilesPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string; folder?: string }> }) {
   const actor = await collaborationActor("files.view");
   const params = await searchParams;
-  const filter = params.filter || "mine";
+  const filter = params.filter || "all";
   const currentFolderId = params.folder || null;
   const [files, users, centers, conversations, folders, patients] = await Promise.all([
     listFiles(actor, filter, params.q || ""),
@@ -86,7 +90,7 @@ export default async function CollaborationFilesPage({ searchParams }: { searchP
     <div className="space-y-4">
       <CollaborationTopNav active="files" unreadCount={unreadCount} />
       <CollaborationFilesClient
-        actor={{ id: actor.id, role: actor.role, permissions: [...actor.permissions] }}
+        actor={{ id: actor.id, role: actor.role, department: actor.department, centerIds: actor.centerIds, permissions: [...actor.permissions] }}
         files={files.map(serializeFile) as any}
         folders={folders}
         users={users}

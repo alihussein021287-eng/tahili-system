@@ -16,6 +16,7 @@ import {
 } from "@/app/(app)/collaboration/actions";
 import { ConversationPoller } from "@/components/collaboration/ConversationPoller";
 import { Icon, fmtDate, fmtDateTime, fmtTime, initials, scanClass, scanLabel, sizeLabel } from "@/components/collaboration/CollaborationUi";
+import { collaborationPreviewPolicy } from "@/lib/collaboration-preview";
 
 type Actor = {
   id: string;
@@ -518,10 +519,11 @@ export function CollaborationChatClient({ actor, conversations, selected, messag
 }
 
 function AttachmentCard({ attachment, mine, canDownload }: { attachment: NonNullable<Message["attachmentFile"]>; mine: boolean; canDownload: boolean }) {
+  const policy = collaborationPreviewPolicy({ mimeType: attachment.mimeType, name: attachment.displayName, scanStatus: attachment.scanStatus, size: attachment.size });
   const safe = attachment.scanStatus === "SAFE";
-  const isImage = safe && attachment.mimeType.startsWith("image/");
-  const isPdf = safe && attachment.mimeType === "application/pdf";
-  const previewUrl = `/api/collaboration/files/${attachment.id}/download?preview=1`;
+  const isImage = policy.kind === "image" && policy.canStream;
+  const isPdf = policy.kind === "pdf" && policy.canStream;
+  const previewUrl = `/api/collaboration/files/${attachment.id}/preview?stream=1`;
   return (
     <div className={`mt-2 overflow-hidden rounded-xl border text-sm ${mine ? "border-white/20 bg-white/10" : "border-gray-200 bg-gray-50"}`}>
       {isImage && <img src={previewUrl} alt="" className="max-h-60 w-full rounded-t-xl object-cover" loading="lazy" />}

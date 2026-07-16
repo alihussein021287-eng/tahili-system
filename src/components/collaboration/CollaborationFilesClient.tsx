@@ -17,10 +17,13 @@ import {
   uploadVersionAction,
 } from "@/app/(app)/collaboration/actions";
 import { Icon, fileIconFor, fmtDateTime, scanClass, scanLabel, sizeLabel } from "@/components/collaboration/CollaborationUi";
+import { collaborationPreviewPolicy } from "@/lib/collaboration-preview";
 
 type Actor = {
   id: string;
   role: string;
+  department?: string | null;
+  centerIds: number[];
   permissions: string[];
 };
 
@@ -60,6 +63,9 @@ type ShareItem = {
   targetType: string;
   shareKey: string;
   canEdit: boolean;
+  targetUserId?: string | null;
+  targetConversationId?: string | null;
+  targetCenterId?: number | null;
   targetUser?: { fullName: string } | null;
   targetConversation?: { title: string | null } | null;
   targetCenter?: { name: string } | null;
@@ -88,6 +94,7 @@ type FileItem = {
   owner: { fullName: string };
   center?: { name: string } | null;
   folder?: { name: string } | null;
+  patient?: { fullName: string; fileNumber: string | number } | null;
   versions: {
     id: string;
     version: number;
@@ -138,13 +145,15 @@ const filterLabels: Record<string, string> = {
 };
 
 const sidebar = [
+  { key: "all", label: "كل الملفات", icon: "archive" as const },
   { key: "mine", label: "ملفاتي", icon: "folder" as const },
   { key: "shared", label: "مشترك معي", icon: "share" as const },
+  { key: "favorites", label: "المفضلة", icon: "star" as const },
+  { key: "trash", label: "المحذوفة", icon: "trash" as const },
+  { key: "quarantine", label: "قيد الفحص", icon: "warning" as const },
   { key: "groups", label: "ملفات المجموعات", icon: "users" as const },
   { key: "scoped", label: "ملفات القسم والمركز", icon: "archive" as const },
   { key: "recent", label: "الحديثة", icon: "clock" as const },
-  { key: "favorites", label: "المفضلة", icon: "star" as const },
-  { key: "trash", label: "سلة المحذوفات", icon: "trash" as const },
 ];
 
 function Modal({ title, open, onClose, children }: { title: string; open: boolean; onClose: () => void; children: React.ReactNode }) {
@@ -168,6 +177,19 @@ function actionAllowed(file: FileItem, actor: Actor, canAdmin: boolean) {
   return file.ownerId === actor.id || actor.role === "ADMIN" || canAdmin;
 }
 
+function shareAppliesToActor(share: ShareItem, actor: Actor, conversationIds: Set<string>) {
+  if (share.targetUserId === actor.id) return true;
+  if (share.targetType === "ALL_STAFF") return true;
+  if (share.targetDepartment && share.targetDepartment === actor.department) return true;
+  if (share.targetCenterId && actor.centerIds.includes(share.targetCenterId)) return true;
+  if (share.targetConversationId && conversationIds.has(share.targetConversationId)) return true;
+  return false;
+}
+
+function editAllowed(file: FileItem, actor: Actor, canAdmin: boolean, conversationIds: Set<string>) {
+  return actionAllowed(file, actor, canAdmin) || file.shares.some((share) => share.canEdit && shareAppliesToActor(share, actor, conversationIds));
+}
+
 function shareTargetLabel(share: ShareItem) {
   if (share.targetUser) return `مستخدم: ${share.targetUser.fullName}`;
   if (share.targetConversation) return `محادثة: ${share.targetConversation.title || "محادثة مباشرة"}`;
@@ -183,33 +205,28 @@ function safeScanReason(status: string) {
   return "لم يجتز الملف الفحص الأمني ولا يمكن تنزيله.";
 }
 
-const textPreviewMimeTypes = new Set([
-  "application/json",
-  "application/ld+json",
-  "text/csv",
-  "text/markdown",
-  "text/plain",
-  "text/tab-separated-values",
-]);
-
-function baseMimeType(mimeType: string) {
-  return mimeType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+function previewApiUrl(file: FileItem, version?: number | null, stream = false) {
+  const params = new URLSearchParams();
+  if (stream) params.set("stream", "1");
+  if (version) params.set("version", String(version));
+  const query = params.toString();
+  return `/api/collaboration/files/${file.id}/preview${query ? `?${query}` : ""}`;
 }
 
-function canInlinePreview(file: FileItem) {
-  const mimeType = baseMimeType(file.mimeType);
-  if (mimeType === "application/pdf") return true;
-  if (mimeType.startsWith("image/") && mimeType !== "image/svg+xml") return true;
-  if (mimeType.startsWith("video/") || mimeType.startsWith("audio/")) return true;
-  return textPreviewMimeTypes.has(mimeType);
+function downloadUrl(file: FileItem, version?: number | null) {
+  const params = new URLSearchParams();
+  if (version) params.set("version", String(version));
+  const query = params.toString();
+  return `/api/collaboration/files/${file.id}/download${query ? `?${query}` : ""}`;
 }
 
-function previewUrl(file: FileItem) {
-  return `/api/collaboration/files/${file.id}/download?preview=1`;
-}
-
-function downloadUrl(file: FileItem) {
-  return `/api/collaboration/files/${file.id}/download`;
+function previewPolicyFor(file: FileItem, version?: FileItem["versions"][number]) {
+  return collaborationPreviewPolicy({
+    mimeType: version?.mimeType || file.mimeType,
+    name: file.originalName || file.displayName,
+    scanStatus: version?.scanStatus || file.scanStatus,
+    size: version?.size || file.size,
+  });
 }
 
 export function CollaborationFilesClient({
@@ -235,9 +252,10 @@ export function CollaborationFilesClient({
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [sortBy, setSortBy] = useState<"updated" | "name" | "size" | "status">("updated");
+  const [sortBy, setSortBy] = useState<"updated" | "name" | "size" | "type" | "status">("updated");
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState<ModalName>(null);
+  const [previewVersion, setPreviewVersion] = useState<number | null>(null);
   const [dropFiles, setDropFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; fileId: string } | null>(null);
@@ -257,6 +275,7 @@ export function CollaborationFilesClient({
   }, []);
 
   const folderMap = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders]);
+  const conversationIds = useMemo(() => new Set(conversations.map((conversation) => conversation.id)), [conversations]);
   const selectedFiles = files.filter((file) => selectedIds.includes(file.id));
   const primaryFile = selectedFiles[0] || null;
   const currentFolder = currentFolderId ? folderMap.get(currentFolderId) || null : null;
@@ -276,7 +295,7 @@ export function CollaborationFilesClient({
     : [];
 
   const visibleFiles = useMemo(() => {
-    const needle = query.trim();
+    const needle = query.trim().toLocaleLowerCase("ar-IQ");
     return files
       .filter((file) => {
         if (filter === "groups" && !file.conversationId) return false;
@@ -286,22 +305,27 @@ export function CollaborationFilesClient({
           if (!currentFolderId && ["all", "mine", "groups", "scoped"].includes(filter) && file.folderId) return false;
         }
         if (!needle) return true;
-        return [file.displayName, file.originalName, file.description, file.owner.fullName, file.mimeType].filter(Boolean).join(" ").includes(needle);
+        return [file.displayName, file.originalName, file.description, file.owner.fullName, file.mimeType]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase("ar-IQ")
+          .includes(needle);
       })
       .sort((a, b) => {
         if (sortBy === "name") return a.displayName.localeCompare(b.displayName, "ar");
         if (sortBy === "size") return b.size - a.size;
+        if (sortBy === "type") return a.mimeType.localeCompare(b.mimeType, "ar") || a.displayName.localeCompare(b.displayName, "ar");
         if (sortBy === "status") return a.scanStatus.localeCompare(b.scanStatus);
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       });
   }, [canUseFolderTree, currentFolderId, files, filter, query, sortBy]);
 
   const allSelectedVisible = visibleFiles.length > 0 && visibleFiles.every((file) => selectedIds.includes(file.id));
-  const selectedCanEdit = selectedFiles.length > 0 && selectedFiles.every((file) => canEdit && actionAllowed(file, actor, canAdmin) && filter !== "trash");
+  const selectedCanEdit = selectedFiles.length > 0 && selectedFiles.every((file) => canEdit && editAllowed(file, actor, canAdmin, conversationIds) && filter !== "trash");
   const selectedCanDelete = selectedFiles.length > 0 && selectedFiles.every((file) => canDelete && actionAllowed(file, actor, canAdmin));
   const selectedCanDownload = selectedFiles.length > 0 && selectedFiles.every((file) => file.scanStatus === "SAFE") && canDownload;
-  const selectedCanPreview = selectedFiles.length === 1 && selectedFiles[0].scanStatus === "SAFE" && canDownload;
-  const selectedCanShare = selectedFiles.length > 0 && selectedFiles.every((file) => file.scanStatus === "SAFE") && canShare && filter !== "trash";
+  const selectedCanPreview = selectedFiles.length === 1 && selectedFiles[0].scanStatus === "SAFE";
+  const selectedCanShare = selectedFiles.length > 0 && selectedFiles.every((file) => file.scanStatus === "SAFE" && actionAllowed(file, actor, canAdmin)) && canShare && filter !== "trash";
 
   const hrefFor = (updates: Record<string, string | null>) => {
     const params = new URLSearchParams();
@@ -319,13 +343,10 @@ export function CollaborationFilesClient({
     });
   };
 
-  const openPreview = (file: FileItem) => {
+  const openPreview = (file: FileItem, version?: number | null) => {
     setSelectedIds([file.id]);
+    setPreviewVersion(version || null);
     if (file.scanStatus !== "SAFE") {
-      setModal("details");
-      return;
-    }
-    if (!canDownload) {
       setModal("details");
       return;
     }
@@ -494,7 +515,7 @@ export function CollaborationFilesClient({
       <RenameModal open={modal === "rename"} onClose={() => setModal(null)} file={primaryFile} />
       <MoveModal open={modal === "move"} onClose={() => setModal(null)} files={selectedFiles} folders={folders} />
       <DeleteModal open={modal === "delete"} onClose={() => setModal(null)} files={selectedFiles} filter={filter} canRestore={canRestore} canPermanentDelete={canPermanentDelete} selectedCanDelete={selectedCanDelete} />
-      <FilePreviewModal open={modal === "preview"} onClose={() => setModal(null)} file={primaryFile} canDownload={canDownload} />
+      <FilePreviewModal open={modal === "preview"} onClose={() => setModal(null)} file={primaryFile} version={previewVersion} canDownload={canDownload} />
       <DetailsDrawer
         open={modal === "details"}
         onClose={() => setModal(null)}
@@ -502,9 +523,10 @@ export function CollaborationFilesClient({
         folders={folders}
         users={users}
         patients={patients}
-        canEdit={!!primaryFile && canEdit && actionAllowed(primaryFile, actor, canAdmin) && filter !== "trash"}
+        canEdit={!!primaryFile && canEdit && editAllowed(primaryFile, actor, canAdmin, conversationIds) && filter !== "trash"}
         canDownload={canDownload}
         canAdmin={canAdmin}
+        onPreviewVersion={(version) => primaryFile && openPreview(primaryFile, version)}
       />
       <VersionModal open={modal === "version"} onClose={() => setModal(null)} file={primaryFile} />
       <PatientModal open={modal === "patient"} onClose={() => setModal(null)} file={primaryFile} patients={patients} />
@@ -541,13 +563,13 @@ function CommandBar({
   selectedCanShare: boolean;
   filter: string;
   viewMode: "grid" | "list";
-  sortBy: "updated" | "name" | "size" | "status";
+  sortBy: "updated" | "name" | "size" | "type" | "status";
   query: string;
   onModal: (modal: ModalName) => void;
   onDownload: () => void;
   onPreview: () => void;
   onViewMode: (mode: "grid" | "list") => void;
-  onSort: (sort: "updated" | "name" | "size" | "status") => void;
+  onSort: (sort: "updated" | "name" | "size" | "type" | "status") => void;
   onQuery: (query: string) => void;
 }) {
   const selectionDisabled = selectedCount === 0;
@@ -557,10 +579,11 @@ function CommandBar({
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={!canUpload} onClick={() => onModal("folder")} className="btn-ghost btn-sm"><Icon name="newFolder" className="h-4 w-4" /> جديد</button>
           <button type="button" disabled={!canUpload} onClick={() => onModal("upload")} className="btn-primary btn-sm"><Icon name="upload" className="h-4 w-4" /> رفع</button>
-          <button type="button" disabled={!selectedCanPreview} onClick={onPreview} className="btn-ghost btn-sm"><Icon name="eye" className="h-4 w-4" /> معاينة</button>
+          <button type="button" disabled={!selectedCanPreview} onClick={onPreview} className="btn-ghost btn-sm"><Icon name="eye" className="h-4 w-4" /> فتح</button>
           <button type="button" disabled={!selectedCanShare} onClick={() => onModal("share")} className="btn-ghost btn-sm"><Icon name="share" className="h-4 w-4" /> مشاركة</button>
           <button type="button" disabled={!selectedCanDownload} onClick={onDownload} className="btn-ghost btn-sm"><Icon name="download" className="h-4 w-4" /> تنزيل</button>
           <button type="button" disabled={!selectedCanEdit || selectedCount !== 1} onClick={() => onModal("rename")} className="btn-ghost btn-sm"><Icon name="rename" className="h-4 w-4" /> إعادة تسمية</button>
+          <button type="button" disabled={!selectedCanEdit || selectedCount !== 1} onClick={() => onModal("version")} className="btn-ghost btn-sm"><Icon name="upload" className="h-4 w-4" /> إصدار جديد</button>
           <button type="button" disabled={!selectedCanEdit} onClick={() => onModal("move")} className="btn-ghost btn-sm"><Icon name="move" className="h-4 w-4" /> نقل</button>
           <button type="button" disabled={filter === "trash" ? selectionDisabled : !selectedCanDelete} onClick={() => onModal("delete")} className="btn-danger-soft btn-sm"><Icon name="trash" className="h-4 w-4" /> حذف</button>
           <button type="button" disabled={selectionDisabled || selectedCount !== 1} onClick={() => onModal("details")} className="btn-ghost btn-sm"><Icon name="details" className="h-4 w-4" /> تفاصيل</button>
@@ -580,6 +603,7 @@ function CommandBar({
             <select value={sortBy} onChange={(event) => onSort(event.target.value as typeof sortBy)} className="input pr-9">
               <option value="updated">الأحدث تعديلاً</option>
               <option value="name">الاسم</option>
+              <option value="type">النوع</option>
               <option value="size">الحجم</option>
               <option value="status">الحالة</option>
             </select>
@@ -631,11 +655,11 @@ function FolderCard({ folder, href }: { folder: FolderItem; href: string }) {
 }
 
 function FileThumb({ file }: { file: FileItem }) {
-  const safe = file.scanStatus === "SAFE";
-  if (safe && file.mimeType.startsWith("image/")) {
-    return <img src={`/api/collaboration/files/${file.id}/download?preview=1`} alt="" className="h-full w-full object-cover" loading="lazy" />;
+  const policy = previewPolicyFor(file);
+  if (policy.kind === "image" && policy.canStream) {
+    return <img src={previewApiUrl(file, null, true)} alt="" className="h-full w-full object-cover" loading="lazy" />;
   }
-  if (safe && file.mimeType === "application/pdf") {
+  if (policy.kind === "pdf" && policy.canStream) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center bg-red-50 text-red-700">
         <Icon name="pdf" className="h-8 w-8" />
@@ -702,7 +726,7 @@ function FileCard({
           <span className="truncate">{file.owner.fullName}</span>
         </div>
         {file.scanStatus !== "SAFE" && <div className="mt-2 text-xs text-amber-700">{safeScanReason(file.scanStatus)}</div>}
-        {file.scanStatus === "SAFE" && canDownload && <div className="mt-2 text-xs text-gray-400">نقرة مزدوجة للمعاينة داخل النظام</div>}
+        {file.scanStatus === "SAFE" && <div className="mt-2 text-xs text-gray-400">نقرة مزدوجة للفتح داخل النظام</div>}
       </div>
     </div>
   );
@@ -744,6 +768,7 @@ function FileList({
               <th className="w-10 px-3 py-2 text-right"><input type="checkbox" checked={allSelectedVisible} onChange={onToggleAll} aria-label="تحديد كل الملفات" /></th>
               <th className="px-3 py-2 text-right font-semibold text-gray-500">الاسم</th>
               <th className="w-40 px-3 py-2 text-right font-semibold text-gray-500">المالك</th>
+              <th className="w-32 px-3 py-2 text-right font-semibold text-gray-500">النوع</th>
               <th className="w-28 px-3 py-2 text-right font-semibold text-gray-500">الحجم</th>
               <th className="w-36 px-3 py-2 text-right font-semibold text-gray-500">التعديل</th>
               <th className="w-32 px-3 py-2 text-right font-semibold text-gray-500">الحالة</th>
@@ -764,11 +789,12 @@ function FileList({
                     <Icon name={fileIconFor(file.mimeType, file.displayName)} className="h-5 w-5 shrink-0 text-gray-500" />
                     <div className="min-w-0">
                       <div className="truncate font-semibold text-gray-900">{file.displayName}</div>
-                      <div className="truncate text-xs text-gray-500">{file.mimeType}</div>
+                      <div className="truncate text-xs text-gray-500">v{file.currentVersion}</div>
                     </div>
                   </div>
                 </td>
                 <td className="truncate px-3 py-3 text-gray-600">{file.owner.fullName}</td>
+                <td className="truncate px-3 py-3 text-gray-600">{file.mimeType}</td>
                 <td className="px-3 py-3 text-gray-600">{sizeLabel(file.size)}</td>
                 <td className="px-3 py-3 text-gray-600">{fmtDateTime(file.updatedAt)}</td>
                 <td className="px-3 py-3"><span className={scanClass(file.scanStatus)}>{scanLabel[file.scanStatus] || file.scanStatus}</span></td>
@@ -808,23 +834,70 @@ function EmptyFilesState({ canUpload, onUpload }: { canUpload: boolean; onUpload
   );
 }
 
-function FilePreviewModal({ open, onClose, file, canDownload }: { open: boolean; onClose: () => void; file: FileItem | null; canDownload: boolean }) {
+type PreviewPayload = {
+  ok?: boolean;
+  kind?: string;
+  mimeType?: string;
+  name?: string;
+  size?: number;
+  version?: number;
+  text?: string;
+  truncated?: boolean;
+  streamUrl?: string | null;
+  reason?: string;
+  error?: string;
+};
+
+function FilePreviewModal({ open, onClose, file, version, canDownload }: { open: boolean; onClose: () => void; file: FileItem | null; version: number | null; canDownload: boolean }) {
+  const [payload, setPayload] = useState<PreviewPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const selectedVersion = useMemo(() => (file && version ? file.versions.find((item) => item.version === version) : undefined), [file, version]);
+  const policy = useMemo(() => (file ? previewPolicyFor(file, selectedVersion) : null), [file, selectedVersion]);
+
+  useEffect(() => {
+    if (!open || !file || !policy || file.scanStatus !== "SAFE" || (policy.canStream && policy.kind !== "text")) {
+      setPayload(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setPayload(null);
+    fetch(previewApiUrl(file, version), { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data: PreviewPayload) => {
+        if (!cancelled) setPayload(data);
+      })
+      .catch(() => {
+        if (!cancelled) setPayload({ ok: false, error: "تعذر تحميل المعاينة." });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file, open, policy, version]);
+
   if (!open || !file) return null;
-  const mimeType = baseMimeType(file.mimeType);
-  const inline = file.scanStatus === "SAFE" && canDownload && canInlinePreview(file);
-  const src = previewUrl(file);
+  const src = previewApiUrl(file, version, true);
+  const title = version ? `${file.displayName} · v${version}` : file.displayName;
+  const displayMime = payload?.mimeType || selectedVersion?.mimeType || file.mimeType;
+  const displaySize = payload?.size || selectedVersion?.size || file.size;
+  const displayReason = payload?.reason || payload?.error || policy?.reason || safeScanReason(file.scanStatus);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="معاينة الملف">
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
         <header className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <h2 className="truncate font-bold text-gray-900">{file.displayName}</h2>
-            <p className="mt-1 text-xs text-gray-500">{file.mimeType} · {sizeLabel(file.size)}</p>
+            <h2 className="truncate font-bold text-gray-900">{title}</h2>
+            <p className="mt-1 text-xs text-gray-500">{displayMime} · {sizeLabel(displaySize)}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {file.scanStatus === "SAFE" && canDownload && (
-              <a href={downloadUrl(file)} className="btn-ghost btn-sm">
+              <a href={downloadUrl(file, version)} className="btn-ghost btn-sm">
                 <Icon name="download" className="h-4 w-4" /> تنزيل
               </a>
             )}
@@ -834,18 +907,18 @@ function FilePreviewModal({ open, onClose, file, canDownload }: { open: boolean;
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-auto bg-gray-50 p-3">
-          {inline && mimeType.startsWith("image/") && (
+          {policy?.kind === "image" && policy.canStream && (
             <div className="flex min-h-[60vh] items-center justify-center">
               <img src={src} alt={file.displayName} className="max-h-[72vh] max-w-full rounded-lg object-contain shadow-sm" />
             </div>
           )}
-          {inline && mimeType === "application/pdf" && <iframe src={src} title={file.displayName} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" />}
-          {inline && mimeType.startsWith("video/") && (
+          {policy?.kind === "pdf" && policy.canStream && <iframe src={src} title={file.displayName} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" referrerPolicy="same-origin" />}
+          {policy?.kind === "video" && policy.canStream && (
             <div className="flex min-h-[60vh] items-center justify-center">
               <video src={src} controls className="max-h-[72vh] w-full max-w-5xl rounded-lg bg-black" />
             </div>
           )}
-          {inline && mimeType.startsWith("audio/") && (
+          {policy?.kind === "audio" && policy.canStream && (
             <div className="flex min-h-[45vh] items-center justify-center">
               <div className="w-full max-w-2xl rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center gap-3">
@@ -861,20 +934,29 @@ function FilePreviewModal({ open, onClose, file, canDownload }: { open: boolean;
               </div>
             </div>
           )}
-          {inline && textPreviewMimeTypes.has(mimeType) && <iframe src={src} title={file.displayName} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" />}
-          {!inline && (
+          {policy?.kind === "text" && (
+            <div className="min-h-[60vh] rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              {loading && <p className="text-sm text-gray-500">جاري تحميل المعاينة...</p>}
+              {!loading && payload?.error && <p className="text-sm text-red-700">{payload.error}</p>}
+              {!loading && payload?.text !== undefined && (
+                <>
+                  {payload.truncated && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">تم عرض أول 1MB فقط من النص.</p>}
+                  <pre className="whitespace-pre-wrap break-words text-left font-mono text-sm leading-6 text-gray-800" dir="auto">{payload.text}</pre>
+                </>
+              )}
+            </div>
+          )}
+          {policy && !policy.canStream && policy.kind !== "text" && (
             <div className="flex min-h-[60vh] items-center justify-center text-center">
               <div className="max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gray-50 text-gray-600">
                   <Icon name={fileIconFor(file.mimeType, file.displayName)} className="h-8 w-8" />
                 </div>
-                <h3 className="mt-4 font-bold text-gray-900">المعاينة المباشرة غير متاحة لهذا النوع</h3>
-                <p className="mt-2 text-sm leading-6 text-gray-500">
-                  الملف فُتح داخل النظام، لكن هذا النوع يحتاج تنزيله أو فتحه بتطبيقه المخصص.
-                </p>
+                <h3 className="mt-4 font-bold text-gray-900">{policy.kind === "blocked" ? "هذا النوع لا يفتح داخلياً" : "تفاصيل الملف"}</h3>
+                <p className="mt-2 text-sm leading-6 text-gray-500">{displayReason}</p>
                 {file.scanStatus !== "SAFE" && <p className="mt-3 text-sm text-amber-700">{safeScanReason(file.scanStatus)}</p>}
                 {file.scanStatus === "SAFE" && canDownload && (
-                  <a href={downloadUrl(file)} className="btn-primary mt-4 inline-flex">
+                  <a href={downloadUrl(file, version)} className="btn-primary mt-4 inline-flex">
                     <Icon name="download" className="h-4 w-4" /> تنزيل الملف
                   </a>
                 )}
@@ -1186,8 +1268,31 @@ function DeleteModal({ open, onClose, files, filter, canRestore, canPermanentDel
   );
 }
 
-function DetailsDrawer({ open, onClose, file, folders, users, patients, canEdit, canDownload, canAdmin }: { open: boolean; onClose: () => void; file: FileItem | null; folders: FolderItem[]; users: UserOption[]; patients: PatientOption[]; canEdit: boolean; canDownload: boolean; canAdmin: boolean }) {
+function DetailsDrawer({
+  open,
+  onClose,
+  file,
+  folders,
+  users,
+  patients,
+  canEdit,
+  canDownload,
+  canAdmin,
+  onPreviewVersion,
+}: {
+  open: boolean;
+  onClose: () => void;
+  file: FileItem | null;
+  folders: FolderItem[];
+  users: UserOption[];
+  patients: PatientOption[];
+  canEdit: boolean;
+  canDownload: boolean;
+  canAdmin: boolean;
+  onPreviewVersion: (version: number) => void;
+}) {
   if (!open || !file) return null;
+  const linkedPatient = file.patient || patients.find((patient) => patient.id === file.patientId) || null;
   return (
     <aside className="fixed inset-y-0 left-0 z-50 flex w-full max-w-md flex-col overflow-hidden border-r border-gray-200 bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label="تفاصيل الملف">
       <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
@@ -1207,13 +1312,16 @@ function DetailsDrawer({ open, onClose, file, folders, users, patients, canEdit,
         <div className="rounded-xl border border-gray-200 p-3 text-sm">
           <div className="flex items-center justify-between"><span>الحالة</span><span className={scanClass(file.scanStatus)}>{scanLabel[file.scanStatus] || file.scanStatus}</span></div>
           <p className="mt-2 text-gray-500">{safeScanReason(file.scanStatus)}</p>
-          {file.scanStatus === "SAFE" && canDownload && <a href={`/api/collaboration/files/${file.id}/download`} className="btn-primary btn-sm mt-3 inline-flex"><Icon name="download" className="h-4 w-4" /> تنزيل</a>}
+          {file.scanStatus === "SAFE" && canDownload && <a href={downloadUrl(file)} className="btn-primary btn-sm mt-3 inline-flex"><Icon name="download" className="h-4 w-4" /> تنزيل</a>}
         </div>
         <dl className="grid gap-2 text-sm">
           <div className="flex justify-between gap-4"><dt className="text-gray-500">المالك</dt><dd className="font-semibold text-gray-800">{file.owner.fullName}</dd></div>
+          <div className="flex justify-between gap-4"><dt className="text-gray-500">النوع</dt><dd className="min-w-0 truncate font-semibold text-gray-800">{file.mimeType}</dd></div>
+          <div className="flex justify-between gap-4"><dt className="text-gray-500">الحجم</dt><dd className="font-semibold text-gray-800">{sizeLabel(file.size)}</dd></div>
           <div className="flex justify-between gap-4"><dt className="text-gray-500">آخر تعديل</dt><dd className="font-semibold text-gray-800">{fmtDateTime(file.updatedAt)}</dd></div>
           <div className="flex justify-between gap-4"><dt className="text-gray-500">الإصدار</dt><dd className="font-semibold text-gray-800">v{file.currentVersion}</dd></div>
           <div className="flex justify-between gap-4"><dt className="text-gray-500">المجلد</dt><dd className="font-semibold text-gray-800">{file.folder?.name || "بدون مجلد"}</dd></div>
+          <div className="flex justify-between gap-4"><dt className="text-gray-500">المرجع المرتبط</dt><dd className="min-w-0 truncate font-semibold text-gray-800">{linkedPatient ? `${linkedPatient.fullName} #${linkedPatient.fileNumber}` : "لا يوجد"}</dd></div>
         </dl>
         {canEdit && (
           <form action={updateFileAction.bind(null, file.id)} className="grid gap-2 rounded-xl border border-gray-200 p-3">
@@ -1228,15 +1336,41 @@ function DetailsDrawer({ open, onClose, file, folders, users, patients, canEdit,
           </form>
         )}
         <div className="rounded-xl border border-gray-200 p-3">
+          <h3 className="mb-2 font-bold text-gray-900">المشاركات</h3>
+          {file.shares.length ? (
+            <div className="space-y-2">
+              {file.shares.map((share) => (
+                <div key={share.id} className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate">{shareTargetLabel(share)}</span>
+                  <span className={share.canEdit ? "badge-brand" : "badge-info"}>{share.canEdit ? "تحرير" : "قراءة فقط"}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">لا توجد مشاركات نشطة.</p>
+          )}
+        </div>
+        <div className="rounded-xl border border-gray-200 p-3">
           <h3 className="mb-2 font-bold text-gray-900">الإصدارات</h3>
           <div className="space-y-2">
             {file.versions.map((version) => (
               <div key={version.id} className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm">
                 <span>v{version.version} · {sizeLabel(version.size)}</span>
                 <span className={scanClass(version.scanStatus)}>{scanLabel[version.scanStatus] || version.scanStatus}</span>
-                {version.scanStatus === "SAFE" && canDownload && <a href={`/api/collaboration/files/${file.id}/download?version=${version.version}`} className="text-brand-700 hover:underline">تنزيل</a>}
+                {version.scanStatus === "SAFE" && <button type="button" onClick={() => onPreviewVersion(version.version)} className="text-brand-700 hover:underline">فتح</button>}
+                {version.scanStatus === "SAFE" && canDownload && <a href={downloadUrl(file, version.version)} className="text-brand-700 hover:underline">تنزيل</a>}
               </div>
             ))}
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-200 p-3">
+          <h3 className="mb-2 font-bold text-gray-900">سجل مختصر</h3>
+          <div className="space-y-2 text-sm text-gray-600">
+            <div className="flex justify-between gap-2"><span>إنشاء الملف</span><span>{fmtDateTime(file.createdAt)}</span></div>
+            <div className="flex justify-between gap-2"><span>آخر تعديل</span><span>{fmtDateTime(file.updatedAt)}</span></div>
+            {file.versions[0]?.scans[0] && (
+              <div className="flex justify-between gap-2"><span>آخر فحص</span><span>{scanLabel[file.versions[0].scans[0].status] || file.versions[0].scans[0].status}</span></div>
+            )}
           </div>
         </div>
         {canEdit && <VersionUploadInline file={file} />}

@@ -35,9 +35,9 @@ export type FilePolicySettings = {
 };
 
 export const DEFAULT_ALLOWED_FILE_TYPES = [
-  "pdf", "jpg", "jpeg", "png", "webp", "gif",
-  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv",
-  "zip", "rar", "7z", "mp3", "wav", "m4a", "mp4", "mov",
+  "pdf", "jpg", "jpeg", "png", "webp", "gif", "bmp",
+  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "json", "xml", "md", "log",
+  "zip", "rar", "7z", "mp3", "wav", "m4a", "mp4", "webm", "mov",
 ];
 
 export const DEFAULT_BLOCKED_FILE_TYPES = [
@@ -87,10 +87,15 @@ const MIME_EXTENSIONS: Record<string, string> = {
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
   "text/plain": "txt",
   "text/csv": "csv",
+  "application/json": "json",
+  "application/xml": "xml",
+  "text/markdown": "md",
+  "text/xml": "xml",
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/gif": "gif",
   "image/webp": "webp",
+  "image/bmp": "bmp",
   "application/zip": "zip",
 };
 
@@ -132,6 +137,7 @@ export function detectMime(buffer: Buffer, declaredType?: string | null) {
   if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
   if (buffer.subarray(0, 6).toString("ascii") === "GIF87a" || buffer.subarray(0, 6).toString("ascii") === "GIF89a") return "image/gif";
   if (buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  if (buffer.subarray(0, 2).toString("ascii") === "BM") return "image/bmp";
   if (buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WAVE") return "audio/wav";
   if (buffer.subarray(0, 3).toString("ascii") === "ID3" || buffer.subarray(0, 2).equals(Buffer.from([0xff, 0xfb]))) return "audio/mpeg";
   if (buffer.length > 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") return "video/mp4";

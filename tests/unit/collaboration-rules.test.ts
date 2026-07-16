@@ -13,6 +13,7 @@ import {
   shareKey,
   validateCollaborationUpload,
 } from "@/lib/collaboration-rules";
+import { collaborationPreviewPolicy } from "@/lib/collaboration-preview";
 import { scanBufferWithClamAv } from "@/lib/collaboration-scan";
 
 const actor = (overrides: Partial<any> = {}) => ({
@@ -123,5 +124,33 @@ describe("collaboration file download names", () => {
         version: 2,
       }),
     ).toBe("تقرير التأهيل.docx");
+  });
+});
+
+describe("collaboration file preview policy", () => {
+  it("allows safe browser-rendered media and PDF through stream preview", () => {
+    expect(collaborationPreviewPolicy({ mimeType: "image/png", name: "scan.png", scanStatus: "SAFE" })).toMatchObject({ kind: "image", canPreview: true, canStream: true });
+    expect(collaborationPreviewPolicy({ mimeType: "image/bmp", name: "scan.bmp", scanStatus: "SAFE" })).toMatchObject({ kind: "image", canPreview: true, canStream: true });
+    expect(collaborationPreviewPolicy({ mimeType: "application/pdf", name: "report.pdf", scanStatus: "SAFE" })).toMatchObject({ kind: "pdf", canPreview: true, canStream: true });
+    expect(collaborationPreviewPolicy({ mimeType: "video/mp4", name: "clip.mp4", scanStatus: "SAFE" })).toMatchObject({ kind: "video", canPreview: true, canStream: true });
+  });
+
+  it("previews text as escaped app data instead of iframe streaming", () => {
+    expect(collaborationPreviewPolicy({ mimeType: "application/json", name: "data.json", scanStatus: "SAFE" })).toMatchObject({ kind: "text", canPreview: true, canStream: false });
+    expect(collaborationPreviewPolicy({ mimeType: "text/xml", name: "notes.xml", scanStatus: "SAFE" })).toMatchObject({ kind: "text", canPreview: true, canStream: false });
+  });
+
+  it("blocks unsafe or unscanned content from preview", () => {
+    expect(collaborationPreviewPolicy({ mimeType: "text/html", name: "page.html", scanStatus: "SAFE" })).toMatchObject({ kind: "blocked", canPreview: false });
+    expect(collaborationPreviewPolicy({ mimeType: "text/plain", name: "script.sh", scanStatus: "SAFE" })).toMatchObject({ kind: "blocked", canPreview: false });
+    expect(collaborationPreviewPolicy({ mimeType: "application/pdf", name: "pending.pdf", scanStatus: "PENDING_SCAN" })).toMatchObject({ kind: "blocked", canPreview: false });
+  });
+
+  it("keeps Office files as details/download until a local converter is available", () => {
+    expect(collaborationPreviewPolicy({
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      name: "letter.docx",
+      scanStatus: "SAFE",
+    })).toMatchObject({ kind: "office", canPreview: false, canStream: false });
   });
 });

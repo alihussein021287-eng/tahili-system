@@ -379,6 +379,33 @@ function fileAccessWhere(actor: CollaborationActor): any {
   };
 }
 
+function fileShareTargetWhere(actor: CollaborationActor): any[] {
+  return [
+    { targetUserId: actor.id },
+    { targetType: "ALL_STAFF" as const },
+    { targetDepartment: actor.department || "__none__" },
+    { targetCenterId: { in: actor.centerIds.length ? actor.centerIds : [-1] } },
+    { targetConversation: { is: { members: { some: { userId: actor.id, status: "ACTIVE" } } } } },
+  ];
+}
+
+function actorCanManageFile(actor: CollaborationActor, file: { ownerId: string }) {
+  return file.ownerId === actor.id || actor.role === "ADMIN" || actor.permissions.has("files.admin");
+}
+
+async function actorCanEditSharedFile(actor: CollaborationActor, fileId: string) {
+  if (!actor.permissions.has("files.edit")) return false;
+  const count = await prisma.fileShare.count({
+    where: {
+      fileId,
+      revokedAt: null,
+      canEdit: true,
+      OR: fileShareTargetWhere(actor),
+    } as any,
+  });
+  return count > 0;
+}
+
 export async function assertFileAccess(actor: CollaborationActor, fileId: string, permission: string) {
   if (!actor.permissions.has(permission)) throw new Error("لا تملك صلاحية الملفات المطلوبة");
   const file = await prisma.collaborationFile.findFirst({
@@ -387,6 +414,29 @@ export async function assertFileAccess(actor: CollaborationActor, fileId: string
   } as any) as any;
   if (!file) throw new Error("الملف غير متاح");
   return file;
+}
+
+async function readCollaborationFileWithPermission(fileId: string, versionNumber: number | undefined, permission: "files.view" | "files.download") {
+  const actor = await collaborationActor(permission);
+  const file = await assertFileAccess(actor, fileId, permission);
+  if (file.scanStatus !== "SAFE") throw new Error("لا يمكن فتح الملف قبل نجاح الفحص");
+  const requestedVersion = Number.isInteger(versionNumber) && Number(versionNumber) > 0 ? Number(versionNumber) : undefined;
+  const version = requestedVersion
+    ? await prisma.fileVersion.findFirst({ where: { fileId: file.id, version: requestedVersion, scanStatus: "SAFE" } })
+    : file.versions[0];
+  if (!version || version.scanStatus !== "SAFE") throw new Error("الإصدار غير متاح");
+  const buffer = await getCollaborationObject(version.storageKey);
+  if (!buffer) throw new Error("تعذر قراءة الملف من التخزين");
+  await prisma.auditLog.create({
+    data: {
+      userId: actor.id,
+      action: "READ",
+      tableName: "collaboration_files",
+      recordId: file.id,
+      newValue: { version: version.version, mode: permission === "files.view" ? "preview" : "download" },
+    },
+  }).catch(() => {});
+  return { file, version, buffer };
 }
 
 export async function uploadCollaborationFileFromFile(file: File, formData: FormData) {
@@ -470,6 +520,7 @@ export async function listFiles(actor: CollaborationActor, filter = "all", query
       owner: { select: { fullName: true } },
       center: { select: { name: true } },
       folder: { select: { name: true } },
+      patient: { select: { fullName: true, fileNumber: true } },
       versions: { orderBy: { version: "desc" }, take: 5, include: { scans: { orderBy: { createdAt: "desc" }, take: 1 } } },
       shares: { where: { revokedAt: null }, include: { targetUser: { select: { fullName: true } }, targetConversation: { select: { title: true } }, targetCenter: { select: { name: true } } }, take: 10 },
       favorites: { where: { userId: actor.id }, select: { id: true } },
@@ -481,24 +532,18 @@ export async function listFiles(actor: CollaborationActor, filter = "all", query
 }
 
 export async function readCollaborationFile(fileId: string, versionNumber?: number) {
-  const actor = await collaborationActor("files.download");
-  const file = await assertFileAccess(actor, fileId, "files.download");
-  if (file.scanStatus !== "SAFE") throw new Error("لا يمكن تنزيل الملف قبل نجاح الفحص");
-  const version = versionNumber
-    ? await prisma.fileVersion.findFirst({ where: { fileId: file.id, version: versionNumber, scanStatus: "SAFE" } })
-    : file.versions[0];
-  if (!version || version.scanStatus !== "SAFE") throw new Error("الإصدار غير متاح للتنزيل");
-  const buffer = await getCollaborationObject(version.storageKey);
-  if (!buffer) throw new Error("تعذر قراءة الملف من التخزين");
-  await prisma.auditLog.create({ data: { userId: actor.id, action: "READ", tableName: "collaboration_files", recordId: file.id, newValue: { version: version.version } } }).catch(() => {});
-  return { file, version, buffer };
+  return readCollaborationFileWithPermission(fileId, versionNumber, "files.download");
+}
+
+export async function previewCollaborationFile(fileId: string, versionNumber?: number) {
+  return readCollaborationFileWithPermission(fileId, versionNumber, "files.view");
 }
 
 export async function updateFileMetadata(fileId: string, formData: FormData) {
   const actor = await collaborationActor("files.edit");
   await ensureWriteAllowed(actor);
   const file = await assertFileAccess(actor, fileId, "files.edit");
-  if (actor.id !== file.ownerId && actor.role !== "ADMIN" && !actor.permissions.has("files.admin")) throw new Error("لا يمكنك تعديل هذا الملف");
+  if (!actorCanManageFile(actor, file) && !(await actorCanEditSharedFile(actor, fileId))) throw new Error("لا يمكنك تعديل هذا الملف");
   const data = {
     displayName: asString(formData.get("displayName")) || file.displayName,
     description: asString(formData.get("description")) || null,
@@ -515,7 +560,7 @@ export async function uploadNewFileVersion(fileId: string, file: File) {
   const actor = await collaborationActor("files.edit");
   const settings = await ensureWriteAllowed(actor);
   const current = await assertFileAccess(actor, fileId, "files.edit");
-  if (actor.id !== current.ownerId && actor.role !== "ADMIN" && !actor.permissions.has("files.admin")) throw new Error("لا يمكنك رفع إصدار لهذا الملف");
+  if (!actorCanManageFile(actor, current) && !(await actorCanEditSharedFile(actor, fileId))) throw new Error("لا يمكنك رفع إصدار لهذا الملف");
   const buffer = Buffer.from(await file.arrayBuffer());
   const validation = validateCollaborationUpload({ name: file.name, size: file.size, buffer, declaredType: file.type, settings });
   const nextVersion = current.currentVersion + 1;
@@ -540,6 +585,7 @@ export async function shareFile(fileId: string, formData: FormData) {
   const actor = await collaborationActor("files.share");
   await ensureWriteAllowed(actor);
   const file = await assertFileAccess(actor, fileId, "files.share");
+  if (!actorCanManageFile(actor, file)) throw new Error("لا يمكنك إعادة مشاركة ملف لا تملكه");
   if (file.scanStatus !== "SAFE") throw new Error("لا يمكن مشاركة ملف قبل نجاح الفحص");
   const type = asString(formData.get("targetType")) as "USER" | "CONVERSATION" | "DEPARTMENT" | "CENTER" | "ALL_STAFF";
   const targetUserId = asString(formData.get("targetUserId")) || null;
@@ -589,7 +635,7 @@ export async function softDeleteFile(fileId: string) {
   const actor = await collaborationActor("files.delete");
   await ensureWriteAllowed(actor);
   const file = await assertFileAccess(actor, fileId, "files.delete");
-  if (file.ownerId !== actor.id && actor.role !== "ADMIN" && !actor.permissions.has("files.admin")) throw new Error("لا يمكنك حذف هذا الملف");
+  if (!actorCanManageFile(actor, file)) throw new Error("لا يمكنك حذف هذا الملف");
   await prisma.collaborationFile.update({ where: { id: fileId }, data: { deletedAt: new Date(), deletedById: actor.id } });
   await prisma.auditLog.create({ data: { userId: actor.id, action: "DELETE", tableName: "collaboration_files", recordId: fileId, newValue: { softDeleted: true } } });
 }
