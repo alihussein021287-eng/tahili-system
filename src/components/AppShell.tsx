@@ -42,6 +42,7 @@ const ALL_ITEMS: Item[] = [
   { href: "/approvals", label: "سير الموافقات", icon: "✅", perm: "approvals.view" },
   { href: "/care-board", label: "المرضى حسب المحطة", icon: "🗺", perm: "journey.view" },
   { href: "/station-kpis", label: "مؤشرات المحطات", icon: "📈", perm: "reports.view" },
+  { href: "/reports-finance", label: "لوحة التقارير والمالية", icon: "📊", perms: ["reports.view", "reports.official", "finance.view", "finance.report", "expenses.view", "expenses.reports", "approvals.view", "officialdocs.view", "analytics.view", "patients.export"] },
   { href: "/reports", label: "التقارير", icon: "▤", perm: "reports.view" },
   { href: "/inventory", label: "المخزون", icon: "▣", perm: "inventory.view" },
   { href: "/pharmacy", label: "الصيدلية", icon: "⚕️", perm: "pharmacy.view" },
@@ -76,8 +77,8 @@ const STANDALONE = ["/", "/notifications", "/collaboration"]; // روابط عا
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
   { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/therapy", "/therapy/today", "/centers", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
   { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy", "/pharmacy/stock", "/pharmacy/purchases", "/pharmacy/reports", "/inventory", "/devices"] },
-  { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports", "/reports/official", "/reports/statistical", "/centers/reports", "/official-docs", "/station-kpis", "/analytics", "/finance", "/finance/expenses"] },
-  { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff", "/users", "/approvals", "/workload"] },
+  { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports-finance"] },
+  { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff", "/users", "/workload"] },
   { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/permissions", "/audit", "/login-log", "/settings", "/backup", "/readiness"] },
 ];
 const MOBILE_QUICK_HREFS = ["/visits", "/queue", "/staff", "/appointments"];
@@ -127,7 +128,16 @@ export function AppShell({
 
   // تحديد العنصر الفعّال = أطول رابط يطابق المسار الحالي (يميّز /reports عن /reports/official)
   const matches = ALL_ITEMS.filter((it) => (it.href === "/" ? path === "/" : path === it.href || path.startsWith(it.href + "/")));
-  const activeHref = matches.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? "";
+  const matchedHref = matches.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? "";
+  const reportsFinanceActive = [
+    "/reports",
+    "/finance",
+    "/official-docs",
+    "/station-kpis",
+    "/analytics",
+    "/approvals",
+  ].some((href) => path === href || path.startsWith(href + "/"));
+  const activeHref = reportsFinanceActive ? "/reports-finance" : matchedHref;
   const activeGroupKey = NAV_GROUPS.find((g) => g.hrefs.includes(activeHref))?.key ?? "";
 
   // حالة الطي لكل مجموعة — تبدأ مفتوحة على المجموعة الفعّالة

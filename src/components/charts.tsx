@@ -13,7 +13,7 @@ export function BarChart({ data, height = 160 }: { data: { label: string; value:
           const h = (d.value / max) * 52;
           return (
             <rect key={i} x={i * bw + bw * 0.18} y={56 - h} width={bw * 0.64} height={h} fill="#0f766e" rx="0.6">
-              <title>{d.label}: {d.value}</title>
+              <title>{`${d.label}: ${d.value}`}</title>
             </rect>
           );
         })}
@@ -41,7 +41,7 @@ export function Donut({ data, size = 150 }: { data: { label: string; value: numb
             const seg = (
               <circle key={i} cx="80" cy="80" r={r} fill="none" stroke={PALETTE[i % PALETTE.length]}
                 strokeWidth="22" strokeDasharray={`${dash} ${c - dash}`} strokeDashoffset={-offset}>
-                <title>{d.label}: {d.value}</title>
+                <title>{`${d.label}: ${d.value}`}</title>
               </circle>
             );
             offset += dash;
