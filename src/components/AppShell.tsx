@@ -11,7 +11,7 @@ import { PresencePing } from "./PresencePing";
 import { canOpenNotification, notificationTone } from "@/lib/notifications";
 import type { PresenceConfig } from "@/lib/presence";
 
-type Item = { href: string; label: string; icon: string; perm: string };
+type Item = { href: string; label: string; icon: string; perm?: string; perms?: string[] };
 type AlertCounts = {
   admOver: number;
   devicesDue: number;
@@ -51,6 +51,7 @@ const ALL_ITEMS: Item[] = [
   { href: "/beds", label: "الرقود والفندقة", icon: "🛏", perm: "beds.view" },
   { href: "/meds", label: "أدوية الراقدين", icon: "💊", perm: "meds.view" },
   { href: "/devices", label: "التسليم والصيانة", icon: "🔧", perm: "devices.view" },
+  { href: "/staff", label: "لوحة الموظفين والمهام", icon: "🗂", perms: ["users.view", "attendance.view", "shifts.view", "tasks.view"] },
   { href: "/workload", label: "حمل المعالجين", icon: "👷", perm: "workload.view" },
   { href: "/attendance", label: "حضور الموظفين", icon: "🕒", perm: "attendance.view" },
   { href: "/tasks", label: "المهام", icon: "📌", perm: "tasks.view" },
@@ -76,10 +77,10 @@ const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[
   { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/therapy", "/therapy/today", "/centers", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
   { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy", "/pharmacy/stock", "/pharmacy/purchases", "/pharmacy/reports", "/inventory", "/devices"] },
   { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports", "/reports/official", "/reports/statistical", "/centers/reports", "/official-docs", "/station-kpis", "/analytics", "/finance", "/finance/expenses"] },
-  { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/tasks", "/approvals", "/workload", "/attendance", "/shifts"] },
-  { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/users", "/permissions", "/audit", "/login-log", "/settings", "/backup", "/readiness"] },
+  { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff", "/users", "/approvals", "/workload"] },
+  { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/permissions", "/audit", "/login-log", "/settings", "/backup", "/readiness"] },
 ];
-const MOBILE_QUICK_HREFS = ["/visits", "/queue", "/tasks", "/appointments"];
+const MOBILE_QUICK_HREFS = ["/visits", "/queue", "/staff", "/appointments"];
 
 export function AppShell({
   role,
@@ -102,7 +103,8 @@ export function AppShell({
   const path = usePathname();
 
   const permSet = new Set(perms);
-  const allItems = ALL_ITEMS.filter((it) => permSet.has(it.perm));
+  const hasAccess = (it: Item) => (it.perm ? permSet.has(it.perm) : false) || (it.perms?.some((perm) => permSet.has(perm)) ?? false);
+  const allItems = ALL_ITEMS.filter(hasAccess);
   const byHref: Record<string, Item> = {};
   for (const it of ALL_ITEMS) byHref[it.href] = it;
   // ربط كل نوع إشعار بصفحته — تظهر كشارة على القائمة (نفس فكرة شارة الصيدلية)
@@ -114,6 +116,7 @@ export function AppShell({
     "/inventory": { count: a.lowStock ?? 0, title: "مواد منخفضة بالمخزون" },
     "/devices": { count: a.devicesDue ?? 0, title: "أجهزة تحتاج صيانة" },
     "/beds": { count: a.admOver ?? 0, title: "رقود انتهت مدته" },
+    "/staff": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
     "/tasks": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
     "/collaboration": { count: a.collaborationUnread ?? 0, title: "رسائل تعاون غير مقروءة" },
   };
@@ -157,11 +160,11 @@ export function AppShell({
   const NavLinks = () => (
     <nav className="space-y-1 p-3">
       {/* عناصر مفردة (الرئيسية) */}
-      {STANDALONE.map((h) => byHref[h]).filter((it) => it && permSet.has(it.perm)).map((it) => renderItem(it))}
+      {STANDALONE.map((h) => byHref[h]).filter((it) => it && hasAccess(it)).map((it) => renderItem(it))}
 
       {/* المجموعات */}
       {NAV_GROUPS.map((g) => {
-        const items = g.hrefs.map((h) => byHref[h]).filter((it) => it && permSet.has(it.perm));
+        const items = g.hrefs.map((h) => byHref[h]).filter((it) => it && hasAccess(it));
         if (items.length === 0) return null;
         const isOpen = !!openGroups[g.key];
         const hasActive = items.some((it) => it.href === activeHref);
@@ -187,7 +190,7 @@ export function AppShell({
     </nav>
   );
   const MobileQuickNav = () => {
-    const items = MOBILE_QUICK_HREFS.map((h) => byHref[h]).filter((it) => it && permSet.has(it.perm));
+    const items = MOBILE_QUICK_HREFS.map((h) => byHref[h]).filter((it) => it && hasAccess(it));
     if (items.length === 0) return null;
     return (
       <nav className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">

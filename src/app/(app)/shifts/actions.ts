@@ -11,11 +11,16 @@ function dateOnly(v: string | undefined) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function savedPath(fd: FormData, tab: "shifts" | "leaves", message: string) {
+  const target = fd.get("returnTo")?.toString() === "staff" ? `/staff?tab=${tab}` : "/shifts";
+  return `${target}${target.includes("?") ? "&" : "?"}saved=${encodeURIComponent(message)}`;
+}
+
 export async function addShift(fd: FormData) {
   await assertPerm("shifts.manage");
   const name = fd.get("name")?.toString().trim();
   const date = dateOnly(fd.get("date")?.toString());
-  if (!name || !date) redirect("/shifts?saved=" + encodeURIComponent("أدخل الموظف والتاريخ"));
+  if (!name || !date) redirect(savedPath(fd, "shifts", "أدخل الموظف والتاريخ"));
   const t = await prisma.shift.create({ data: {
     name: name!, date: date!,
     type: (fd.get("type")?.toString() as any) || "MORNING",
@@ -25,6 +30,7 @@ export async function addShift(fd: FormData) {
   }});
   await logAudit({ action: "CREATE", tableName: "shifts", recordId: t.id });
   revalidatePath("/shifts"); revalidatePath("/attendance");
+  revalidatePath("/staff");
 }
 
 export async function deleteShift(id: string) {
@@ -33,6 +39,7 @@ export async function deleteShift(id: string) {
   await prisma.shift.delete({ where: { id } });
   await logAudit({ action: "DELETE", tableName: "shifts", recordId: id });
   revalidatePath("/shifts"); revalidatePath("/attendance");
+  revalidatePath("/staff");
 }
 
 export async function requestLeave(fd: FormData) {
@@ -40,8 +47,8 @@ export async function requestLeave(fd: FormData) {
   const name = fd.get("name")?.toString().trim();
   const from = dateOnly(fd.get("fromDate")?.toString());
   const to = dateOnly(fd.get("toDate")?.toString());
-  if (!name || !from || !to) redirect("/shifts?saved=" + encodeURIComponent("أدخل الموظف وتاريخي الإجازة"));
-  if (to! < from!) redirect("/shifts?saved=" + encodeURIComponent("تاريخ النهاية قبل البداية"));
+  if (!name || !from || !to) redirect(savedPath(fd, "leaves", "أدخل الموظف وتاريخي الإجازة"));
+  if (to! < from!) redirect(savedPath(fd, "leaves", "تاريخ النهاية قبل البداية"));
   const l = await prisma.leave.create({ data: {
     name: name!, fromDate: from!, toDate: to!,
     type: (fd.get("type")?.toString() as any) || "ANNUAL",
@@ -49,6 +56,7 @@ export async function requestLeave(fd: FormData) {
   }});
   await logAudit({ action: "CREATE", tableName: "leaves", recordId: l.id });
   revalidatePath("/shifts"); revalidatePath("/attendance");
+  revalidatePath("/staff");
 }
 
 export async function setLeaveStatus(id: string, status: string) {
@@ -57,6 +65,7 @@ export async function setLeaveStatus(id: string, status: string) {
   await prisma.leave.update({ where: { id }, data: { status: status as any } });
   await logAudit({ action: "UPDATE", tableName: "leaves", recordId: id, newValue: { status } });
   revalidatePath("/shifts"); revalidatePath("/attendance");
+  revalidatePath("/staff");
 }
 
 export async function deleteLeave(id: string) {
@@ -65,4 +74,5 @@ export async function deleteLeave(id: string) {
   await prisma.leave.delete({ where: { id } });
   await logAudit({ action: "DELETE", tableName: "leaves", recordId: id });
   revalidatePath("/shifts"); revalidatePath("/attendance");
+  revalidatePath("/staff");
 }

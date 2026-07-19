@@ -8,15 +8,17 @@ import { redirect } from "next/navigation";
 import { parseOrThrow, taskCreateSchema } from "@/lib/validate";
 import { notifyRole, notifyUser } from "@/lib/notify";
 
-function withSaved(message: string) {
+function withSaved(message: string, returnTo?: string) {
+  if (returnTo === "staff") return "/staff?tab=tasks&saved=" + encodeURIComponent(message);
   return "/tasks?saved=" + encodeURIComponent(message);
 }
 
 export async function createTask(fd: FormData) {
   const s = await requireSession();
   await assertPerm("tasks.create");
+  const returnTo = fd.get("returnTo")?.toString();
   const title = fd.get("title")?.toString().trim();
-  if (!title) redirect(withSaved("عنوان المهمة مطلوب"));
+  if (!title) redirect(withSaved("عنوان المهمة مطلوب", returnTo));
   const v = parseOrThrow(taskCreateSchema, {
     title,
     description: fd.get("description")?.toString() || null,
@@ -42,15 +44,15 @@ export async function createTask(fd: FormData) {
   const body = v.dueDate ? `تاريخ الاستحقاق: ${v.dueDate}` : undefined;
   if (assignedToId) await notifyUser(assignedToId, "مهمة جديدة", { body: `${v.title}${body ? ` — ${body}` : ""}`, link: "/tasks" });
   if (assignedRole) await notifyRole(assignedRole, "مهمة جديدة للدور", { body: `${v.title}${body ? ` — ${body}` : ""}`, link: "/tasks" });
-  revalidatePath("/tasks"); revalidatePath("/");
-  redirect(withSaved("تمت إضافة المهمة"));
+  revalidatePath("/tasks"); revalidatePath("/staff"); revalidatePath("/");
+  redirect(withSaved("تمت إضافة المهمة", returnTo));
 }
 
 export async function startTask(id: string) {
   await assertPerm("tasks.complete");
   await prisma.task.update({ where: { id }, data: { status: "IN_PROGRESS" } });
   await logAudit({ action: "UPDATE", tableName: "tasks", recordId: id, newValue: { status: "IN_PROGRESS" } });
-  revalidatePath("/tasks"); revalidatePath("/");
+  revalidatePath("/tasks"); revalidatePath("/staff"); revalidatePath("/");
 }
 
 export async function completeTask(id: string) {
@@ -58,14 +60,14 @@ export async function completeTask(id: string) {
   await assertPerm("tasks.complete");
   await prisma.task.update({ where: { id }, data: { status: "DONE", completedAt: new Date(), completedById: (s?.user as any)?.id } });
   await logAudit({ action: "UPDATE", tableName: "tasks", recordId: id, newValue: { status: "DONE" } });
-  revalidatePath("/tasks"); revalidatePath("/");
+  revalidatePath("/tasks"); revalidatePath("/staff"); revalidatePath("/");
 }
 
 export async function reopenTask(id: string) {
   await assertPerm("tasks.complete");
   await prisma.task.update({ where: { id }, data: { status: "OPEN", completedAt: null, completedById: null } });
   await logAudit({ action: "UPDATE", tableName: "tasks", recordId: id, newValue: { status: "OPEN" } });
-  revalidatePath("/tasks"); revalidatePath("/");
+  revalidatePath("/tasks"); revalidatePath("/staff"); revalidatePath("/");
 }
 
 export async function deleteTask(id: string) {
@@ -73,5 +75,5 @@ export async function deleteTask(id: string) {
   await assertPerm("tasks.delete");
   await prisma.task.delete({ where: { id } });
   await logAudit({ action: "DELETE", tableName: "tasks", recordId: id });
-  revalidatePath("/tasks"); revalidatePath("/");
+  revalidatePath("/tasks"); revalidatePath("/staff"); revalidatePath("/");
 }
