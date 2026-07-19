@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { currentPerms, getSession, requirePerm } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
 import { getReadinessChecks, type ReadinessCheck } from "@/lib/readiness";
+import { readinessDiskStatus } from "@/lib/readiness-config";
 import { getBackupOverview } from "@/lib/backup";
 import { fmtDateTime } from "@/lib/labels";
 import Link from "next/link";
@@ -77,7 +78,7 @@ export default async function Readiness() {
   const dbBackupStale = backupAgeHours > adminConfig.dbBackupStaleHours;
   const uploadsBackupStale = uploadsAgeHours > adminConfig.uploadsBackupStaleHours;
   const diskUsedPercent = systemStatus.disk.total > 0 ? ((systemStatus.disk.total - systemStatus.disk.free) / systemStatus.disk.total) * 100 : 0;
-  const diskTone = diskUsedPercent >= adminConfig.diskCriticalPercent ? "fail" : diskUsedPercent >= adminConfig.diskWarnPercent ? "warn" : "ok";
+  const diskTone = readinessDiskStatus(diskUsedPercent, adminConfig);
   const autoBackupStopped = canSeeBackup && org?.autoBackup === false;
   const failedLoginHigh = failedLogins24h >= 10;
   const envChecks = [

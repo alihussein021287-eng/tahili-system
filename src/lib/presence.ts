@@ -5,10 +5,6 @@ export type PresenceConfig = {
   pingIntervalSeconds?: number;
 };
 
-export const PRESENCE_ONLINE_WINDOW_MS = 3 * 60 * 1000;
-export const PRESENCE_IDLE_WINDOW_MS = 15 * 60 * 1000;
-export const PRESENCE_PING_INTERVAL_MS = 60 * 1000;
-
 export const PRESENCE_LABELS: Record<PresenceStatus, string> = {
   online: "أونلاين",
   idle: "خامل",

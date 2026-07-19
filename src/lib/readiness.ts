@@ -4,6 +4,8 @@ import { getBackupOverview } from "@/lib/backup";
 import { getAdminConfig, type AdminConfig } from "@/lib/admin-config";
 import { checkClamAvStatus } from "@/lib/collaboration-scan";
 import { getLibreOfficeStatus } from "@/lib/collaboration-office-preview";
+import { isBackupStale, readinessDiskStatus } from "@/lib/readiness-config";
+import { statfsSync } from "fs";
 import fs from "fs/promises";
 import path from "path";
 
@@ -68,10 +70,37 @@ async function checkLastBackup(config: AdminConfig) {
   if (!latest) {
     return warn("backup", "آخر نسخة احتياطية", "لم يتم العثور على نسخة قاعدة بيانات.", "شغّل backup.sh أو أنشئ نسخة من صفحة النسخ الاحتياطي", "/backup");
   }
-  const stale = Date.now() - latest.mtime.getTime() > config.dbBackupStaleHours * 3600000;
+  const stale = isBackupStale(latest.mtime, config.dbBackupStaleHours);
   const source = latest.location === "app" ? "واجهة التطبيق" : "سكربت السيرفر";
   const detail = `${latest.name} (${Math.ceil(latest.size / 1024)} KB) - ${ageLabel(latest.mtime)} - ${source}`;
   return stale ? warn("backup", "آخر نسخة احتياطية", detail, "أنشئ نسخة جديدة", "/backup") : ok("backup", "آخر نسخة احتياطية", detail);
+}
+
+async function checkUploadsBackup(config: AdminConfig) {
+  const latest = getBackupOverview().latestUploads;
+  if (!latest) {
+    return warn("uploadsBackup", "آخر نسخة مرفقات uploads", "لم يتم العثور على نسخة مرفقات.", "شغّل backup.sh لنسخ uploads", "/backup");
+  }
+  const stale = isBackupStale(latest.mtime, config.uploadsBackupStaleHours);
+  const detail = `${latest.name} (${Math.ceil(latest.size / 1024)} KB) - ${ageLabel(latest.mtime)} - سكربت السيرفر`;
+  return stale ? warn("uploadsBackup", "آخر نسخة مرفقات uploads", detail, "أنشئ نسخة مرفقات جديدة", "/backup") : ok("uploadsBackup", "آخر نسخة مرفقات uploads", detail);
+}
+
+async function checkDisk(config: AdminConfig) {
+  try {
+    const disk = statfsSync(process.cwd());
+    const total = disk.blocks * disk.bsize;
+    const free = disk.bavail * disk.bsize;
+    if (total <= 0) return warn("disk", "مساحة القرص", "تعذر حساب الحجم الكلي للقرص.");
+    const usedPercent = ((total - free) / total) * 100;
+    const status = readinessDiskStatus(usedPercent, config);
+    const detail = `${Math.round(usedPercent)}% مستخدم. التحذير عند ${config.diskWarnPercent}% والخطر عند ${config.diskCriticalPercent}%.`;
+    if (status === "fail") return fail("disk", "مساحة القرص", detail, "حرر مساحة أو وسّع القرص");
+    if (status === "warn") return warn("disk", "مساحة القرص", detail, "راقب المساحة المتبقية");
+    return ok("disk", "مساحة القرص", detail);
+  } catch (e: any) {
+    return warn("disk", "مساحة القرص", e?.message || "تعذر فحص مساحة القرص.");
+  }
 }
 
 async function checkAutoBackup() {
@@ -138,7 +167,9 @@ export async function getReadinessChecks(): Promise<ReadinessCheck[]> {
 
   checks.push(await checkUploads());
   checks.push(await checkMinio());
+  checks.push(await checkDisk(config));
   checks.push(await checkLastBackup(config));
+  checks.push(await checkUploadsBackup(config));
   checks.push(await checkAutoBackup());
   checks.push(await checkPermissions());
   checks.push(await checkClamAv(config));
