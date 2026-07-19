@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
 import { currentPerms } from "@/lib/access";
@@ -21,5 +22,5 @@ export default async function CenterPage({ params }: { params: Promise<{ slug: s
     prisma.centerMembership.findMany({ where: { centerId: center.id }, include: { user: true }, orderBy: { startDate: "desc" } }),
     prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true }, orderBy: { fullName: "asc" } }),
   ]);
-  return <div className="space-y-5"><PageHeader title={config.title} subtitle="الإحالات والبرامج والعضويات والجلسات" icon="🏥" /><CenterWorkspace slug={slug} center={center} services={config.services} referrals={referrals} programs={programs} members={members} users={users} canManageMembers={perms.has("centers.memberships.manage")} canManagePrograms={perms.has("centers.programs.manage")} canViewSensitive={perms.has("centers.psych.sensitive")} /></div>;
+  return <div className="space-y-5"><PageHeader title={config.title} subtitle="الإحالات والبرامج والعضويات والجلسات" icon="🏥"><Link href="/therapy-centers?tab=centers" className="btn-ghost bg-white text-brand-700">لوحة المسار العلاجي والمراكز</Link></PageHeader><CenterWorkspace slug={slug} center={center} services={config.services} referrals={referrals} programs={programs} members={members} users={users} canManageMembers={perms.has("centers.memberships.manage")} canManagePrograms={perms.has("centers.programs.manage")} canViewSensitive={perms.has("centers.psych.sensitive")} /></div>;
 }

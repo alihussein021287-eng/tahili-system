@@ -30,9 +30,11 @@ const ALL_ITEMS: Item[] = [
   { href: "/", label: "الرئيسية", icon: "▤", perm: "dashboard.view" },
   { href: "/notifications", label: "مركز التنبيهات", icon: "🔔", perm: "dashboard.view" },
   { href: "/collaboration", label: "مركز التعاون", icon: "💬", perm: "collaboration.view" },
+  { href: "/patients-care", label: "لوحة المرضى والرعاية", icon: "🧑‍⚕️", perms: ["patients.view", "patients.create", "visits.view", "queue.view", "journey.view", "referrals.view", "appointments.view"] },
   { href: "/patients", label: "المراجعون", icon: "☺", perm: "patients.view" },
   { href: "/referrals", label: "الفحوص والإحالات", icon: "↗", perm: "referrals.view" },
   { href: "/appointments", label: "المواعيد", icon: "▦", perm: "appointments.view" },
+  { href: "/therapy-centers", label: "لوحة المسار العلاجي والمراكز", icon: "🏥", perms: ["therapy.view", "therapy.session.record", "centers.view", "beds.view", "meds.view", "centers.sessions.record"] },
   { href: "/therapy", label: "العلاج الطبيعي", icon: "🏃", perm: "therapy.view" },
   { href: "/therapy/today", label: "جلساتي اليوم", icon: "🗓", perm: "therapy.session.record" },
   { href: "/centers", label: "مساحات المراكز", icon: "🏥", perm: "centers.view" },
@@ -76,13 +78,14 @@ const ALL_ITEMS: Item[] = [
 // مجموعات التنقل: تبويب رئيسي (مجموعة) ← تبويبات فرعية (روابط)
 const STANDALONE = ["/", "/notifications", "/collaboration"]; // روابط عامة تبقى مفردة فوق
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
-  { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/therapy", "/therapy/today", "/centers", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
+  { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients-care"] },
+  { key: "therapy", title: "المسار العلاجي والمراكز", icon: "🏥", hrefs: ["/therapy-centers"] },
   { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy-inventory", "/devices"] },
   { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports-finance"] },
   { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff", "/users", "/workload"] },
   { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/permissions", "/audit", "/login-log", "/settings", "/backup", "/readiness"] },
 ];
-const MOBILE_QUICK_HREFS = ["/visits", "/queue", "/staff", "/appointments"];
+const MOBILE_QUICK_HREFS = ["/patients-care", "/queue", "/therapy-centers", "/staff"];
 
 export function AppShell({
   role,
@@ -112,6 +115,8 @@ export function AppShell({
   // ربط كل نوع إشعار بصفحته — تظهر كشارة على القائمة (نفس فكرة شارة الصيدلية)
   const a = alerts ?? { admOver: 0, devicesDue: 0, lowStock: 0, rxPending: 0, expiringSoon: 0, myTasks: 0, overdueTasks: 0, appointmentSoon: 0 };
   const ALERT_BY_HREF: Record<string, { count: number; title: string }> = {
+    "/patients-care": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة ضمن المرضى والرعاية" },
+    "/therapy-centers": { count: a.admOver ?? 0, title: "رقود أو مسارات علاجية تحتاج متابعة" },
     "/appointments": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة خلال ساعتين" },
     "/pharmacy-inventory": { count: (a.rxPending ?? 0) + (a.expiringSoon ?? 0) + (a.lowStock ?? 0), title: "وصفات ونواقص ودفعات تحتاج متابعة" },
     "/pharmacy": { count: a.rxPending ?? 0, title: "وصفات قيد الانتظار" },
@@ -143,7 +148,21 @@ export function AppShell({
     "/pharmacy",
     "/inventory",
   ].some((href) => path === href || path.startsWith(href + "/"));
-  const activeHref = pharmacyInventoryActive ? "/pharmacy-inventory" : reportsFinanceActive ? "/reports-finance" : matchedHref;
+  const patientsCareActive = [
+    "/patients",
+    "/visits",
+    "/queue",
+    "/care-board",
+    "/referrals",
+    "/appointments",
+  ].some((href) => path === href || path.startsWith(href + "/"));
+  const therapyCentersActive = [
+    "/therapy",
+    "/centers",
+    "/beds",
+    "/meds",
+  ].some((href) => path === href || path.startsWith(href + "/"));
+  const activeHref = pharmacyInventoryActive ? "/pharmacy-inventory" : reportsFinanceActive ? "/reports-finance" : therapyCentersActive ? "/therapy-centers" : patientsCareActive ? "/patients-care" : matchedHref;
   const activeGroupKey = NAV_GROUPS.find((g) => g.hrefs.includes(activeHref))?.key ?? "";
 
   // حالة الطي لكل مجموعة — تبدأ مفتوحة على المجموعة الفعّالة

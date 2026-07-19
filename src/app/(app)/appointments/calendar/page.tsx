@@ -73,7 +73,9 @@ export default async function CalendarView({
 
   return (
     <div className="space-y-5">
-      <PageHeader title="تقويم المواعيد" subtitle={`عرض أسبوعي · ${rangeLabel}`} icon="🗓" />
+      <PageHeader title="تقويم المواعيد" subtitle={`عرض أسبوعي · ${rangeLabel}`} icon="🗓">
+        <Link href="/patients-care?tab=appointments" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+      </PageHeader>
 
       <div className="card space-y-3 p-3">
         {/* التنقّل + الفلاتر */}

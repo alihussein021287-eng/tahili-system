@@ -14,7 +14,9 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
 
   return (
     <div className="space-y-5">
-      <PageHeader title="جودة بيانات المراجعين" subtitle={`${report.scanned} ملف مفحوص · ${report.totalIssues} مؤشر يحتاج مراجعة`} icon="☑" />
+      <PageHeader title="جودة بيانات المراجعين" subtitle={`${report.scanned} ملف مفحوص · ${report.totalIssues} مؤشر يحتاج مراجعة`} icon="☑">
+        <Link href="/patients-care?tab=alerts" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+      </PageHeader>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Link href="/patients" className="btn-ghost">← المراجعون</Link>
@@ -65,4 +67,3 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
     </div>
   );
 }
-

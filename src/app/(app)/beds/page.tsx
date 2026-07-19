@@ -33,7 +33,9 @@ export default async function Beds() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="الرقود والفندقة" subtitle="إشغال الغرف ومتابعة الرقود" icon="🛏" />
+      <PageHeader title="الرقود والفندقة" subtitle="إشغال الغرف ومتابعة الرقود" icon="🛏">
+        <Link href="/therapy-centers?tab=beds" className="btn-ghost bg-white text-brand-700">لوحة المسار العلاجي والمراكز</Link>
+      </PageHeader>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div className="card p-5"><div className="text-2xl font-bold text-gray-800">{totalBeds}</div><div className="text-sm text-gray-500">إجمالي الأسرّة</div></div>

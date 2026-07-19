@@ -40,7 +40,9 @@ export default async function Queue() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="طابور المراجعين" subtitle={`طابور اليوم — ${entries.length}`} icon="⏳" />
+      <PageHeader title="طابور المراجعين" subtitle={`طابور اليوم — ${entries.length}`} icon="⏳">
+        <Link href="/patients-care?tab=queue" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+      </PageHeader>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-2">
           <a href="/display" target="_blank" className="btn-ghost text-sm">📺 شاشة العرض</a>

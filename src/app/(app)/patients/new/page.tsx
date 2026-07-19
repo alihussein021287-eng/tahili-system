@@ -1,4 +1,5 @@
 import { requirePerm } from "@/lib/access";
+import Link from "next/link";
 import { PatientForm } from "@/components/PatientForm";
 import { PageHeader } from "@/components/PageHeader";
 import { createPatient } from "../actions";
@@ -15,7 +16,9 @@ export default async function NewPatient() {
   ]);
   return (
     <div className="space-y-4">
-      <PageHeader title="إضافة مراجع جديد" subtitle="تسجيل مراجع في النظام" icon="➕" />
+      <PageHeader title="إضافة مراجع جديد" subtitle="تسجيل مراجع في النظام" icon="➕">
+        <Link href="/patients-care?tab=new" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+      </PageHeader>
       {userBranch?.branch?.name && <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800">سيتم اختيار فرعك افتراضياً: {userBranch.branch.name}</div>}
       <PatientForm action={createPatient}
         governorates={JSON.parse(JSON.stringify(governorates))}

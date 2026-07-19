@@ -16,7 +16,9 @@ export default async function ImportPatients({ searchParams }: { searchParams: P
 
   return (
     <div className="space-y-4">
-      <PageHeader title="استيراد جماعي للمراجعين" subtitle="CSV مع معاينة قبل الحفظ ومنع تكرار قوي" icon="⤒" />
+      <PageHeader title="استيراد جماعي للمراجعين" subtitle="CSV مع معاينة قبل الحفظ ومنع تكرار قوي" icon="⤒">
+        <Link href="/patients-care?tab=new" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+      </PageHeader>
       <div className="flex items-center justify-end">
         <Link href="/patients" className="text-sm text-gray-500 hover:underline">→ رجوع</Link>
       </div>

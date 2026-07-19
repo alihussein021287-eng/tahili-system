@@ -124,7 +124,10 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
   return (
     <div className="space-y-5">
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
-        <Link href="/patients" className="text-sm text-gray-500 hover:underline">→ رجوع للقائمة</Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/patients" className="text-sm text-gray-500 hover:underline">→ رجوع للقائمة</Link>
+          <Link href="/patients-care?tab=patients" className="text-sm text-brand-700 hover:underline">لوحة المرضى والرعاية</Link>
+        </div>
         {patient.archivedAt && <span className="badge bg-amber-50 text-amber-700">مؤرشف — {fmtDate(patient.archivedAt)}</span>}
         <div className="flex flex-wrap justify-end gap-2">
           {cPrint && <Link href={`/patients/${id}/report`} className="btn-ghost">تقرير قابل للطباعة</Link>}

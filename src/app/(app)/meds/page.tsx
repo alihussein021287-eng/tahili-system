@@ -29,7 +29,9 @@ export default async function Meds() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="أدوية الراقدين" subtitle={`جرعات اليوم — متبقّي ${pending}`} icon="💊" />
+      <PageHeader title="أدوية الراقدين" subtitle={`جرعات اليوم — متبقّي ${pending}`} icon="💊">
+        <Link href="/therapy-centers?tab=meds" className="btn-ghost bg-white text-brand-700">لوحة المسار العلاجي والمراكز</Link>
+      </PageHeader>
 
       {editable && (
         <form action={addMedDose} className="card flex flex-wrap items-end gap-2 p-4">

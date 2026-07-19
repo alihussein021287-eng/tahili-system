@@ -45,7 +45,9 @@ export default async function CareBoard() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="المرضى حسب المحطة" subtitle="توزيع المراجعين الحاليين على محطات المسار — لإدارة الزحمة" icon="🗺" />
+      <PageHeader title="المرضى حسب المحطة" subtitle="توزيع المراجعين الحاليين على محطات المسار — لإدارة الزحمة" icon="🗺">
+        <Link href="/patients-care?tab=journey" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+      </PageHeader>
 
       <div className="flex flex-wrap gap-2 text-sm">
         <span className="rounded-lg bg-brand-50 px-3 py-1 text-brand-700">إجمالي قيد المسار: <b>{current.length}</b></span>

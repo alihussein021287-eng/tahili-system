@@ -19,7 +19,9 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
   ];
   const rows = await prisma.referralRequest.findMany({ where, include: { patient: { select: { fullName: true, fileNumber: true } }, destinationCenter: { select: { name: true } }, assignedReviewer: { select: { fullName: true } } }, orderBy: { createdAt: "desc" }, take: 200 });
   return <div className="space-y-5">
-    <PageHeader title="طلبات الفحوص والإحالات" subtitle="متابعة الإحالات الداخلية وكتب الإرسال والنتائج" icon="↗" />
+    <PageHeader title="طلبات الفحوص والإحالات" subtitle="متابعة الإحالات الداخلية وكتب الإرسال والنتائج" icon="↗">
+      <Link href="/patients-care?tab=referrals" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+    </PageHeader>
     <form action="/referrals" className="card grid gap-3 p-4 md:grid-cols-4" autoComplete="off">
       <label className="label md:col-span-2">بحث<input name="q" className="input mt-1" defaultValue={sp.q || ""} placeholder="اسم المراجع أو الجهة أو الخدمة…" /></label>
       <label className="label">الحالة<select name="status" className="input mt-1" defaultValue={sp.status || ""}><option value="">كل الحالات</option>{Object.entries(REFERRAL_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

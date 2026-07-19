@@ -112,7 +112,9 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-5">
-      <PageHeader title="المواعيد" subtitle="جدولة ومتابعة المواعيد" icon="📅" />
+      <PageHeader title="المواعيد" subtitle="جدولة ومتابعة المواعيد" icon="📅">
+        <Link href="/patients-care?tab=appointments" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+      </PageHeader>
       {userBranch?.branch?.name && (
         <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800">
           {activeBranchId ? `المواعيد مفلترة افتراضياً حسب فرعك: ${userBranch.branch.name}` : "تعرض مواعيد كل الفروع حالياً"}
