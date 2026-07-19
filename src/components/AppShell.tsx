@@ -44,6 +44,7 @@ const ALL_ITEMS: Item[] = [
   { href: "/station-kpis", label: "مؤشرات المحطات", icon: "📈", perm: "reports.view" },
   { href: "/reports-finance", label: "لوحة التقارير والمالية", icon: "📊", perms: ["reports.view", "reports.official", "finance.view", "finance.report", "expenses.view", "expenses.reports", "approvals.view", "officialdocs.view", "analytics.view", "patients.export"] },
   { href: "/reports", label: "التقارير", icon: "▤", perm: "reports.view" },
+  { href: "/pharmacy-inventory", label: "لوحة الصيدلية والمخزون", icon: "💊", perms: ["pharmacy.view", "pharmacy.dispense", "pharmacy.batch", "inventory.view", "inventory.manage", "pharmacy.purchase.view", "pharmacy.purchase.create", "pharmacy.purchase.receive"] },
   { href: "/inventory", label: "المخزون", icon: "▣", perm: "inventory.view" },
   { href: "/pharmacy", label: "الصيدلية", icon: "⚕️", perm: "pharmacy.view" },
   { href: "/pharmacy/stock", label: "دفعات الصيدلية", icon: "📦", perm: "pharmacy.view" },
@@ -76,7 +77,7 @@ const ALL_ITEMS: Item[] = [
 const STANDALONE = ["/", "/notifications", "/collaboration"]; // روابط عامة تبقى مفردة فوق
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
   { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients", "/referrals", "/appointments", "/therapy", "/therapy/today", "/centers", "/queue", "/visits", "/care-board", "/beds", "/meds"] },
-  { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy", "/pharmacy/stock", "/pharmacy/purchases", "/pharmacy/reports", "/inventory", "/devices"] },
+  { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy-inventory", "/devices"] },
   { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports-finance"] },
   { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff", "/users", "/workload"] },
   { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/permissions", "/audit", "/login-log", "/settings", "/backup", "/readiness"] },
@@ -112,6 +113,7 @@ export function AppShell({
   const a = alerts ?? { admOver: 0, devicesDue: 0, lowStock: 0, rxPending: 0, expiringSoon: 0, myTasks: 0, overdueTasks: 0, appointmentSoon: 0 };
   const ALERT_BY_HREF: Record<string, { count: number; title: string }> = {
     "/appointments": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة خلال ساعتين" },
+    "/pharmacy-inventory": { count: (a.rxPending ?? 0) + (a.expiringSoon ?? 0) + (a.lowStock ?? 0), title: "وصفات ونواقص ودفعات تحتاج متابعة" },
     "/pharmacy": { count: a.rxPending ?? 0, title: "وصفات قيد الانتظار" },
     "/pharmacy/stock": { count: a.expiringSoon ?? 0, title: "دفعات قريبة أو منتهية النفاذ" },
     "/inventory": { count: a.lowStock ?? 0, title: "مواد منخفضة بالمخزون" },
@@ -137,7 +139,11 @@ export function AppShell({
     "/analytics",
     "/approvals",
   ].some((href) => path === href || path.startsWith(href + "/"));
-  const activeHref = reportsFinanceActive ? "/reports-finance" : matchedHref;
+  const pharmacyInventoryActive = [
+    "/pharmacy",
+    "/inventory",
+  ].some((href) => path === href || path.startsWith(href + "/"));
+  const activeHref = pharmacyInventoryActive ? "/pharmacy-inventory" : reportsFinanceActive ? "/reports-finance" : matchedHref;
   const activeGroupKey = NAV_GROUPS.find((g) => g.hrefs.includes(activeHref))?.key ?? "";
 
   // حالة الطي لكل مجموعة — تبدأ مفتوحة على المجموعة الفعّالة
