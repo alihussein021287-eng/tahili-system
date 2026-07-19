@@ -422,7 +422,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             <tbody>
               {tasks.map((t: any) => (
                 <tr key={t.id} className="hover:bg-gray-50">
-                  <td className="td"><Link href="/tasks" className="font-medium text-brand-700 hover:underline">{t.title}</Link><div className="text-xs text-gray-400">{t.description || "—"}</div></td>
+                  <td className="td"><Link href="/staff?tab=tasks" className="font-medium text-brand-700 hover:underline">{t.title}</Link><div className="text-xs text-gray-400">{t.description || "—"}</div></td>
                   <td className="td"><Badge>{t.status}</Badge></td>
                   <td className="td">{t.dueDate ? fmtDate(t.dueDate) : "—"}</td>
                   <td className="td">{t.assignedTo?.fullName ?? t.assignedRole ?? "—"}</td>

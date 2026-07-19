@@ -58,7 +58,7 @@ export function CommandPalette({ items }: { items: Item[] }) {
           {filtered.length === 0 && <div className="px-3 py-6 text-center text-sm text-gray-400">لا نتائج</div>}
           {filtered.map((it, i) => (
             <button
-              key={it.href}
+              key={`${it.href}:${it.label}`}
               onMouseEnter={() => setIdx(i)}
               onClick={() => go(it.href)}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-right text-sm ${i === idx ? "bg-brand-50 text-brand-700" : "text-gray-700 hover:bg-gray-50"}`}

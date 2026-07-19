@@ -9,16 +9,16 @@ export type CenterStation = {
 };
 
 export const CENTER_STATIONS: CenterStation[] = [
-  { name: "الاستقبال", role: "RECEPTION", description: "تسجيل الحضور والطابور", href: "/visits" },
-  { name: "طبيب/تشخيص", role: "DOCTOR", description: "الفحص والتشخيص والقرار الطبي", href: "/care-board", aliases: ["فحص الطبيب", "الطبيب", "التشخيص", "الطبيب/التشخيص"] },
+  { name: "الاستقبال", role: "RECEPTION", description: "تسجيل الحضور والطابور", href: "/patients-care?tab=visits" },
+  { name: "طبيب/تشخيص", role: "DOCTOR", description: "الفحص والتشخيص والقرار الطبي", href: "/patients-care?tab=journey", aliases: ["فحص الطبيب", "الطبيب", "التشخيص", "الطبيب/التشخيص"] },
   { name: "علاج طبيعي", role: "THERAPIST", description: "الجلسات والخطط والتمارين", href: "/workload", aliases: ["العلاج الطبيعي", "العلاج الوظيفي"] },
-  { name: "صيدلية", role: "PHARMACIST", description: "الوصفات والصرف", href: "/pharmacy", aliases: ["الصيدلية"] },
+  { name: "صيدلية", role: "PHARMACIST", description: "الوصفات والصرف", href: "/pharmacy-inventory?tab=dispense", aliases: ["الصيدلية"] },
   { name: "أجهزة/أطراف", role: "PROSTHETICS", description: "الأجهزة والأطراف والصيانة", href: "/devices", aliases: ["الأطراف الصناعية", "الأجهزة", "الأجهزة/الأطراف"] },
-  { name: "تضميد/جروح", role: "DRESSING", description: "الجروح والتضميد والرعاية", href: "/care-board", aliases: ["التضميد", "الجروح", "تقييم الجروح"] },
-  { name: "مالية", role: "ACCOUNTANT", description: "الفواتير والمدفوعات", href: "/finance", aliases: ["المحاسبة", "المالية"] },
-  { name: "المختبر", role: "LAB", description: "فحوصات مختبرية", href: "/care-board" },
-  { name: "الأشعة", role: "RADIOLOGY", description: "تصوير وأشعة", href: "/care-board" },
-  { name: "المتابعة", role: "DOCTOR", description: "مراجعة وخطوة لاحقة", href: "/care-board" },
+  { name: "تضميد/جروح", role: "DRESSING", description: "الجروح والتضميد والرعاية", href: "/patients-care?tab=journey", aliases: ["التضميد", "الجروح", "تقييم الجروح"] },
+  { name: "مالية", role: "ACCOUNTANT", description: "الفواتير والمدفوعات", href: "/reports-finance?tab=finance", aliases: ["المحاسبة", "المالية"] },
+  { name: "المختبر", role: "LAB", description: "فحوصات مختبرية", href: "/patients-care?tab=referrals" },
+  { name: "الأشعة", role: "RADIOLOGY", description: "تصوير وأشعة", href: "/patients-care?tab=referrals" },
+  { name: "المتابعة", role: "DOCTOR", description: "مراجعة وخطوة لاحقة", href: "/patients-care?tab=journey" },
 ];
 
 export const CENTER_STATION_NAMES = CENTER_STATIONS.map((station) => station.name);

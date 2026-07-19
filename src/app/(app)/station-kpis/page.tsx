@@ -127,7 +127,7 @@ export default async function StationKPIs() {
           <div className="text-xs font-medium text-emerald-700">مكتمل اليوم</div>
           <div className="mt-1 text-2xl font-bold text-emerald-900">{doneTotal}</div>
         </div>
-        <Link href="/care-board" className="rounded-xl border border-gray-200 bg-white p-4 transition hover:border-brand-200 hover:bg-brand-50">
+        <Link href="/patients-care?tab=journey" className="rounded-xl border border-gray-200 bg-white p-4 transition hover:border-brand-200 hover:bg-brand-50">
           <div className="text-xs font-medium text-gray-500">لوحة المرضى حسب المحطة</div>
           <div className="mt-1 text-lg font-bold text-gray-800">فتح اللوحة</div>
         </Link>
@@ -192,9 +192,9 @@ export default async function StationKPIs() {
                   </div>
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {perms.has("journey.view") && <Link href="/care-board" className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">المحطة</Link>}
-                  {perms.has("tasks.view") && r.meta?.role && <Link href={`/tasks?scope=role&role=${r.meta.role}`} className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">مهام الدور</Link>}
-                  {perms.has("queue.view") && <Link href="/queue" className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">الطابور</Link>}
+                  {perms.has("journey.view") && <Link href="/patients-care?tab=journey" className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">المحطة</Link>}
+                  {perms.has("tasks.view") && r.meta?.role && <Link href="/staff?tab=tasks" className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">مهام الدور</Link>}
+                  {perms.has("queue.view") && <Link href="/patients-care?tab=queue" className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">الطابور</Link>}
                 </div>
               </div>
             ))}

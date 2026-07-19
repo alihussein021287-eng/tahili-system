@@ -115,14 +115,14 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
   const today = localISO(new Date());
 
   const kpis = [
-    { label: "زيارات اليوم", value: visitsToday, href: "/visits" },
-    { label: "مواعيد اليوم", value: apptScheduled + apptCompleted + apptCancelled + apptNoShow, href: "/appointments" },
-    { label: "بالطابور", value: queueWaiting + queueCalled + queueInSession, href: "/queue" },
-    { label: "مهام متأخرة", value: taskOverdue, href: "/tasks?status=overdue" },
-    ...(canPharmacy ? [{ label: "وصفات معلقة", value: rxPending, href: "/pharmacy" }] : []),
+    { label: "زيارات اليوم", value: visitsToday, href: "/patients-care?tab=visits" },
+    { label: "مواعيد اليوم", value: apptScheduled + apptCompleted + apptCancelled + apptNoShow, href: "/patients-care?tab=appointments" },
+    { label: "بالطابور", value: queueWaiting + queueCalled + queueInSession, href: "/patients-care?tab=queue" },
+    { label: "مهام متأخرة", value: taskOverdue, href: "/staff?tab=tasks&taskStatus=overdue" },
+    ...(canPharmacy ? [{ label: "وصفات معلقة", value: rxPending, href: "/pharmacy-inventory?tab=dispense" }] : []),
     ...(canDevices ? [{ label: "أجهزة تحتاج صيانة", value: deviceDue, href: "/devices?due=1" }] : []),
-    { label: "راقدون حالياً", value: admittedList.length, href: "/beds" },
-    { label: "انتهت مدة رقودهم", value: admOver, href: "/beds" },
+    { label: "راقدون حالياً", value: admittedList.length, href: "/therapy-centers?tab=beds" },
+    { label: "انتهت مدة رقودهم", value: admOver, href: "/therapy-centers?tab=beds" },
   ];
 
   const Summary = ({ title, rows, href }: { title: string; rows: { label: string; value: number; tone?: string; href?: string }[]; href?: string }) => (
@@ -178,7 +178,7 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
           {selected !== today && <Link href="/reports/daily" className="badge-brand">اليوم</Link>}
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/reports" className="btn-ghost btn-sm">التقارير</Link>
+          <Link href="/reports-finance?tab=overview" className="btn-ghost btn-sm">التقارير</Link>
           {canPrint && <PrintButton />}
         </div>
       </div>
@@ -206,67 +206,67 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 print:grid-cols-2">
-          <Summary title="الزيارات والمواعيد" href="/appointments" rows={[
-            { label: "زيارات اليوم", value: visitsToday, href: "/visits" },
+          <Summary title="الزيارات والمواعيد" href="/patients-care?tab=appointments" rows={[
+            { label: "زيارات اليوم", value: visitsToday, href: "/patients-care?tab=visits" },
             { label: "مواعيد مجدولة", value: apptScheduled },
             { label: "مواعيد مكتملة", value: apptCompleted },
             { label: "مواعيد ملغاة", value: apptCancelled, tone: "warning" },
             { label: "لم يحضر", value: apptNoShow, tone: "danger" },
           ]} />
-          <Summary title="الطابور" href="/queue" rows={[
+          <Summary title="الطابور" href="/patients-care?tab=queue" rows={[
             { label: QUEUE_STATUS.WAITING, value: queueWaiting },
             { label: QUEUE_STATUS.CALLED, value: queueCalled },
             { label: QUEUE_STATUS.IN_SESSION, value: queueInSession },
             { label: QUEUE_STATUS.DONE, value: queueDone },
           ]} />
-          <Summary title="المهام" href="/tasks" rows={[
+          <Summary title="المهام" href="/staff?tab=tasks" rows={[
             { label: "مفتوحة أنشئت اليوم", value: taskOpen },
-            { label: "متأخرة حتى نهاية اليوم", value: taskOverdue, tone: "danger", href: "/tasks?status=overdue" },
+            { label: "متأخرة حتى نهاية اليوم", value: taskOverdue, tone: "danger", href: "/staff?tab=tasks&taskStatus=overdue" },
             { label: "مكتملة اليوم", value: taskDone },
           ]} />
-          {canPharmacy && <Summary title="الصيدلية والمخزون" href="/pharmacy" rows={[
+          {canPharmacy && <Summary title="الصيدلية والمخزون" href="/pharmacy-inventory?tab=overview" rows={[
             { label: "وصفات معلقة", value: rxPending, tone: rxPending ? "warning" : undefined },
             { label: "وصفات مصروفة اليوم", value: rxDispensed },
             { label: "وصفات جزئية", value: rxPartial, tone: rxPartial ? "warning" : undefined },
-            { label: "مواد منخفضة/نافدة", value: lowStock.length, tone: lowStock.length ? "danger" : undefined, href: "/pharmacy/stock" },
-            { label: "نافدة بالكامل", value: emptyStock.length, tone: emptyStock.length ? "danger" : undefined, href: "/pharmacy/stock" },
-            { label: `دفعات قرب النفاذ (${soonDays} يوم)`, value: expiringBatches.length, tone: expiringBatches.length ? "warning" : undefined, href: "/pharmacy/reports" },
+            { label: "مواد منخفضة/نافدة", value: lowStock.length, tone: lowStock.length ? "danger" : undefined, href: "/pharmacy-inventory?tab=stock&stockState=low" },
+            { label: "نافدة بالكامل", value: emptyStock.length, tone: emptyStock.length ? "danger" : undefined, href: "/pharmacy-inventory?tab=stock&stockState=out" },
+            { label: `دفعات قرب النفاذ (${soonDays} يوم)`, value: expiringBatches.length, tone: expiringBatches.length ? "warning" : undefined, href: "/pharmacy-inventory?tab=batches&batchState=soon" },
           ]} />}
           {canDevices && <Summary title="الأجهزة والرقود" href="/devices" rows={[
             { label: "أجهزة تحتاج صيانة", value: deviceDue, tone: deviceDue ? "danger" : undefined, href: "/devices?due=1" },
             { label: "أجهزة مستبدلة", value: deviceReplaced },
             { label: "أجهزة تمت صيانتها", value: deviceMaintained },
-            { label: "راقدون حالياً", value: admittedList.length, href: "/beds" },
-            { label: "انتهت مدة رقودهم", value: admOver, tone: admOver ? "danger" : undefined, href: "/beds" },
+            { label: "راقدون حالياً", value: admittedList.length, href: "/therapy-centers?tab=beds" },
+            { label: "انتهت مدة رقودهم", value: admOver, tone: admOver ? "danger" : undefined, href: "/therapy-centers?tab=beds" },
           ]} />}
         </div>
 
         <div className="mt-5 grid gap-4 print:grid-cols-2">
-          <MiniTable title="زيارات اليوم" href="/visits" empty={visitRows.length === 0}>
+          <MiniTable title="زيارات اليوم" href="/patients-care?tab=visits" empty={visitRows.length === 0}>
             <table className="w-full text-sm">
               <thead><tr><th className="th">المراجع</th><th className="th">رقم الملف</th><th className="th">ملاحظات</th></tr></thead>
               <tbody>{visitRows.map((v) => <tr key={v.id}><td className="td"><Link href={`/patients/${v.patientId}`} className="text-brand-700 hover:underline">{v.patient.fullName}</Link></td><td className="td">{v.patient.fileNumber}</td><td className="td">{v.notes || "—"}</td></tr>)}</tbody>
             </table>
           </MiniTable>
 
-          <MiniTable title="مواعيد اليوم" href="/appointments" empty={apptRows.length === 0}>
+          <MiniTable title="مواعيد اليوم" href="/patients-care?tab=appointments" empty={apptRows.length === 0}>
             <table className="w-full text-sm">
               <thead><tr><th className="th">المراجع</th><th className="th">النوع</th><th className="th">الحالة</th><th className="th">المسؤول</th></tr></thead>
               <tbody>{apptRows.map((a) => <tr key={a.id}><td className="td"><Link href={`/patients/${a.patientId}`} className="text-brand-700 hover:underline">{a.patient.fullName}</Link></td><td className="td">{a.type || "—"}</td><td className="td">{APPT_STATUS[a.status as keyof typeof APPT_STATUS]}</td><td className="td">{a.assignedTo || "—"}</td></tr>)}</tbody>
             </table>
           </MiniTable>
 
-          <MiniTable title="حركة الطابور" href="/queue" empty={queueRows.length === 0}>
+          <MiniTable title="حركة الطابور" href="/patients-care?tab=queue" empty={queueRows.length === 0}>
             <table className="w-full text-sm">
               <thead><tr><th className="th">المراجع</th><th className="th">الحالة</th><th className="th">القاعة</th></tr></thead>
               <tbody>{queueRows.map((q) => <tr key={q.id}><td className="td"><Link href={`/patients/${q.patientId}`} className="text-brand-700 hover:underline">{q.patient.fullName}</Link></td><td className="td">{QUEUE_STATUS[q.status as keyof typeof QUEUE_STATUS]}</td><td className="td">{q.hall || "—"}</td></tr>)}</tbody>
             </table>
           </MiniTable>
 
-          <MiniTable title="مهام اليوم" href="/tasks" empty={taskRows.length === 0}>
+          <MiniTable title="مهام اليوم" href="/staff?tab=tasks" empty={taskRows.length === 0}>
             <table className="w-full text-sm">
               <thead><tr><th className="th">العنوان</th><th className="th">الحالة</th><th className="th">المراجع</th><th className="th">المسند إليه</th></tr></thead>
-              <tbody>{taskRows.map((t) => <tr key={t.id}><td className="td"><Link href="/tasks" className="text-brand-700 hover:underline">{t.title}</Link></td><td className="td">{t.status}</td><td className="td">{t.patient ? <Link href={`/patients/${t.patientId}`} className="text-brand-700 hover:underline">{t.patient.fullName}</Link> : "—"}</td><td className="td">{t.assignedTo?.fullName || t.assignedRole || "—"}</td></tr>)}</tbody>
+              <tbody>{taskRows.map((t) => <tr key={t.id}><td className="td"><Link href="/staff?tab=tasks" className="text-brand-700 hover:underline">{t.title}</Link></td><td className="td">{t.status}</td><td className="td">{t.patient ? <Link href={`/patients/${t.patientId}`} className="text-brand-700 hover:underline">{t.patient.fullName}</Link> : "—"}</td><td className="td">{t.assignedTo?.fullName || t.assignedRole || "—"}</td></tr>)}</tbody>
             </table>
           </MiniTable>
 
@@ -279,7 +279,7 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
             </MiniTable>
           )}
 
-          <MiniTable title="الرقود الحالي" href="/beds" empty={admissionRows.length === 0}>
+          <MiniTable title="الرقود الحالي" href="/therapy-centers?tab=beds" empty={admissionRows.length === 0}>
             <table className="w-full text-sm">
               <thead><tr><th className="th">المراجع</th><th className="th">المركز</th><th className="th">تاريخ الدخول</th><th className="th">الحالة</th></tr></thead>
               <tbody>{admissionRows.map((a) => {
@@ -290,7 +290,7 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
           </MiniTable>
 
           {canPharmacy && (
-            <MiniTable title="دفعات قرب النفاذ" href="/pharmacy/reports" empty={expiringBatches.length === 0}>
+            <MiniTable title="دفعات قرب النفاذ" href="/pharmacy-inventory?tab=batches&batchState=soon" empty={expiringBatches.length === 0}>
               <table className="w-full text-sm">
                 <thead><tr><th className="th">المادة</th><th className="th">الدفعة</th><th className="th">الكمية</th><th className="th">النفاذية</th></tr></thead>
                 <tbody>{expiringBatches.map((b) => <tr key={b.id}><td className="td">{b.medication.name}</td><td className="td">{b.batchNo || "—"}</td><td className="td">{b.quantity}</td><td className="td">{fmtDate(b.expiryDate)}</td></tr>)}</tbody>

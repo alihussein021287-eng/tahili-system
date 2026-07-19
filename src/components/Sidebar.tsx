@@ -6,8 +6,8 @@ import { canManageUsers } from "@/lib/permissions";
 const items = [
   { href: "/", label: "الرئيسية", icon: "▤" },
   { href: "/workspaces", label: "مساحات العمل", icon: "▧" },
-  { href: "/patients", label: "المراجعون", icon: "☺" },
-  { href: "/reports", label: "التقارير", icon: "▦" },
+  { href: "/patients-care?tab=patients", label: "المراجعون", icon: "☺" },
+  { href: "/reports-finance?tab=overview", label: "التقارير", icon: "▦" },
 ];
 
 export function Sidebar({ role }: { role?: any }) {
@@ -20,7 +20,8 @@ export function Sidebar({ role }: { role?: any }) {
       </div>
       <nav className="p-3 space-y-1">
         {items.map((it) => {
-          const active = it.href === "/" ? path === "/" : path.startsWith(it.href);
+          const hrefPath = it.href.split("?")[0];
+          const active = hrefPath === "/" ? path === "/" : path.startsWith(hrefPath);
           return (
             <Link key={it.href} href={it.href}
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition

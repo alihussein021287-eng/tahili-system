@@ -56,15 +56,15 @@ export default async function Readiness() {
   }).length;
 
   const checks = [
-    { label: "مراجعون ببيانات ناقصة (هاتف/محافظة/نوع إصابة)", count: incompletePatients, href: "/patients", fix: "أكمل بياناتهم" },
+    { label: "مراجعون ببيانات ناقصة (هاتف/محافظة/نوع إصابة)", count: incompletePatients, href: "/patients-care?tab=alerts", fix: "أكمل بياناتهم" },
     { label: "أجهزة فات موعد صيانتها", count: devicesDue, href: "/devices?due=1", fix: "سجّل الصيانة" },
-    { label: "وصفات بانتظار الصرف", count: rxPending, href: "/pharmacy", fix: "جهّز الوصفات" },
-    { label: "أدوية قريبة/منتهية النفاذية", count: expiringSoon, href: "/pharmacy", fix: "راجع الدفعات" },
-    { label: "مواد منخفضة بالمخزون", count: lowCount, href: "/inventory", fix: "أعد التزويد" },
-    { label: "رقود انتهى وقته", count: admOver, href: "/beds", fix: "خروج أو تمديد" },
-    { label: "إجازات قيد الموافقة", count: pendingLeaves, href: "/shifts", fix: "اقبل أو ارفض" },
-    { label: "مهام عاجلة مفتوحة", count: urgentTasks, href: "/tasks", fix: "تابعها" },
-    { label: `التقرير الرسمي لهذا الشهر غير معتمد`, count: officialApproval ? 0 : 1, href: "/reports/official", fix: "اعتمده" },
+    { label: "وصفات بانتظار الصرف", count: rxPending, href: "/pharmacy-inventory?tab=dispense", fix: "جهّز الوصفات" },
+    { label: "أدوية قريبة/منتهية النفاذية", count: expiringSoon, href: "/pharmacy-inventory?tab=batches&batchState=soon", fix: "راجع الدفعات" },
+    { label: "مواد منخفضة بالمخزون", count: lowCount, href: "/pharmacy-inventory?tab=stock&stockState=low", fix: "أعد التزويد" },
+    { label: "رقود انتهى وقته", count: admOver, href: "/therapy-centers?tab=beds", fix: "خروج أو تمديد" },
+    { label: "إجازات قيد الموافقة", count: pendingLeaves, href: "/staff?tab=leaves", fix: "اقبل أو ارفض" },
+    { label: "مهام عاجلة مفتوحة", count: urgentTasks, href: "/staff?tab=tasks&priority=URGENT", fix: "تابعها" },
+    { label: `التقرير الرسمي لهذا الشهر غير معتمد`, count: officialApproval ? 0 : 1, href: "/reports-finance?tab=official", fix: "اعتمده" },
   ];
   const issues = checks.filter((c) => c.count > 0);
   const okCount = checks.length - issues.length;

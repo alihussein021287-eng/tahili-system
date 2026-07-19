@@ -176,7 +176,7 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
         </div>
       )}
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
-        <Link href="/reports/statistical" className="btn-ghost">التقرير الإحصائي الرسمي</Link>
+        <Link href="/reports-finance?tab=official" className="btn-ghost">التقرير الإحصائي الرسمي</Link>
         <PrintButton />
       </div>
 
@@ -193,14 +193,14 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
       </form>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="إجمالي المراجعين" value={totalPatients} hint={`${activePatients} نشط - ${percent(activePatients, totalPatients)}`} href="/patients" />
-        <Stat label="مراجعون جدد" value={newPatients} hint="ضمن الفترة المحددة" href="/patients" />
-        <Stat label="زيارات الفترة" value={visitsCount} hint="حضور واستقبال" href="/visits" />
-        <Stat label="مواعيد الفترة" value={apptsCount} hint="كل الحالات" href="/appointments" />
+        <Stat label="إجمالي المراجعين" value={totalPatients} hint={`${activePatients} نشط - ${percent(activePatients, totalPatients)}`} href="/patients-care?tab=patients" />
+        <Stat label="مراجعون جدد" value={newPatients} hint="ضمن الفترة المحددة" href="/patients-care?tab=patients" />
+        <Stat label="زيارات الفترة" value={visitsCount} hint="حضور واستقبال" href="/patients-care?tab=visits" />
+        <Stat label="مواعيد الفترة" value={apptsCount} hint="كل الحالات" href="/patients-care?tab=appointments" />
         <Stat label="جلسات الفترة" value={sessionsCount} hint={centerId ? "حسب المركز المختار" : "كل المراكز"} />
-        <Stat label="راقدون حالياً" value={admittedNow} hint={`${admissionsInRange} رقود جديد بالفترة`} href="/beds" />
+        <Stat label="راقدون حالياً" value={admittedNow} hint={`${admissionsInRange} رقود جديد بالفترة`} href="/therapy-centers?tab=beds" />
         <Stat label="أجهزة تحتاج صيانة" value={devicesDue} href="/devices?due=1" />
-        {canPharmacy && <Stat label="صرف الصيدلية" value={stockDispense._sum.quantity ?? 0} hint="كمية مصروفة بالفترة" href="/pharmacy" />}
+        {canPharmacy && <Stat label="صرف الصيدلية" value={stockDispense._sum.quantity ?? 0} hint="كمية مصروفة بالفترة" href="/pharmacy-inventory?tab=dispense" />}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
