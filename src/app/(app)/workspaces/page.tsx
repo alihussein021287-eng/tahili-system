@@ -12,10 +12,10 @@ export default async function WorkspacesPage() {
     <main className="space-y-6">
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-2">
-          <p className="text-sm text-slate-500">لوحة عمل حسب الصلاحيات</p>
-          <h1 className="text-2xl font-bold text-slate-900">مساحات العمل</h1>
+          <p className="text-sm text-slate-500">اختصارات حسب الصلاحيات</p>
+          <h1 className="text-2xl font-bold text-slate-900">مساحاتي حسب الدور</h1>
           <p className="max-w-3xl text-sm leading-7 text-slate-600">
-            هذه الصفحة تجمع أهم الاختصارات لكل فئة داخل المجمع التأهيلي، وتعرض للمستخدم فقط ما تسمح به صلاحياته.
+            هذه الصفحة تجمع أهم الاختصارات العملية لكل فئة داخل المجمع التأهيلي، وتعرض للمستخدم فقط ما تسمح به صلاحياته.
           </p>
         </div>
       </section>

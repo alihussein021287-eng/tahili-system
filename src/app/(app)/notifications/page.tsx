@@ -8,6 +8,10 @@ import { fmtDateTime } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
+const KIND_FILTERS = new Set(
+  NOTIFICATION_KINDS.map((item) => item.value).filter((value) => !["all", "unread", "read"].includes(value)),
+);
+
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const session = await getSession();
   const uid = (session?.user as any)?.id;
@@ -27,7 +31,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   });
 
   const visible = rows.filter((n) => canOpenNotification(n.link, perms));
-  const filtered = ["tasks", "appointments", "inventory", "devices", "system"].includes(filter)
+  const filtered = KIND_FILTERS.has(filter)
     ? visible.filter((n) => notificationKind(n) === filter)
     : visible;
   const unreadCount = visible.filter((n) => !n.read).length;

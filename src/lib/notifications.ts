@@ -20,12 +20,13 @@ const TONES: Record<NotificationKind, NotificationTone> = {
 export function notificationKind(input: { title?: string | null; link?: string | null }): NotificationKind {
   const title = input.title ?? "";
   const link = input.link ?? "";
-  if (link.startsWith("/tasks") || title.includes("مهمة")) return "tasks";
-  if (link.startsWith("/appointments") || title.includes("موعد")) return "appointments";
-  if (link.startsWith("/pharmacy") || link.startsWith("/inventory") || title.includes("وصفة") || title.includes("مخزون")) return "inventory";
+  const tab = tabOf(link);
+  if ((link.startsWith("/staff") && tab === "tasks") || link.startsWith("/tasks") || title.includes("مهمة")) return "tasks";
+  if ((link.startsWith("/patients-care") && tab === "appointments") || link.startsWith("/appointments") || title.includes("موعد")) return "appointments";
   if (link.startsWith("/devices") || title.includes("جهاز") || title.includes("صيانة")) return "devices";
-  if (link.startsWith("/referrals") || title.includes("إحالة") || title.includes("فحص خارجي")) return "referrals";
+  if ((link.startsWith("/patients-care") && tab === "referrals") || link.startsWith("/referrals") || title.includes("إحالة") || title.includes("فحص خارجي")) return "referrals";
   if (link.startsWith("/collaboration") || title.includes("تعاون") || title.includes("ملف تعاون") || title.includes("الإشارة إليك")) return "collaboration";
+  if (link.startsWith("/pharmacy-inventory") || link.startsWith("/pharmacy") || link.startsWith("/inventory") || title.includes("وصفة") || title.includes("مخزون")) return "inventory";
   return "system";
 }
 
@@ -33,26 +34,86 @@ export function notificationTone(input: { title?: string | null; link?: string |
   return TONES[notificationKind(input)];
 }
 
-export function permissionForLink(link?: string | null) {
+function tabOf(link: string) {
+  const query = link.split("?")[1] ?? "";
+  if (!query) return "";
+  try {
+    return new URLSearchParams(query).get("tab") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function permissionsForLink(link?: string | null) {
   if (!link) return null;
-  if (link.startsWith("/tasks")) return "tasks.view";
-  if (link.startsWith("/appointments")) return "appointments.view";
-  if (link.startsWith("/pharmacy")) return "pharmacy.view";
-  if (link.startsWith("/inventory")) return "inventory.view";
-  if (link.startsWith("/devices")) return "devices.view";
-  if (link.startsWith("/referrals")) return "referrals.view";
-  if (link.startsWith("/collaboration")) return "collaboration.view";
-  if (link.startsWith("/backup")) return "settings.backup";
-  if (link.startsWith("/readiness")) return "settings.view";
-  if (link.startsWith("/patients")) return "patients.view";
-  if (link.startsWith("/queue")) return "queue.view";
-  if (link.startsWith("/care-board") || link.startsWith("/station-kpis")) return "journey.view";
+  const tab = tabOf(link);
+  if (link.startsWith("/staff")) {
+    if (tab === "tasks") return ["tasks.view"];
+    if (tab === "attendance") return ["attendance.view"];
+    if (tab === "shifts" || tab === "leaves") return ["shifts.view"];
+    if (tab === "employees") return ["users.view"];
+    return ["users.view", "attendance.view", "shifts.view", "tasks.view"];
+  }
+  if (link.startsWith("/tasks")) return ["tasks.view"];
+  if (link.startsWith("/patients-care")) {
+    if (tab === "visits") return ["visits.view"];
+    if (tab === "queue") return ["queue.view"];
+    if (tab === "journey") return ["journey.view"];
+    if (tab === "referrals") return ["referrals.view"];
+    if (tab === "appointments") return ["appointments.view"];
+    if (tab === "new") return ["patients.create"];
+    if (tab === "patients" || tab === "relatives" || tab === "alerts") return ["patients.view"];
+    return ["patients.view", "patients.create", "visits.view", "queue.view", "journey.view", "referrals.view", "appointments.view"];
+  }
+  if (link.startsWith("/appointments")) return ["appointments.view"];
+  if (link.startsWith("/therapy-centers")) {
+    if (tab === "today") return ["therapy.session.record"];
+    if (tab === "centers") return ["centers.view"];
+    if (tab === "beds") return ["beds.view"];
+    if (tab === "meds") return ["meds.view"];
+    if (tab === "plans" || tab === "sessions" || tab === "program" || tab === "followup") return ["therapy.view", "therapy.session.record", "centers.view", "centers.sessions.record"];
+    return ["therapy.view", "therapy.session.record", "centers.view", "beds.view", "meds.view", "centers.sessions.record"];
+  }
+  if (link.startsWith("/pharmacy-inventory")) {
+    if (tab === "purchases" || tab === "receipts") return ["pharmacy.purchase.view"];
+    if (tab === "stock" || tab === "batches" || tab === "reports" || tab === "alerts") return ["pharmacy.view", "inventory.view", "pharmacy.purchase.view"];
+    return ["pharmacy.view", "inventory.view", "pharmacy.purchase.view"];
+  }
+  if (link.startsWith("/pharmacy")) return ["pharmacy.view"];
+  if (link.startsWith("/inventory")) return ["inventory.view"];
+  if (link.startsWith("/devices")) return ["devices.view"];
+  if (link.startsWith("/reports-finance")) {
+    if (tab === "finance") return ["finance.view", "finance.report"];
+    if (tab === "wounded") return ["expenses.view", "expenses.reports", "expenses.approve", "expenses.pay"];
+    if (tab === "approvals") return ["approvals.view", "expenses.approve", "expenses.pay", "reports.approve"];
+    if (tab === "official") return ["reports.view", "reports.official", "officialdocs.view"];
+    if (tab === "patients") return ["reports.view", "patients.print", "clinical.report"];
+    if (tab === "exports") return ["patients.export", "patients.view", "expenses.reports", "officialdocs.view", "audit.view"];
+    return ["reports.view", "reports.official", "finance.view", "finance.report", "expenses.view", "expenses.reports", "approvals.view", "officialdocs.view", "analytics.view", "patients.export"];
+  }
+  if (link.startsWith("/reports")) return ["reports.view"];
+  if (link.startsWith("/finance")) return ["finance.view"];
+  if (link.startsWith("/approvals")) return ["approvals.view"];
+  if (link.startsWith("/referrals")) return ["referrals.view"];
+  if (link.startsWith("/collaboration")) return ["collaboration.view"];
+  if (link.startsWith("/backup")) return ["settings.backup"];
+  if (link.startsWith("/readiness")) return ["settings.view"];
+  if (link.startsWith("/patients")) return ["patients.view"];
+  if (link.startsWith("/queue")) return ["queue.view"];
+  if (link.startsWith("/care-board") || link.startsWith("/station-kpis")) return ["journey.view"];
+  if (link.startsWith("/workspaces")) return ["dashboard.view"];
   return null;
 }
 
+export function permissionForLink(link?: string | null) {
+  const permissions = permissionsForLink(link);
+  return Array.isArray(permissions) ? permissions[0] ?? null : permissions;
+}
+
 export function canOpenNotification(link: string | null | undefined, perms: Set<string>) {
-  const required = permissionForLink(link);
-  return !required || perms.has(required);
+  const required = permissionsForLink(link);
+  if (!required) return true;
+  return required.some((permission) => perms.has(permission));
 }
 
 export function kindLabel(kind: string) {

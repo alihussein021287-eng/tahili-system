@@ -11,6 +11,48 @@ import { stationForRole } from "@/lib/stations";
 
 export const dynamic = "force-dynamic";
 const dayMs = 86400000;
+const HUB_LINKS = {
+  staffTasks: "/staff?tab=tasks",
+  staffTasksOverdue: "/staff?tab=tasks&taskStatus=overdue",
+  staffAttendance: "/staff?tab=attendance",
+  patients: "/patients-care?tab=patients",
+  visits: "/patients-care?tab=visits",
+  queue: "/patients-care?tab=queue",
+  journey: "/patients-care?tab=journey",
+  appointments: "/patients-care?tab=appointments",
+  therapyToday: "/therapy-centers?tab=today",
+  therapyBeds: "/therapy-centers?tab=beds",
+  therapyMeds: "/therapy-centers?tab=meds",
+  pharmacyDispense: "/pharmacy-inventory?tab=dispense",
+  pharmacyStock: "/pharmacy-inventory?tab=stock",
+  pharmacyLowStock: "/pharmacy-inventory?tab=stock&stockState=low",
+  pharmacyBatchesSoon: "/pharmacy-inventory?tab=batches&batchState=soon",
+  reportsPatients: "/reports-finance?tab=patients",
+  reportsOfficial: "/reports-finance?tab=official",
+  finance: "/reports-finance?tab=finance",
+} as const;
+
+const DASHBOARD_LINK_REPLACEMENTS: Record<string, string> = {
+  "/tasks": HUB_LINKS.staffTasks,
+  "/attendance": HUB_LINKS.staffAttendance,
+  "/patients": HUB_LINKS.patients,
+  "/visits": HUB_LINKS.visits,
+  "/queue": HUB_LINKS.queue,
+  "/care-board": HUB_LINKS.journey,
+  "/appointments": HUB_LINKS.appointments,
+  "/beds": HUB_LINKS.therapyBeds,
+  "/meds": HUB_LINKS.therapyMeds,
+  "/pharmacy": HUB_LINKS.pharmacyDispense,
+  "/pharmacy/stock": HUB_LINKS.pharmacyBatchesSoon,
+  "/inventory": HUB_LINKS.pharmacyStock,
+  "/reports": HUB_LINKS.reportsPatients,
+  "/reports/official": HUB_LINKS.reportsOfficial,
+  "/finance": HUB_LINKS.finance,
+};
+
+function dashboardHref(href: string) {
+  return DASHBOARD_LINK_REPLACEMENTS[href] ?? href;
+}
 
 export default async function Dashboard() {
   const now = new Date();
@@ -21,23 +63,27 @@ export default async function Dashboard() {
   const perms = await currentPerms();
   const CANDIDATES = [
     { href: "/patients/new", label: "مراجع جديد", icon: "➕", perm: "patients.create" },
-    { href: "/visits", label: "تسجيل حضور", icon: "📋", perm: "visits.view" },
-    { href: "/queue", label: "الطابور", icon: "⏳", perm: "queue.view" },
-    { href: "/appointments", label: "المواعيد", icon: "📅", perm: "appointments.view" },
-    { href: "/beds", label: "الرقود والفندقة", icon: "🛏", perm: "beds.view" },
-    { href: "/meds", label: "أدوية الراقدين", icon: "💊", perm: "meds.view" },
-    { href: "/finance", label: "المالية", icon: "💰", perm: "finance.view" },
+    { href: HUB_LINKS.visits, label: "تسجيل حضور", icon: "📋", perm: "visits.view" },
+    { href: HUB_LINKS.queue, label: "الطابور", icon: "⏳", perm: "queue.view" },
+    { href: HUB_LINKS.appointments, label: "المواعيد", icon: "📅", perm: "appointments.view" },
+    { href: HUB_LINKS.therapyBeds, label: "الرقود والفندقة", icon: "🛏", perm: "beds.view" },
+    { href: HUB_LINKS.therapyMeds, label: "أدوية الراقدين", icon: "💊", perm: "meds.view" },
+    { href: HUB_LINKS.finance, label: "المالية", icon: "💰", perm: "finance.view" },
     { href: "/analytics", label: "التحليلات", icon: "📊", perm: "analytics.view" },
-    { href: "/reports/official", label: "التقرير الرسمي", icon: "📄", perm: "reports.official" },
-    { href: "/inventory", label: "المخزون", icon: "📦", perm: "inventory.view" },
-    { href: "/attendance", label: "الحضور", icon: "🕒", perm: "attendance.view" },
+    { href: HUB_LINKS.reportsOfficial, label: "التقرير الرسمي", icon: "📄", perm: "reports.official" },
+    { href: HUB_LINKS.pharmacyStock, label: "المخزون", icon: "📦", perm: "inventory.view" },
+    { href: HUB_LINKS.staffAttendance, label: "الحضور", icon: "🕒", perm: "attendance.view" },
     { href: "/workload", label: "حمل المعالجين", icon: "👷", perm: "workload.view" },
     { href: "/station-kpis", label: "مؤشرات المحطات", icon: "📈", perm: "reports.view" },
     { href: "/search", label: "بحث", icon: "🔍", perm: "dashboard.view" },
   ].filter((c) => perms.has(c.perm));
   const pref = uid ? await prisma.userPreference.findUnique({ where: { userId: uid } }) : null;
   let favs: string[] = [];
-  try { favs = pref ? JSON.parse(pref.favorites) : []; } catch { favs = []; }
+  try {
+    const parsed = pref ? JSON.parse(pref.favorites) : [];
+    favs = Array.isArray(parsed) ? parsed : [];
+  } catch { favs = []; }
+  favs = Array.from(new Set(favs.map(dashboardHref)));
   if (favs.length === 0) favs = CANDIDATES.slice(0, 4).map((c) => c.href);
   const myShortcuts = CANDIDATES.filter((c) => favs.includes(c.href));
   const startToday = new Date(now.toDateString());
@@ -101,43 +147,43 @@ export default async function Dashboard() {
   const myToday = name ? todayAppts.filter((a: any) => a.assignedTo && a.assignedTo === name).length : 0;
   const focus = [
     ...((perms.has("tasks.view") && myOpenTasks > 0) ? [
-      { show: true, label: "مهامي المفتوحة", value: myOpenTasks as any, icon: "📌", href: "/tasks", color: "bg-indigo-600" },
+      { show: true, label: "مهامي المفتوحة", value: myOpenTasks as any, icon: "📌", href: HUB_LINKS.staffTasks, color: "bg-indigo-600" },
     ] : []),
     ...((perms.has("tasks.view") && overdueTasks > 0) ? [
-      { show: true, label: "مهام متأخرة", value: overdueTasks as any, icon: "⏰", href: "/tasks", color: "bg-red-600" },
+      { show: true, label: "مهام متأخرة", value: overdueTasks as any, icon: "⏰", href: HUB_LINKS.staffTasksOverdue, color: "bg-red-600" },
     ] : []),
     ...((perms.has("appointments.view") && appointmentSoon > 0) ? [
-      { show: true, label: "مواعيد قريبة", value: appointmentSoon as any, icon: "🔔", href: "/appointments", color: "bg-purple-600" },
+      { show: true, label: "مواعيد قريبة", value: appointmentSoon as any, icon: "🔔", href: HUB_LINKS.appointments, color: "bg-purple-600" },
     ] : []),
     ...(wantPharm ? [
-      { show: true, label: "وصفات بانتظار الصرف", value: rxPending as any, icon: "💊", href: "/pharmacy", color: "bg-teal-600" },
-      { show: expiringSoon > 0, label: "دفعات قريبة النفاذ", value: expiringSoon as any, icon: "⏳", href: "/pharmacy/stock", color: "bg-orange-600" },
+      { show: true, label: "وصفات بانتظار الصرف", value: rxPending as any, icon: "💊", href: HUB_LINKS.pharmacyDispense, color: "bg-teal-600" },
+      { show: expiringSoon > 0, label: "دفعات قريبة النفاذ", value: expiringSoon as any, icon: "⏳", href: HUB_LINKS.pharmacyBatchesSoon, color: "bg-orange-600" },
     ] : []),
     ...(wantFin ? [
-      { show: true, label: "فواتير غير مسددة", value: unpaidCount as any, icon: "🧾", href: "/finance", color: "bg-rose-600" },
-      { show: outstanding > 0, label: "مبالغ مستحقة (د.ع)", value: outstanding.toLocaleString("en-US") as any, icon: "💰", href: "/finance", color: "bg-amber-600" },
+      { show: true, label: "فواتير غير مسددة", value: unpaidCount as any, icon: "🧾", href: HUB_LINKS.finance, color: "bg-rose-600" },
+      { show: outstanding > 0, label: "مبالغ مستحقة (د.ع)", value: outstanding.toLocaleString("en-US") as any, icon: "💰", href: HUB_LINKS.finance, color: "bg-amber-600" },
     ] : []),
     ...((perms.has("appointments.view") && myToday > 0) ? [
-      { show: true, label: "مواعيدي اليوم", value: myToday as any, icon: "📅", href: "/appointments", color: "bg-sky-600" },
+      { show: true, label: "مواعيدي اليوم", value: myToday as any, icon: "📅", href: HUB_LINKS.appointments, color: "bg-sky-600" },
     ] : []),
     ...((perms.has("journey.view") && myStation && (myStationWaiting + myStationInProgress) > 0) ? [
-      { show: true, label: `محطتي: ${myStation.name}`, value: (myStationWaiting + myStationInProgress) as any, icon: "🧭", href: "/care-board", color: "bg-slate-700" },
+      { show: true, label: `محطتي: ${myStation.name}`, value: (myStationWaiting + myStationInProgress) as any, icon: "🧭", href: HUB_LINKS.journey, color: "bg-slate-700" },
     ] : []),
   ].filter((x) => x.show);
 
   const stats = [
-    { label: "إجمالي المراجعين", value: patients, color: "bg-brand-600", icon: "👥", href: "/patients", perm: "patients.view" },
-    { label: "تحت المتابعة", value: active, color: "bg-emerald-600", icon: "🟢", href: "/patients", perm: "patients.view" },
-    { label: "راقدون حالياً", value: admittedCount, color: "bg-amber-600", icon: "🛏", href: "#admissions", perm: "beds.view" },
-    { label: "جلسات مسجّلة", value: sessions, color: "bg-sky-600", icon: "🩺", href: "/reports", perm: "reports.view" },
+    { label: "إجمالي المراجعين", value: patients, color: "bg-brand-600", icon: "👥", href: HUB_LINKS.patients, perm: "patients.view" },
+    { label: "تحت المتابعة", value: active, color: "bg-emerald-600", icon: "🟢", href: HUB_LINKS.patients, perm: "patients.view" },
+    { label: "راقدون حالياً", value: admittedCount, color: "bg-amber-600", icon: "🛏", href: HUB_LINKS.therapyBeds, perm: "beds.view" },
+    { label: "جلسات مسجّلة", value: sessions, color: "bg-sky-600", icon: "🩺", href: HUB_LINKS.reportsPatients, perm: "reports.view" },
   ].filter((s) => perms.has(s.perm));
 
   const alerts = [
-    { show: appointmentSoon > 0, label: "موعد قريب", value: appointmentSoon, cls: "border-purple-200 bg-purple-50 text-purple-700", href: "/appointments" },
-    { show: overdueTasks > 0, label: "مهام متأخرة", value: overdueTasks, cls: "border-red-200 bg-red-50 text-red-700", href: "/tasks" },
-    { show: admOver > 0, label: "رقود انتهى وقته", value: admOver, cls: "border-red-200 bg-red-50 text-red-700", href: "#admissions" },
+    { show: appointmentSoon > 0, label: "موعد قريب", value: appointmentSoon, cls: "border-purple-200 bg-purple-50 text-purple-700", href: HUB_LINKS.appointments },
+    { show: overdueTasks > 0, label: "مهام متأخرة", value: overdueTasks, cls: "border-red-200 bg-red-50 text-red-700", href: HUB_LINKS.staffTasksOverdue },
+    { show: admOver > 0, label: "رقود انتهى وقته", value: admOver, cls: "border-red-200 bg-red-50 text-red-700", href: HUB_LINKS.therapyBeds },
     { show: devicesDue > 0, label: "أجهزة بحاجة صيانة", value: devicesDue, cls: "border-amber-200 bg-amber-50 text-amber-700", href: "/devices?due=1" },
-    { show: lowMeds.length > 0, label: "مواد منخفضة بالمخزون", value: lowMeds.length, cls: "border-orange-200 bg-orange-50 text-orange-700", href: "/inventory" },
+    { show: lowMeds.length > 0, label: "مواد منخفضة بالمخزون", value: lowMeds.length, cls: "border-orange-200 bg-orange-50 text-orange-700", href: HUB_LINKS.pharmacyLowStock },
   ].filter((a) => a.show);
 
   const tToday = startToday.getTime();
@@ -155,9 +201,9 @@ export default async function Dashboard() {
       title: "مساحة الاستقبال",
       subtitle: "مواعيد اليوم، الطابور، وتسجيل المراجعين",
       cards: [
-        { label: "مواعيد اليوم", value: todayAppts.length, href: "/appointments", perm: "appointments.view" },
-        { label: "حضور اليوم", value: visitsToday, href: "/visits", perm: "visits.view" },
-        { label: "بالطابور الآن", value: queueWaiting, href: "/queue", perm: "queue.view" },
+        { label: "مواعيد اليوم", value: todayAppts.length, href: HUB_LINKS.appointments, perm: "appointments.view" },
+        { label: "حضور اليوم", value: visitsToday, href: HUB_LINKS.visits, perm: "visits.view" },
+        { label: "بالطابور الآن", value: queueWaiting, href: HUB_LINKS.queue, perm: "queue.view" },
         { label: "محطات المركز", value: "فتح", href: "/station-kpis", perm: "reports.view" },
         { label: "تسجيل مراجع", value: "+", href: "/patients/new", perm: "patients.create" },
       ],
@@ -167,10 +213,10 @@ export default async function Dashboard() {
       title: "مساحة الطبيب",
       subtitle: "مراجعين وتشخيصات ومتابعات قريبة",
       cards: [
-        { label: "مراجعون نشطون", value: active, href: "/patients", perm: "patients.view" },
-        { label: "تشخيصات اليوم", value: diagnosesToday, href: "/patients", perm: "clinical.diagnosis" },
-        { label: "تحتاج متابعة", value: followupsDue, href: "/patients", perm: "patients.view" },
-        { label: "محطتي", value: myStationWaiting + myStationInProgress, href: "/care-board", perm: "journey.view" },
+        { label: "مراجعون نشطون", value: active, href: HUB_LINKS.patients, perm: "patients.view" },
+        { label: "تشخيصات اليوم", value: diagnosesToday, href: HUB_LINKS.patients, perm: "clinical.diagnosis" },
+        { label: "تحتاج متابعة", value: followupsDue, href: HUB_LINKS.patients, perm: "patients.view" },
+        { label: "محطتي", value: myStationWaiting + myStationInProgress, href: HUB_LINKS.journey, perm: "journey.view" },
       ],
     },
     {
@@ -178,10 +224,10 @@ export default async function Dashboard() {
       title: "مساحة المعالج",
       subtitle: "جلسات اليوم، خطط العلاج، وحمل العمل",
       cards: [
-        { label: "جلساتي اليوم", value: therapistToday, href: "/appointments", perm: "appointments.view" },
+        { label: "جلساتي اليوم", value: therapistToday, href: HUB_LINKS.therapyToday, perm: "therapy.session.record" },
         { label: "خطط فعالة", value: activePlans, href: "/workload", perm: "workload.view" },
         { label: "عبء العمل", value: "فتح", href: "/workload", perm: "workload.view" },
-        { label: "محطتي", value: myStationWaiting + myStationInProgress, href: "/care-board", perm: "journey.view" },
+        { label: "محطتي", value: myStationWaiting + myStationInProgress, href: HUB_LINKS.journey, perm: "journey.view" },
       ],
     },
     {
@@ -189,10 +235,10 @@ export default async function Dashboard() {
       title: "مساحة الصيدلي",
       subtitle: "وصفات قيد الانتظار ومخزون ودفعات",
       cards: [
-        { label: "وصفات قيد الانتظار", value: rxPending, href: "/pharmacy", perm: "pharmacy.view" },
-        { label: "مخزون منخفض", value: lowMeds.length, href: "/inventory", perm: "inventory.view" },
-        { label: "دفعات قرب النفاذ", value: expiringSoon, href: "/pharmacy/stock", perm: "pharmacy.view" },
-        { label: "محطة الصيدلية", value: myStationWaiting + myStationInProgress, href: "/care-board", perm: "journey.view" },
+        { label: "وصفات قيد الانتظار", value: rxPending, href: HUB_LINKS.pharmacyDispense, perm: "pharmacy.view" },
+        { label: "مخزون منخفض", value: lowMeds.length, href: HUB_LINKS.pharmacyLowStock, perm: "inventory.view" },
+        { label: "دفعات قرب النفاذ", value: expiringSoon, href: HUB_LINKS.pharmacyBatchesSoon, perm: "pharmacy.view" },
+        { label: "محطة الصيدلية", value: myStationWaiting + myStationInProgress, href: HUB_LINKS.journey, perm: "journey.view" },
       ],
     },
     {
@@ -200,10 +246,10 @@ export default async function Dashboard() {
       title: "مساحة الإدارة",
       subtitle: "مؤشرات عامة، تقارير، مستخدمون، وتدقيق",
       cards: [
-        { label: "مراجعين نشطين", value: active, href: "/reports", perm: "reports.view" },
+        { label: "مراجعين نشطين", value: active, href: HUB_LINKS.reportsPatients, perm: "reports.view" },
         { label: "مستخدمون فعالون", value: activeUsers, href: "/users", perm: "users.view" },
         { label: "تدقيق اليوم", value: auditToday, href: "/audit", perm: "audit.view" },
-        { label: "التقارير", value: "فتح", href: "/reports/official", perm: "reports.official" },
+        { label: "التقارير", value: "فتح", href: HUB_LINKS.reportsOfficial, perm: "reports.official" },
         { label: "المحطات", value: "فتح", href: "/station-kpis", perm: "reports.view" },
       ],
     },
@@ -262,7 +308,7 @@ export default async function Dashboard() {
             <input name="q" className="input" placeholder="اسم المراجع، رقم الملف، أو الهاتف" />
           </div>
           <button className="btn-primary" type="submit">بحث وتسجيل حضور</button>
-          {perms.has("visits.view") && <Link href="/visits" className="btn-ghost">زيارات اليوم</Link>}
+          {perms.has("visits.view") && <Link href={HUB_LINKS.visits} className="btn-ghost">زيارات اليوم</Link>}
         </form>
       )}
 
@@ -313,13 +359,13 @@ export default async function Dashboard() {
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <span className="font-semibold text-gray-700">مواعيد اليوم وغداً</span>
-          <Link href="/appointments" className="text-sm text-brand-700 hover:underline">كل المواعيد</Link>
+          <Link href={HUB_LINKS.appointments} className="text-sm text-brand-700 hover:underline">كل المواعيد</Link>
         </div>
         <table className="w-full">
           <thead><tr><th className="th">الوقت</th><th className="th">المريض</th><th className="th">النوع</th><th className="th">المسؤول</th></tr></thead>
           <tbody>
             {todayAppts.length === 0 && tomorrowAppts.length === 0 && (
-              <tr><td className="td text-center text-gray-400" colSpan={4}>لا مواعيد اليوم أو غداً. <Link href="/appointments" className="text-brand-700 hover:underline">إضافة موعد</Link></td></tr>
+              <tr><td className="td text-center text-gray-400" colSpan={4}>لا مواعيد اليوم أو غداً. <Link href={HUB_LINKS.appointments} className="text-brand-700 hover:underline">إضافة موعد</Link></td></tr>
             )}
             {apptGroups.map((g) => g.list.length > 0 && (
               <Fragment key={g.key}>
@@ -372,7 +418,7 @@ export default async function Dashboard() {
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <span className="font-semibold text-gray-700">أحدث المراجعين</span>
-          <Link href="/patients" className="text-sm text-brand-700 hover:underline">كل المراجعين</Link>
+          <Link href={HUB_LINKS.patients} className="text-sm text-brand-700 hover:underline">كل المراجعين</Link>
         </div>
         <table className="w-full">
           <thead><tr><th className="th">رقم الملف</th><th className="th">الاسم الرباعي</th><th className="th">المحافظة</th><th className="th">تاريخ التسجيل</th></tr></thead>

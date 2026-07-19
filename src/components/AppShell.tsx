@@ -28,6 +28,7 @@ type AlertCounts = {
 
 const ALL_ITEMS: Item[] = [
   { href: "/", label: "الرئيسية", icon: "▤", perm: "dashboard.view" },
+  { href: "/workspaces", label: "مساحاتي", icon: "◇", perm: "dashboard.view" },
   { href: "/notifications", label: "مركز التنبيهات", icon: "🔔", perm: "dashboard.view" },
   { href: "/collaboration", label: "مركز التعاون", icon: "💬", perm: "collaboration.view" },
   { href: "/patients-care", label: "لوحة المرضى والرعاية", icon: "🧑‍⚕️", perms: ["patients.view", "patients.create", "visits.view", "queue.view", "journey.view", "referrals.view", "appointments.view"] },
@@ -76,16 +77,16 @@ const ALL_ITEMS: Item[] = [
 ];
 
 // مجموعات التنقل: تبويب رئيسي (مجموعة) ← تبويبات فرعية (روابط)
-const STANDALONE = ["/", "/notifications", "/collaboration"]; // روابط عامة تبقى مفردة فوق
+const STANDALONE = ["/", "/workspaces", "/notifications", "/collaboration"]; // روابط عامة تبقى مفردة فوق
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
   { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients-care"] },
   { key: "therapy", title: "المسار العلاجي والمراكز", icon: "🏥", hrefs: ["/therapy-centers"] },
   { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy-inventory", "/devices"] },
   { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports-finance"] },
-  { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff", "/users", "/workload"] },
-  { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/permissions", "/audit", "/login-log", "/settings", "/backup", "/readiness"] },
+  { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff", "/workload"] },
+  { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/settings", "/users", "/permissions", "/readiness", "/backup", "/audit", "/login-log"] },
 ];
-const MOBILE_QUICK_HREFS = ["/patients-care", "/queue", "/therapy-centers", "/staff"];
+const MOBILE_QUICK_HREFS = ["/patients-care", "/therapy-centers", "/pharmacy-inventory", "/staff"];
 
 export function AppShell({
   role,
@@ -317,14 +318,14 @@ function NotificationBell({ alerts, notifs = [], perms = [] }: { alerts?: AlertC
   const a = alerts ?? { admOver: 0, devicesDue: 0, lowStock: 0, rxPending: 0, expiringSoon: 0, myTasks: 0, overdueTasks: 0, appointmentSoon: 0, backupStale: 0, backupStopped: 0 };
   const visibleNotifs = (notifs ?? []).filter((n: any) => canOpenNotification(n.link, permSet));
   const items = [
-    { show: (a.myTasks ?? 0) > 0, label: "مهام مسندة لك", value: a.myTasks, href: "/tasks", kind: "tasks" },
-    { show: (a.overdueTasks ?? 0) > 0, label: "مهام متأخرة", value: a.overdueTasks, href: "/tasks?status=overdue", kind: "tasks" },
-    { show: (a.appointmentSoon ?? 0) > 0, label: "مواعيد قريبة خلال ساعتين", value: a.appointmentSoon, href: "/appointments", kind: "appointments" },
-    { show: a.rxPending > 0, label: "وصفات بانتظار التجهيز", value: a.rxPending, href: "/pharmacy", kind: "inventory" },
-    { show: a.expiringSoon > 0, label: "دفعات قريبة/منتهية النفاذية", value: a.expiringSoon, href: "/pharmacy/stock", kind: "inventory" },
-    { show: a.lowStock > 0, label: "مواد منخفضة بالمخزون", value: a.lowStock, href: "/inventory", kind: "inventory" },
+    { show: (a.myTasks ?? 0) > 0, label: "مهام مسندة لك", value: a.myTasks, href: "/staff?tab=tasks", kind: "tasks" },
+    { show: (a.overdueTasks ?? 0) > 0, label: "مهام متأخرة", value: a.overdueTasks, href: "/staff?tab=tasks&taskStatus=overdue", kind: "tasks" },
+    { show: (a.appointmentSoon ?? 0) > 0, label: "مواعيد قريبة خلال ساعتين", value: a.appointmentSoon, href: "/patients-care?tab=appointments", kind: "appointments" },
+    { show: a.rxPending > 0, label: "وصفات بانتظار التجهيز", value: a.rxPending, href: "/pharmacy-inventory?tab=dispense", kind: "inventory" },
+    { show: a.expiringSoon > 0, label: "دفعات قريبة/منتهية النفاذية", value: a.expiringSoon, href: "/pharmacy-inventory?tab=batches&batchState=soon", kind: "inventory" },
+    { show: a.lowStock > 0, label: "مواد منخفضة بالمخزون", value: a.lowStock, href: "/pharmacy-inventory?tab=stock&stockState=low", kind: "inventory" },
     { show: a.devicesDue > 0, label: "أجهزة بحاجة صيانة", value: a.devicesDue, href: "/devices?due=1", kind: "devices" },
-    { show: a.admOver > 0, label: "رقود انتهى وقته", value: a.admOver, href: "/#admissions", kind: "system" },
+    { show: a.admOver > 0, label: "رقود انتهى وقته", value: a.admOver, href: "/therapy-centers?tab=beds", kind: "system" },
     { show: (a.backupStale ?? 0) > 0, label: "لا توجد نسخة احتياطية حديثة", value: a.backupStale, href: "/backup", kind: "system" },
     { show: (a.backupStopped ?? 0) > 0, label: "النسخ التلقائي متوقف", value: a.backupStopped, href: "/backup", kind: "system" },
   ].filter((i) => i.show && canOpenNotification(i.href, permSet));
