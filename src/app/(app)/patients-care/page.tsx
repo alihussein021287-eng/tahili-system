@@ -101,6 +101,11 @@ const TABS: { key: PatientsCareTab; label: string; title: string; description: s
 const ACTIVE_QUEUE_STATUSES = ["WAITING", "CALLED", "IN_SESSION"] as const;
 const ACTIVE_STAGE_STATUSES = ["WAITING", "IN_PROGRESS"] as const;
 const PENDING_REFERRAL_STATUSES = ["DRAFT", "PENDING_PRINT", "READY", "SENT", "RESULT_RECEIVED"] as const;
+const REFERRAL_TYPES = ["LAB", "RADIOLOGY", "IMAGING", "SPECIALIST", "TREATMENT_CENTER", "HOSPITAL", "OTHER"] as const;
+const REFERRAL_STATUSES = Object.keys(REFERRAL_STATUS_LABELS);
+const APPOINTMENT_STATUSES = Object.keys(APPT_STATUS);
+const PATIENT_STATUSES = Object.keys(PATIENT_STATUS);
+const CASE_TYPES = Object.keys(CASE_TYPE);
 
 function hasAny(perms: Set<string>, keys: string[]) {
   return keys.some((key) => perms.has(key));
@@ -112,6 +117,16 @@ function normalizeTab(raw: string | undefined, visible: typeof TABS): PatientsCa
 
 function tabHref(key: PatientsCareTab) {
   return `/patients-care?tab=${key}`;
+}
+
+function pickAllowed(value: string | undefined, allowed: readonly string[]) {
+  return value && allowed.includes(value) ? value : undefined;
+}
+
+function positiveInt(value: string | undefined) {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function parseDateStart(value?: string) {
@@ -197,6 +212,14 @@ export default async function PatientsCarePage({
   const lastVisitTo = parseDateStart(sp.lastVisitTo);
   const visitDate = parseDateStart(sp.visitDate) ?? todayStart;
   const appointmentDate = parseDateStart(sp.appointmentDate);
+  const patientStatus = pickAllowed(sp.patientStatus, PATIENT_STATUSES);
+  const caseType = pickAllowed(sp.caseType, CASE_TYPES);
+  const governorateId = positiveInt(sp.gov);
+  const districtId = positiveInt(sp.district);
+  const injuryTypeId = positiveInt(sp.injury);
+  const referralStatus = pickAllowed(sp.referralStatus, REFERRAL_STATUSES);
+  const referralType = pickAllowed(sp.referralType, REFERRAL_TYPES);
+  const appointmentStatus = pickAllowed(sp.appointmentStatus, APPOINTMENT_STATUSES);
 
   const basePatientWhere: any = { archivedAt: null };
   if (activeBranchId) basePatientWhere.branchId = activeBranchId;
@@ -204,11 +227,11 @@ export default async function PatientsCarePage({
   const filteredPatientWhere: any = { ...basePatientWhere };
   const patientSearch = patientSearchWhere(q);
   if (patientSearch) Object.assign(filteredPatientWhere, patientSearch);
-  if (sp.patientStatus) filteredPatientWhere.status = sp.patientStatus;
-  if (sp.gov) filteredPatientWhere.governorateId = Number(sp.gov);
-  if (sp.district) filteredPatientWhere.districtId = Number(sp.district);
-  if (sp.injury) filteredPatientWhere.injuryTypeId = Number(sp.injury);
-  if (sp.caseType) filteredPatientWhere.caseType = sp.caseType;
+  if (patientStatus) filteredPatientWhere.status = patientStatus;
+  if (governorateId) filteredPatientWhere.governorateId = governorateId;
+  if (districtId) filteredPatientWhere.districtId = districtId;
+  if (injuryTypeId) filteredPatientWhere.injuryTypeId = injuryTypeId;
+  if (caseType) filteredPatientWhere.caseType = caseType;
   if (lastVisitFrom || lastVisitTo) {
     filteredPatientWhere.visits = {
       some: {
@@ -233,9 +256,9 @@ export default async function PatientsCarePage({
   };
 
   const referralWhere: any = {};
-  if (sp.referralStatus) referralWhere.status = sp.referralStatus;
+  if (referralStatus) referralWhere.status = referralStatus;
   else referralWhere.status = { in: [...PENDING_REFERRAL_STATUSES] };
-  if (sp.referralType) referralWhere.type = sp.referralType;
+  if (referralType) referralWhere.type = referralType;
   if (q) {
     referralWhere.OR = [
       { requestedService: { contains: q, mode: "insensitive" } },
@@ -248,7 +271,7 @@ export default async function PatientsCarePage({
   const appointmentWhere: any = {};
   if (appointmentDate) appointmentWhere.scheduledAt = { gte: appointmentDate, lt: nextDay(appointmentDate) };
   else appointmentWhere.scheduledAt = { gte: todayStart };
-  if (sp.appointmentStatus) appointmentWhere.status = sp.appointmentStatus;
+  if (appointmentStatus) appointmentWhere.status = appointmentStatus;
   if (q) {
     const asNumber = Number(q);
     appointmentWhere.patient = Number.isNaN(asNumber)
@@ -489,7 +512,19 @@ export default async function PatientsCarePage({
 
       {activeTab === "patients" && canPatients && (
         <AdminSection id="patients" title="المراجعون" description="هذه قائمة عرض مختصرة. صفحة /patients تبقى القائمة التشغيلية الأساسية.">
-          <PatientFilters sp={sp} branches={branches} governorates={governorates} districts={districts} injuryTypes={injuryTypes} activeBranchId={activeBranchId} />
+          <PatientFilters
+            sp={sp}
+            branches={branches}
+            governorates={governorates}
+            districts={districts}
+            injuryTypes={injuryTypes}
+            activeBranchId={activeBranchId}
+            patientStatus={patientStatus}
+            caseType={caseType}
+            governorateId={governorateId}
+            districtId={districtId}
+            injuryTypeId={injuryTypeId}
+          />
           <PatientTable rows={patientRows} />
         </AdminSection>
       )}
@@ -571,8 +606,8 @@ export default async function PatientsCarePage({
           <form action="/patients-care" className="grid gap-3 md:grid-cols-4" autoComplete="off">
             <input type="hidden" name="tab" value="referrals" />
             <label className="label md:col-span-2">بحث<input name="q" className="input mt-1" defaultValue={sp.q ?? ""} placeholder="اسم المراجع أو الجهة أو الخدمة" /></label>
-            <label className="label">الحالة<select name="referralStatus" className="input mt-1" defaultValue={sp.referralStatus ?? ""}><option value="">المعلقة</option>{Object.entries(REFERRAL_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="label">النوع<select name="referralType" className="input mt-1" defaultValue={sp.referralType ?? ""}><option value="">كل الأنواع</option>{["LAB", "RADIOLOGY", "IMAGING", "SPECIALIST", "TREATMENT_CENTER", "HOSPITAL", "OTHER"].map((value) => <option key={value}>{value}</option>)}</select></label>
+            <label className="label">الحالة<select name="referralStatus" className="input mt-1" defaultValue={referralStatus ?? ""}><option value="">المعلقة</option>{Object.entries(REFERRAL_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="label">النوع<select name="referralType" className="input mt-1" defaultValue={referralType ?? ""}><option value="">كل الأنواع</option>{REFERRAL_TYPES.map((value) => <option key={value}>{value}</option>)}</select></label>
             <div className="flex gap-2 md:col-span-4"><button className="btn-primary">تطبيق الفلاتر</button><Link href="/patients-care?tab=referrals" className="btn-ghost">مسح</Link><Link href="/referrals" className="btn-ghost">فتح الصفحة الأصلية</Link></div>
           </form>
           <ReferralTable rows={referralRows} />
@@ -584,7 +619,7 @@ export default async function PatientsCarePage({
           <form action="/patients-care" className="grid gap-3 md:grid-cols-4" autoComplete="off">
             <input type="hidden" name="tab" value="appointments" />
             <label className="label">اليوم<input name="appointmentDate" type="date" className="input mt-1" defaultValue={sp.appointmentDate ?? ""} /></label>
-            <label className="label">الحالة<select name="appointmentStatus" className="input mt-1" defaultValue={sp.appointmentStatus ?? ""}><option value="">كل الحالات</option>{Object.entries(APPT_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="label">الحالة<select name="appointmentStatus" className="input mt-1" defaultValue={appointmentStatus ?? ""}><option value="">كل الحالات</option>{Object.entries(APPT_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="label md:col-span-2">المراجع<input name="q" className="input mt-1" defaultValue={sp.q ?? ""} placeholder="اسم أو رقم ملف" /></label>
             <div className="flex gap-2 md:col-span-4"><button className="btn-primary">تطبيق الفلاتر</button><Link href="/patients-care?tab=appointments" className="btn-ghost">مسح</Link><Link href="/appointments" className="btn-ghost">فتح المواعيد</Link></div>
           </form>
@@ -687,6 +722,11 @@ function PatientFilters({
   districts,
   injuryTypes,
   activeBranchId,
+  patientStatus,
+  caseType,
+  governorateId,
+  districtId,
+  injuryTypeId,
 }: {
   sp: Record<string, string | undefined>;
   branches: any[];
@@ -694,17 +734,22 @@ function PatientFilters({
   districts: any[];
   injuryTypes: any[];
   activeBranchId?: number | null;
+  patientStatus?: string;
+  caseType?: string;
+  governorateId?: number;
+  districtId?: number;
+  injuryTypeId?: number;
 }) {
   return (
     <form action="/patients-care" className="grid gap-3 md:grid-cols-4" autoComplete="off">
       <input type="hidden" name="tab" value="patients" />
       <label className="label md:col-span-2">الاسم/رقم الملف/الهاتف<input name="q" className="input mt-1" defaultValue={sp.q ?? ""} placeholder="بحث عام" /></label>
-      <label className="label">الحالة<select name="patientStatus" className="input mt-1" defaultValue={sp.patientStatus ?? ""}><option value="">كل الحالات</option>{Object.entries(PATIENT_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      <label className="label">الفرع<select name="branch" className="input mt-1" defaultValue={sp.branch ?? (activeBranchId ? String(activeBranchId) : "")}><option value="all">كل الفروع</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
-      <label className="label">المحافظة<select name="gov" className="input mt-1" defaultValue={sp.gov ?? ""}><option value="">الكل</option>{governorates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="label">المنطقة<select name="district" className="input mt-1" defaultValue={sp.district ?? ""}><option value="">الكل</option>{districts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="label">نوع الإصابة<select name="injury" className="input mt-1" defaultValue={sp.injury ?? ""}><option value="">الكل</option>{injuryTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="label">نوع الحالة<select name="caseType" className="input mt-1" defaultValue={sp.caseType ?? ""}><option value="">الكل</option>{Object.entries(CASE_TYPE).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="label">الحالة<select name="patientStatus" className="input mt-1" defaultValue={patientStatus ?? ""}><option value="">كل الحالات</option>{Object.entries(PATIENT_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="label">الفرع<select name="branch" className="input mt-1" defaultValue={sp.branch === "all" ? "all" : activeBranchId ? String(activeBranchId) : ""}><option value="all">كل الفروع</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
+      <label className="label">المحافظة<select name="gov" className="input mt-1" defaultValue={governorateId ? String(governorateId) : ""}><option value="">الكل</option>{governorates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label className="label">المنطقة<select name="district" className="input mt-1" defaultValue={districtId ? String(districtId) : ""}><option value="">الكل</option>{districts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label className="label">نوع الإصابة<select name="injury" className="input mt-1" defaultValue={injuryTypeId ? String(injuryTypeId) : ""}><option value="">الكل</option>{injuryTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label className="label">نوع الحالة<select name="caseType" className="input mt-1" defaultValue={caseType ?? ""}><option value="">الكل</option>{Object.entries(CASE_TYPE).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label className="label">آخر زيارة من<input name="lastVisitFrom" type="date" className="input mt-1" defaultValue={sp.lastVisitFrom ?? ""} /></label>
       <label className="label">آخر زيارة إلى<input name="lastVisitTo" type="date" className="input mt-1" defaultValue={sp.lastVisitTo ?? ""} /></label>
       <div className="flex items-end gap-2 md:col-span-2"><button className="btn-primary">تطبيق الفلاتر</button><Link href="/patients-care?tab=patients" className="btn-ghost">مسح</Link><Link href="/patients" className="btn-ghost">فتح /patients</Link></div>
