@@ -75,8 +75,10 @@ export function permissionsForLink(link?: string | null) {
     return ["therapy.view", "therapy.session.record", "centers.view", "beds.view", "meds.view", "centers.sessions.record"];
   }
   if (link.startsWith("/pharmacy-inventory")) {
+    if (tab === "dispense") return ["pharmacy.view"];
     if (tab === "purchases" || tab === "receipts") return ["pharmacy.purchase.view"];
-    if (tab === "stock" || tab === "batches" || tab === "reports" || tab === "alerts") return ["pharmacy.view", "inventory.view", "pharmacy.purchase.view"];
+    if (tab === "stock" || tab === "batches") return ["pharmacy.view", "inventory.view"];
+    if (tab === "reports" || tab === "alerts") return ["pharmacy.view", "inventory.view", "pharmacy.purchase.view"];
     return ["pharmacy.view", "inventory.view", "pharmacy.purchase.view"];
   }
   if (link.startsWith("/pharmacy")) return ["pharmacy.view"];

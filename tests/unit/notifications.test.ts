@@ -22,6 +22,9 @@ describe("notification helpers", () => {
     expect(canOpenNotification("/patients-care?tab=referrals", new Set(["referrals.view"]))).toBe(true);
     expect(canOpenNotification("/patients-care?tab=referrals", new Set(["patients.view"]))).toBe(false);
     expect(canOpenNotification("/pharmacy-inventory?tab=stock", new Set(["inventory.view"]))).toBe(true);
+    expect(canOpenNotification("/pharmacy-inventory?tab=stock", new Set(["pharmacy.purchase.view"]))).toBe(false);
+    expect(canOpenNotification("/pharmacy-inventory?tab=dispense", new Set(["pharmacy.purchase.view"]))).toBe(false);
+    expect(canOpenNotification("/pharmacy-inventory?tab=purchases", new Set(["pharmacy.purchase.view"]))).toBe(true);
   });
 
   it("يبقي permissionForLink متوافقاً مع النداء القديم", () => {
