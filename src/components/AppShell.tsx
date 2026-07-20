@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { markAllNotificationsRead } from "@/lib/notif-actions";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { IdleTimeout } from "./IdleTimeout";
@@ -11,7 +11,7 @@ import { PresencePing } from "./PresencePing";
 import { canOpenNotification, notificationTone } from "@/lib/notifications";
 import type { PresenceConfig } from "@/lib/presence";
 
-type Item = { href: string; label: string; icon: string; perm?: string; perms?: string[] };
+type Item = { href: string; label: string; icon: string; navLabel?: string; perm?: string; perms?: string[] };
 type AlertCounts = {
   admOver: number;
   devicesDue: number;
@@ -31,62 +31,132 @@ const ALL_ITEMS: Item[] = [
   { href: "/workspaces", label: "مساحاتي", icon: "◇", perm: "dashboard.view" },
   { href: "/notifications", label: "مركز التنبيهات", icon: "🔔", perm: "dashboard.view" },
   { href: "/collaboration", label: "مركز التعاون", icon: "💬", perm: "collaboration.view" },
-  { href: "/patients-care", label: "لوحة المرضى والرعاية", icon: "🧑‍⚕️", perms: ["patients.view", "patients.create", "visits.view", "queue.view", "journey.view", "referrals.view", "appointments.view"] },
+  { href: "/patients-care?tab=overview", label: "المرضى والرعاية", navLabel: "نظرة عامة", icon: "🧑‍⚕️", perms: ["patients.view", "patients.create", "visits.view", "queue.view", "journey.view", "referrals.view", "appointments.view"] },
   { href: "/patients-care?tab=patients", label: "المراجعون", icon: "☺", perm: "patients.view" },
-  { href: "/patients-care?tab=referrals", label: "الفحوص والإحالات", icon: "↗", perm: "referrals.view" },
+  { href: "/patients-care?tab=queue", label: "الطابور", icon: "⏳", perm: "queue.view" },
   { href: "/patients-care?tab=appointments", label: "المواعيد", icon: "▦", perm: "appointments.view" },
-  { href: "/therapy-centers", label: "لوحة المسار العلاجي والمراكز", icon: "🏥", perms: ["therapy.view", "therapy.session.record", "centers.view", "beds.view", "meds.view", "centers.sessions.record"] },
-  { href: "/therapy-centers?tab=program", label: "العلاج الطبيعي", icon: "🏃", perm: "therapy.view" },
+  { href: "/patients-care?tab=visits", label: "الاستعلامات", icon: "📋", perm: "visits.view" },
+  { href: "/patients-care?tab=referrals", label: "الإحالات", icon: "↗", perm: "referrals.view" },
+  { href: "/patients-care?tab=journey", label: "مسار الرعاية", icon: "🗺", perm: "journey.view" },
+
+  { href: "/therapy-centers?tab=overview", label: "المسار العلاجي والمراكز", navLabel: "نظرة عامة", icon: "🏥", perms: ["therapy.view", "therapy.session.record", "centers.view", "beds.view", "meds.view", "centers.sessions.record"] },
+  { href: "/therapy-centers?tab=plans", label: "الخطط العلاجية", icon: "▤", perms: ["therapy.view", "clinical.plan", "therapy.plan.manage"] },
+  { href: "/therapy-centers?tab=sessions", label: "الجلسات", icon: "▦", perms: ["therapy.view", "clinical.session", "therapy.session.record"] },
   { href: "/therapy-centers?tab=today", label: "جلساتي اليوم", icon: "🗓", perm: "therapy.session.record" },
   { href: "/therapy-centers?tab=centers", label: "مساحات المراكز", icon: "🏥", perm: "centers.view" },
-  { href: "/therapy-centers?tab=centers", label: "تقارير المراكز", icon: "📊", perm: "centers.view" },
-  { href: "/patients-care?tab=queue", label: "الطابور", icon: "⏳", perm: "queue.view" },
-  { href: "/patients-care?tab=visits", label: "استعلامات وحضور المراجعين", icon: "📋", perm: "visits.view" },
-  { href: "/reports-finance?tab=approvals", label: "سير الموافقات", icon: "✅", perm: "approvals.view" },
-  { href: "/patients-care?tab=journey", label: "المرضى حسب المحطة", icon: "🗺", perm: "journey.view" },
-  { href: "/station-kpis", label: "مؤشرات المحطات", icon: "📈", perm: "reports.view" },
-  { href: "/reports-finance", label: "لوحة التقارير والمالية", icon: "📊", perms: ["reports.view", "reports.official", "finance.view", "finance.report", "expenses.view", "expenses.reports", "approvals.view", "officialdocs.view", "analytics.view", "patients.export"] },
-  { href: "/reports-finance?tab=overview", label: "التقارير", icon: "▤", perm: "reports.view" },
-  { href: "/pharmacy-inventory", label: "لوحة الصيدلية والمخزون", icon: "💊", perms: ["pharmacy.view", "pharmacy.dispense", "pharmacy.batch", "inventory.view", "inventory.manage", "pharmacy.purchase.view", "pharmacy.purchase.create", "pharmacy.purchase.receive"] },
-  { href: "/pharmacy-inventory?tab=stock", label: "المخزون", icon: "▣", perm: "inventory.view" },
-  { href: "/pharmacy-inventory?tab=dispense", label: "الصيدلية", icon: "⚕️", perm: "pharmacy.view" },
-  { href: "/pharmacy-inventory?tab=batches", label: "دفعات الصيدلية", icon: "📦", perm: "pharmacy.view" },
-  { href: "/pharmacy-inventory?tab=reports", label: "تقارير الصيدلية", icon: "📊", perm: "pharmacy.view" },
-  { href: "/pharmacy-inventory?tab=purchases", label: "أوامر الشراء", icon: "🧾", perm: "pharmacy.purchase.view" },
   { href: "/therapy-centers?tab=beds", label: "الرقود والفندقة", icon: "🛏", perm: "beds.view" },
   { href: "/therapy-centers?tab=meds", label: "أدوية الراقدين", icon: "💊", perm: "meds.view" },
-  { href: "/devices", label: "التسليم والصيانة", icon: "🔧", perm: "devices.view" },
-  { href: "/staff", label: "لوحة الموظفين والمهام", icon: "🗂", perms: ["users.view", "attendance.view", "shifts.view", "tasks.view"] },
-  { href: "/workload", label: "حمل المعالجين", icon: "👷", perm: "workload.view" },
-  { href: "/staff?tab=attendance", label: "حضور الموظفين", icon: "🕒", perm: "attendance.view" },
+  { href: "/workload", label: "المعالجون", icon: "👷", perm: "workload.view" },
+  { href: "/devices", label: "الأجهزة", icon: "🔧", perm: "devices.view" },
+
+  { href: "/reports-finance?tab=overview", label: "التقارير والمالية", navLabel: "نظرة عامة", icon: "📊", perms: ["reports.view", "reports.official", "finance.view", "finance.report", "expenses.view", "expenses.reports", "approvals.view", "officialdocs.view", "analytics.view", "patients.export"] },
+  { href: "/reports-finance?tab=official", label: "التقارير", icon: "▤", perms: ["reports.view", "reports.official", "officialdocs.view"] },
+  { href: "/reports-finance?tab=finance", label: "المالية", icon: "₪", perms: ["finance.view", "finance.report"] },
+  { href: "/reports-finance?tab=wounded", label: "صرفيات الجرحى", icon: "💳", perms: ["expenses.view", "expenses.reports", "expenses.approve", "expenses.pay"] },
+  { href: "/reports-finance?tab=approvals", label: "الموافقات", icon: "✅", perms: ["approvals.view", "expenses.approve", "expenses.pay", "reports.approve"] },
+  { href: "/reports-finance?tab=exports", label: "الصادرات", icon: "↧", perms: ["patients.export", "expenses.reports", "officialdocs.view", "audit.view"] },
+  { href: "/analytics", label: "التحليلات", icon: "📈", perm: "analytics.view" },
+
+  { href: "/pharmacy-inventory?tab=overview", label: "الصيدلية والمخزون", navLabel: "نظرة عامة", icon: "💊", perms: ["pharmacy.view", "pharmacy.dispense", "pharmacy.batch", "inventory.view", "inventory.manage", "pharmacy.purchase.view", "pharmacy.purchase.create", "pharmacy.purchase.receive"] },
+  { href: "/pharmacy-inventory?tab=dispense", label: "الوصفات", icon: "⚕️", perm: "pharmacy.view" },
+  { href: "/pharmacy-inventory?tab=stock", label: "المخزون", icon: "▣", perm: "inventory.view" },
+  { href: "/pharmacy-inventory?tab=batches", label: "الدفعات", icon: "📦", perms: ["pharmacy.view", "inventory.view"] },
+  { href: "/pharmacy-inventory?tab=purchases", label: "أوامر الشراء", icon: "🧾", perm: "pharmacy.purchase.view" },
+  { href: "/pharmacy-inventory?tab=receipts", label: "الاستلام", icon: "✓", perm: "pharmacy.purchase.view" },
+  { href: "/pharmacy-inventory?tab=reports", label: "تقارير الصيدلية", icon: "📊", perms: ["pharmacy.view", "inventory.view", "pharmacy.purchase.view"] },
+
+  { href: "/staff?tab=overview", label: "الموظفون والمهام", navLabel: "نظرة عامة", icon: "🗂", perms: ["users.view", "attendance.view", "shifts.view", "tasks.view"] },
+  { href: "/staff?tab=employees", label: "الموظفون", icon: "⚙", perm: "users.view" },
   { href: "/staff?tab=tasks", label: "المهام", icon: "📌", perm: "tasks.view" },
+  { href: "/staff?tab=attendance", label: "الحضور", icon: "🕒", perm: "attendance.view" },
   { href: "/staff?tab=shifts", label: "المناوبات والإجازات", icon: "🗓", perm: "shifts.view" },
-  { href: "/analytics", label: "التحليلات", icon: "📊", perm: "analytics.view" },
-  { href: "/reports-finance?tab=official", label: "التقرير الإحصائي الرسمي", icon: "📑", perm: "reports.view" },
-  { href: "/reports-finance?tab=official", label: "التقرير الرسمي", icon: "📄", perm: "reports.official" },
-  { href: "/official-docs", label: "أرشيف الوثائق الرسمية", icon: "📄", perm: "officialdocs.view" },
-  { href: "/reports-finance?tab=finance", label: "المالية", icon: "₪", perm: "finance.view" },
-  { href: "/reports-finance?tab=wounded", label: "صرفيات الجرحى", icon: "💳", perm: "expenses.view" },
-  { href: "/login-log", label: "سجل الدخول", icon: "🔐", perm: "settings.view" },
-  { href: "/audit", label: "سجل التدقيق", icon: "▣", perm: "audit.view" },
-  { href: "/permissions", label: "الصلاحيات", icon: "🔐", perm: "users.permissions" },
-  { href: "/users", label: "المستخدمون", icon: "⚙", perm: "users.view" },
+
   { href: "/settings", label: "الإعدادات", icon: "▥", perm: "settings.view" },
-  { href: "/readiness", label: "جاهزية النظام", icon: "✅", perm: "settings.view" },
+  { href: "/users", label: "المستخدمون", icon: "⚙", perm: "users.view" },
+  { href: "/permissions", label: "الصلاحيات", icon: "🔐", perm: "users.permissions" },
+  { href: "/readiness", label: "الجاهزية", icon: "✅", perm: "settings.view" },
   { href: "/backup", label: "النسخ الاحتياطي", icon: "💾", perm: "settings.backup" },
+  { href: "/audit", label: "التدقيق", icon: "▣", perm: "audit.view" },
+  { href: "/login-log", label: "سجل الدخول", icon: "🔐", perm: "settings.view" },
 ];
 
 // مجموعات التنقل: تبويب رئيسي (مجموعة) ← تبويبات فرعية (روابط)
 const STANDALONE = ["/", "/workspaces", "/notifications", "/collaboration"]; // روابط عامة تبقى مفردة فوق
 const NAV_GROUPS: { key: string; title: string; icon: string; hrefs: string[] }[] = [
-  { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients-care"] },
-  { key: "therapy", title: "المسار العلاجي والمراكز", icon: "🏥", hrefs: ["/therapy-centers"] },
-  { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy-inventory", "/devices"] },
-  { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports-finance"] },
-  { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff", "/workload"] },
+  { key: "care",    title: "المرضى والرعاية",   icon: "🧑‍⚕️", hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=appointments", "/patients-care?tab=visits", "/patients-care?tab=referrals", "/patients-care?tab=journey"] },
+  { key: "therapy", title: "المسار العلاجي والمراكز", icon: "🏥", hrefs: ["/therapy-centers?tab=overview", "/therapy-centers?tab=plans", "/therapy-centers?tab=sessions", "/therapy-centers?tab=today", "/therapy-centers?tab=centers", "/therapy-centers?tab=beds", "/therapy-centers?tab=meds", "/workload", "/devices"] },
+  { key: "reports", title: "التقارير والمالية", icon: "📊",   hrefs: ["/reports-finance?tab=overview", "/reports-finance?tab=official", "/reports-finance?tab=finance", "/reports-finance?tab=wounded", "/reports-finance?tab=approvals", "/reports-finance?tab=exports", "/analytics"] },
+  { key: "pharm",   title: "الصيدلية والمخزون", icon: "💊",   hrefs: ["/pharmacy-inventory?tab=overview", "/pharmacy-inventory?tab=dispense", "/pharmacy-inventory?tab=stock", "/pharmacy-inventory?tab=batches", "/pharmacy-inventory?tab=purchases", "/pharmacy-inventory?tab=receipts", "/pharmacy-inventory?tab=reports"] },
+  { key: "staff",   title: "الموظفون والمهام",   icon: "🗂",   hrefs: ["/staff?tab=overview", "/staff?tab=employees", "/staff?tab=tasks", "/staff?tab=attendance", "/staff?tab=shifts"] },
   { key: "system",  title: "النظام",            icon: "⚙",    hrefs: ["/settings", "/users", "/permissions", "/readiness", "/backup", "/audit", "/login-log"] },
 ];
-const MOBILE_QUICK_HREFS = ["/patients-care", "/therapy-centers", "/pharmacy-inventory", "/staff"];
+const MOBILE_QUICK_HREFS = ["/patients-care?tab=overview", "/therapy-centers?tab=overview", "/pharmacy-inventory?tab=overview", "/staff?tab=overview"];
+
+type SidebarRule = { standalone: string[]; groups: string[]; hrefs?: string[] };
+const ROLE_SIDEBAR_RULES: Partial<Record<string, SidebarRule>> = {
+  RECEPTION: {
+    standalone: ["/", "/notifications"],
+    groups: ["care"],
+    hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=appointments", "/patients-care?tab=visits"],
+  },
+  HEAD_THERAPIST: {
+    standalone: ["/", "/notifications"],
+    groups: ["care", "therapy"],
+    hrefs: ["/patients-care?tab=appointments", "/therapy-centers?tab=overview", "/therapy-centers?tab=plans", "/therapy-centers?tab=sessions", "/therapy-centers?tab=today", "/therapy-centers?tab=centers", "/workload"],
+  },
+  THERAPIST: {
+    standalone: ["/", "/notifications"],
+    groups: ["therapy", "staff"],
+    hrefs: ["/therapy-centers?tab=plans", "/therapy-centers?tab=sessions", "/therapy-centers?tab=today", "/staff?tab=tasks"],
+  },
+  PHARMACIST: {
+    standalone: ["/", "/notifications"],
+    groups: ["pharm"],
+  },
+  ACCOUNTANT: {
+    standalone: ["/", "/notifications"],
+    groups: ["reports"],
+    hrefs: ["/reports-finance?tab=overview", "/reports-finance?tab=official", "/reports-finance?tab=finance", "/reports-finance?tab=wounded", "/reports-finance?tab=approvals", "/reports-finance?tab=exports"],
+  },
+  DOCTOR: {
+    standalone: ["/", "/notifications", "/collaboration"],
+    groups: ["care", "therapy", "reports"],
+  },
+  RESIDENT: {
+    standalone: ["/", "/notifications"],
+    groups: ["care", "therapy", "reports"],
+  },
+  DATA_ENTRY: {
+    standalone: ["/", "/notifications"],
+    groups: ["care"],
+  },
+  LAB: {
+    standalone: ["/", "/notifications"],
+    groups: ["care"],
+  },
+  RADIOLOGY: {
+    standalone: ["/", "/notifications"],
+    groups: ["care"],
+  },
+  DRESSING: {
+    standalone: ["/", "/notifications"],
+    groups: ["care", "therapy"],
+    hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=appointments", "/patients-care?tab=visits", "/therapy-centers?tab=today"],
+  },
+  PROSTHETICS: {
+    standalone: ["/", "/notifications"],
+    groups: ["care", "therapy", "staff"],
+    hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=appointments", "/patients-care?tab=visits", "/devices", "/staff?tab=tasks"],
+  },
+  MANAGER: {
+    standalone: ["/", "/workspaces", "/notifications", "/collaboration"],
+    groups: ["care", "therapy", "reports", "pharm", "staff"],
+  },
+  VIEWER: {
+    standalone: ["/", "/notifications"],
+    groups: ["care", "reports"],
+  },
+};
 
 export function AppShell({
   role,
@@ -107,26 +177,31 @@ export function AppShell({
 }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
+  const searchParams = useSearchParams();
 
   const permSet = new Set(perms);
   const hasAccess = (it: Item) => (it.perm ? permSet.has(it.perm) : false) || (it.perms?.some((perm) => permSet.has(perm)) ?? false);
   const allItems = ALL_ITEMS.filter(hasAccess);
+  const sidebarRule = role === "ADMIN" ? undefined : ROLE_SIDEBAR_RULES[String(role ?? "")];
+  const roleAllowsStandalone = (href: string) => !sidebarRule || sidebarRule.standalone.includes(href);
+  const roleAllowsGroup = (key: string) => !sidebarRule || sidebarRule.groups.includes(key);
+  const roleAllowsHref = (href: string) => !sidebarRule?.hrefs || sidebarRule.hrefs.includes(href);
   const byHref: Record<string, Item> = {};
   for (const it of ALL_ITEMS) byHref[it.href] = it;
   // ربط كل نوع إشعار بصفحته — تظهر كشارة على القائمة (نفس فكرة شارة الصيدلية)
   const a = alerts ?? { admOver: 0, devicesDue: 0, lowStock: 0, rxPending: 0, expiringSoon: 0, myTasks: 0, overdueTasks: 0, appointmentSoon: 0 };
   const ALERT_BY_HREF: Record<string, { count: number; title: string }> = {
-    "/patients-care": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة ضمن المرضى والرعاية" },
-    "/therapy-centers": { count: a.admOver ?? 0, title: "رقود أو مسارات علاجية تحتاج متابعة" },
-    "/appointments": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة خلال ساعتين" },
-    "/pharmacy-inventory": { count: (a.rxPending ?? 0) + (a.expiringSoon ?? 0) + (a.lowStock ?? 0), title: "وصفات ونواقص ودفعات تحتاج متابعة" },
-    "/pharmacy": { count: a.rxPending ?? 0, title: "وصفات قيد الانتظار" },
-    "/pharmacy/stock": { count: a.expiringSoon ?? 0, title: "دفعات قريبة أو منتهية النفاذ" },
-    "/inventory": { count: a.lowStock ?? 0, title: "مواد منخفضة بالمخزون" },
+    "/patients-care?tab=overview": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة ضمن المرضى والرعاية" },
+    "/patients-care?tab=appointments": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة خلال ساعتين" },
+    "/therapy-centers?tab=overview": { count: a.admOver ?? 0, title: "رقود أو مسارات علاجية تحتاج متابعة" },
+    "/therapy-centers?tab=beds": { count: a.admOver ?? 0, title: "رقود انتهت مدته" },
+    "/pharmacy-inventory?tab=overview": { count: (a.rxPending ?? 0) + (a.expiringSoon ?? 0) + (a.lowStock ?? 0), title: "وصفات ونواقص ودفعات تحتاج متابعة" },
+    "/pharmacy-inventory?tab=dispense": { count: a.rxPending ?? 0, title: "وصفات قيد الانتظار" },
+    "/pharmacy-inventory?tab=batches": { count: a.expiringSoon ?? 0, title: "دفعات قريبة أو منتهية النفاذ" },
+    "/pharmacy-inventory?tab=stock": { count: a.lowStock ?? 0, title: "مواد منخفضة بالمخزون" },
     "/devices": { count: a.devicesDue ?? 0, title: "أجهزة تحتاج صيانة" },
-    "/beds": { count: a.admOver ?? 0, title: "رقود انتهت مدته" },
-    "/staff": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
-    "/tasks": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
+    "/staff?tab=overview": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
+    "/staff?tab=tasks": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
     "/collaboration": { count: a.collaborationUnread ?? 0, title: "رسائل تعاون غير مقروءة" },
   };
   const badgeFor = (it: Item) => {
@@ -134,36 +209,49 @@ export function AppShell({
     return typeof raw === "number" ? { count: raw, title: "" } : raw;
   };
 
-  // تحديد العنصر الفعّال = أطول رابط يطابق المسار الحالي (يميّز /reports عن /reports/official)
-  const matches = ALL_ITEMS.filter((it) => (it.href === "/" ? path === "/" : path === it.href || path.startsWith(it.href + "/")));
+  const queryMatches = (hrefQuery: string) => {
+    const expected = new URLSearchParams(hrefQuery);
+    for (const [key, value] of expected.entries()) {
+      if (searchParams.get(key) !== value) return false;
+    }
+    return true;
+  };
+  const itemMatches = (it: Item) => {
+    if (it.href === "/") return path === "/";
+    const [hrefPath, hrefQuery = ""] = it.href.split("?");
+    if (path !== hrefPath && !path.startsWith(`${hrefPath}/`)) return false;
+    return hrefQuery ? path === hrefPath && queryMatches(hrefQuery) : true;
+  };
+  const matches = ALL_ITEMS.filter(itemMatches);
   const matchedHref = matches.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? "";
-  const reportsFinanceActive = [
-    "/reports",
-    "/finance",
-    "/official-docs",
-    "/station-kpis",
-    "/analytics",
-    "/approvals",
-  ].some((href) => path === href || path.startsWith(href + "/"));
-  const pharmacyInventoryActive = [
-    "/pharmacy",
-    "/inventory",
-  ].some((href) => path === href || path.startsWith(href + "/"));
-  const patientsCareActive = [
-    "/patients",
-    "/visits",
-    "/queue",
-    "/care-board",
-    "/referrals",
-    "/appointments",
-  ].some((href) => path === href || path.startsWith(href + "/"));
-  const therapyCentersActive = [
-    "/therapy",
-    "/centers",
-    "/beds",
-    "/meds",
-  ].some((href) => path === href || path.startsWith(href + "/"));
-  const activeHref = pharmacyInventoryActive ? "/pharmacy-inventory" : reportsFinanceActive ? "/reports-finance" : therapyCentersActive ? "/therapy-centers" : patientsCareActive ? "/patients-care" : matchedHref;
+  const legacyActiveHref =
+    path === "/patients-care" ? "/patients-care?tab=overview" :
+    path === "/queue" ? "/patients-care?tab=queue" :
+    path === "/appointments" || path.startsWith("/appointments/") ? "/patients-care?tab=appointments" :
+    path === "/visits" ? "/patients-care?tab=visits" :
+    path === "/search" ? "/patients-care?tab=visits" :
+    path === "/referrals" || path.startsWith("/referrals/") ? "/patients-care?tab=referrals" :
+    path === "/patients" || path.startsWith("/patients/") ? "/patients-care?tab=patients" :
+    path === "/care-board" || path === "/station-kpis" ? "/patients-care?tab=journey" :
+    path === "/therapy-centers" ? "/therapy-centers?tab=overview" :
+    path === "/therapy/today" ? "/therapy-centers?tab=today" :
+    path === "/therapy" || path.startsWith("/therapy/") ? "/therapy-centers?tab=plans" :
+    path === "/centers" || path.startsWith("/centers/") ? "/therapy-centers?tab=centers" :
+    path === "/beds" ? "/therapy-centers?tab=beds" :
+    path === "/meds" ? "/therapy-centers?tab=meds" :
+    path === "/reports-finance" ? "/reports-finance?tab=overview" :
+    path === "/reports" || path.startsWith("/reports/") || path === "/official-docs" || path.startsWith("/official-docs/") ? "/reports-finance?tab=official" :
+    path === "/finance" || path.startsWith("/finance/") ? "/reports-finance?tab=finance" :
+    path === "/approvals" ? "/reports-finance?tab=approvals" :
+    path === "/pharmacy-inventory" ? "/pharmacy-inventory?tab=overview" :
+    path === "/pharmacy" || path.startsWith("/pharmacy/") ? "/pharmacy-inventory?tab=dispense" :
+    path === "/inventory" ? "/pharmacy-inventory?tab=stock" :
+    path === "/staff" ? "/staff?tab=overview" :
+    path === "/tasks" ? "/staff?tab=tasks" :
+    path === "/attendance" ? "/staff?tab=attendance" :
+    path === "/shifts" ? "/staff?tab=shifts" :
+    "";
+  const activeHref = matchedHref || legacyActiveHref;
   const activeGroupKey = NAV_GROUPS.find((g) => g.hrefs.includes(activeHref))?.key ?? "";
 
   // حالة الطي لكل مجموعة — تبدأ مفتوحة على المجموعة الفعّالة
@@ -182,12 +270,26 @@ export function AppShell({
   const renderItem = (it: Item, nested = false) => {
     const active = it.href === activeHref;
     const badge = badgeFor(it);
+    const label = nested ? it.navLabel ?? it.label : it.label;
     return (
       <Link key={it.href} href={it.href} onClick={() => setOpen(false)}
         className={`flex items-center gap-3 rounded-lg py-2 text-sm transition ${nested ? "px-3" : "px-3"}
           ${active ? "bg-white/15 font-medium" : "text-brand-100/80 hover:bg-white/10"}`}>
-        <span className="text-base">{it.icon}</span>
-        <span className="flex-1">{it.label}</span>
+        <span className="shrink-0 text-base">{it.icon}</span>
+        <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
+        {badge.count > 0 && <span title={badge.title} className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{badge.count}</span>}
+      </Link>
+    );
+  };
+  const renderGroupLink = (group: { key: string; title: string; icon: string }, it: Item) => {
+    const active = it.href === activeHref;
+    const badge = badgeFor(it);
+    const label = it.navLabel === "نظرة عامة" ? group.title : it.label;
+    return (
+      <Link key={group.key} href={it.href} onClick={() => setOpen(false)}
+        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${active ? "bg-white/15 font-medium" : "text-brand-100/80 hover:bg-white/10"}`}>
+        <span className="shrink-0 text-base">{group.icon}</span>
+        <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
         {badge.count > 0 && <span title={badge.title} className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{badge.count}</span>}
       </Link>
     );
@@ -196,12 +298,14 @@ export function AppShell({
   const NavLinks = () => (
     <nav className="space-y-1 p-3">
       {/* عناصر مفردة (الرئيسية) */}
-      {STANDALONE.map((h) => byHref[h]).filter((it) => it && hasAccess(it)).map((it) => renderItem(it))}
+      {STANDALONE.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsStandalone(it.href)).map((it) => renderItem(it))}
 
       {/* المجموعات */}
       {NAV_GROUPS.map((g) => {
-        const items = g.hrefs.map((h) => byHref[h]).filter((it) => it && hasAccess(it));
+        if (!roleAllowsGroup(g.key)) return null;
+        const items = g.hrefs.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsHref(it.href));
         if (items.length === 0) return null;
+        if (items.length === 1) return renderGroupLink(g, items[0]);
         const isOpen = !!openGroups[g.key];
         const hasActive = items.some((it) => it.href === activeHref);
         const groupBadge = items.reduce((n, it) => n + badgeFor(it).count, 0);
@@ -211,7 +315,7 @@ export function AppShell({
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition
                 ${hasActive && !isOpen ? "bg-white/10 font-medium text-white" : "text-brand-100/90 hover:bg-white/10"}`}>
               <span className="text-base">{g.icon}</span>
-              <span className="flex-1 text-right">{g.title}</span>
+              <span className="min-w-0 flex-1 truncate text-right" title={g.title}>{g.title}</span>
               {!isOpen && groupBadge > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{groupBadge}</span>}
               <span className={`text-[10px] text-brand-100/60 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}>◀</span>
             </button>
@@ -226,7 +330,7 @@ export function AppShell({
     </nav>
   );
   const MobileQuickNav = () => {
-    const items = MOBILE_QUICK_HREFS.map((h) => byHref[h]).filter((it) => it && hasAccess(it));
+    const items = MOBILE_QUICK_HREFS.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsHref(it.href));
     if (items.length === 0) return null;
     return (
       <nav className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
@@ -238,7 +342,7 @@ export function AppShell({
               <Link key={it.href} href={it.href}
                 className={`relative flex min-h-14 flex-col items-center justify-center rounded-xl px-1 text-[11px] font-medium ${active ? "bg-brand-50 text-brand-700" : "text-gray-600"}`}>
                 <span className="text-lg leading-none">{it.icon}</span>
-                <span className="mt-1 max-w-full truncate">{it.label.replace("استعلامات وحضور المراجعين", "الحضور")}</span>
+                <span className="mt-1 max-w-full truncate">{it.label}</span>
                 {badge.count > 0 && <span title={badge.title} className="absolute left-2 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{badge.count}</span>}
               </Link>
             );
