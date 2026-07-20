@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_QUEUE_HALLS, queueHallNames } from "@/lib/queue";
 
 describe("queue hall options", () => {
-  it("keeps the built-in queue halls and removes duplicates", () => {
+  it("uses database queue halls and removes duplicates", () => {
     const names = queueHallNames([DEFAULT_QUEUE_HALLS[0], "قاعة الهايبر", "قاعة الهايبر"]);
-    expect(names).toEqual(expect.arrayContaining([...DEFAULT_QUEUE_HALLS, "قاعة الهايبر"]));
+    expect(names).toEqual(expect.arrayContaining([DEFAULT_QUEUE_HALLS[0], "قاعة الهايبر"]));
     expect(names.filter((name) => name === "قاعة الهايبر")).toHaveLength(1);
+  });
+
+  it("falls back to the built-in queue halls when the database has no halls", () => {
+    expect(queueHallNames([])).toEqual([...DEFAULT_QUEUE_HALLS].sort((a, b) => a.localeCompare(b, "ar")));
   });
 
   it("hides acceptance-test hall names from the user interface", () => {

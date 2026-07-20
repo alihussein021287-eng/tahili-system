@@ -7,13 +7,13 @@ import { checkClamAvStatus } from "@/lib/collaboration-scan";
 import { prisma } from "@/lib/db";
 import { maintenanceOn } from "@/lib/maintenance";
 import { getOrg } from "@/lib/org";
-import { queueHallNames } from "@/lib/queue";
 import { getLibreOfficeStatus } from "@/lib/collaboration-office-preview";
+import { activeCenterHallOptions, mapCenterHallResources } from "@/lib/center-halls";
 import { PageHeader } from "@/components/PageHeader";
 import { DisplaySettings } from "./DisplaySettings";
 import {
   addBranch,
-  addCenter,
+  addCenterHall,
   addDistrict,
   addFormation,
   addInjuryType,
@@ -21,13 +21,15 @@ import {
   addProstheticType,
   addRank,
   deleteBranch,
-  deleteCenter,
   deleteDistrict,
   deleteFormation,
   deleteInjuryType,
   deleteMobilityAid,
   deleteProstheticType,
   deleteRank,
+  createTherapyCenter,
+  renameCenterHall,
+  renameTherapyCenter,
   saveBackupAction,
   saveClamAvAction,
   saveExpenseApprovalLevels,
@@ -40,6 +42,7 @@ import {
   saveReadinessAction,
   saveSecurityAction,
   saveTherapyAction,
+  setCenterHallActive,
   setMaintenanceMode,
   toggleBranch,
 } from "./actions";
@@ -151,7 +154,7 @@ export default async function Settings({
 
       {activeTab === "identity" ? <IdentityTab org={org} canEdit={canEdit} message={params} /> : null}
       {activeTab === "operations" ? <OperationsTab cfg={cfg} canEdit={canEdit} /> : null}
-      {activeTab === "therapy" ? <TherapyTab cfg={cfg} canEdit={canEdit} /> : null}
+      {activeTab === "therapy" ? <TherapyTab cfg={cfg} canEdit={canEdit} message={params} /> : null}
       {activeTab === "security" ? <SecurityTab cfg={cfg} canEdit={canEdit} isAdmin={isAdmin} message={params} /> : null}
       {activeTab === "notifications" ? <NotificationsTab cfg={cfg} orgRow={orgRow} canEdit={canEdit} /> : null}
       {activeTab === "files" ? <FilesTab cfg={cfg} canEdit={canEdit} isAdmin={isAdmin} /> : null}
@@ -350,19 +353,34 @@ function OperationsTab({ cfg, canEdit }: { cfg: Awaited<ReturnType<typeof getAdm
   );
 }
 
-async function TherapyTab({ cfg, canEdit }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean }) {
-  const [centers, halls] = await Promise.all([
+async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean; message: any }) {
+  const [centers, resources] = await Promise.all([
     prisma.center.findMany({
       include: {
         _count: { select: { memberships: true, resources: true, programs: true, centerSessions: true, treatmentPlans: true } },
       },
       orderBy: { name: "asc" },
     }),
-    prisma.therapyHall.findMany({
-      include: { _count: { select: { centerResources: true, therapySessions: true, treatmentPlans: true } } },
-      orderBy: [{ active: "desc" }, { name: "asc" }],
+    prisma.centerResource.findMany({
+      where: { type: "HALL", therapyHallId: { not: null } },
+      include: {
+        center: { select: { id: true, name: true } },
+        therapyHall: {
+          include: { _count: { select: { centerResources: true, therapySessions: true, treatmentPlans: true, appointments: true } } },
+        },
+      },
+      orderBy: [{ centerId: "asc" }, { name: "asc" }],
     }),
   ]);
+  const hallOptions = mapCenterHallResources(resources);
+  const resourcesByCenter = new Map<number, any[]>();
+  for (const resource of resources) {
+    if (!resource.therapyHall) continue;
+    const group = resourcesByCenter.get(resource.centerId) ?? [];
+    group.push(resource);
+    resourcesByCenter.set(resource.centerId, group);
+  }
+  const activeHalls = hallOptions.filter((hall) => hall.active && hall.status === "AVAILABLE").length;
   return (
     <div className="space-y-5">
       <Card id="therapy-defaults" title="افتراضيات الخطط العلاجية" description="تستخدم كنقطة بداية عند إنشاء الخطط ولا تغيّر الخطط القديمة تلقائياً.">
@@ -377,43 +395,79 @@ async function TherapyTab({ cfg, canEdit }: { cfg: Awaited<ReturnType<typeof get
         </SettingsActionForm>
       </Card>
 
-      <Card id="therapy-centers" title="المراكز والقاعات المرتبطة" description="إدارة أسماء المراكز من تبويب القوائم، وهذه البطاقة توضّح الارتباطات قبل أي تعديل.">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="mb-2 font-medium text-gray-800">المراكز العلاجية</div>
-            <div className="space-y-2 text-sm">
-              {centers.map((center) => (
-                <div key={center.id} className="rounded-md bg-gray-50 p-2">
-                  <div className="font-medium">{center.name}</div>
-                  <div className="mt-1 flex flex-wrap gap-1 text-xs text-gray-500">
-                    <span className="badge-neutral">{center._count.memberships} عضوية</span>
-                    <span className="badge-neutral">{center._count.resources} مورد/قاعة</span>
-                    <span className="badge-neutral">{center._count.programs} برنامج</span>
-                    <span className="badge-neutral">{center._count.centerSessions + center._count.treatmentPlans} علاج</span>
-                  </div>
-                </div>
-              ))}
-              {centers.length === 0 ? <div className="text-gray-400">لا توجد مراكز.</div> : null}
-            </div>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="mb-2 font-medium text-gray-800">القاعات</div>
-            <div className="space-y-2 text-sm">
-              {halls.map((hall) => (
-                <div key={hall.id} className="rounded-md bg-gray-50 p-2">
-                  <div className="font-medium">{hall.name}</div>
-                  <div className="mt-1 flex flex-wrap gap-1 text-xs text-gray-500">
-                    <span className={hall.active ? "badge-success" : "badge-neutral"}>{hall.active ? "فعالة" : "معطلة"}</span>
-                    <span className="badge-neutral">{hall._count.centerResources} مورد</span>
-                    <span className="badge-neutral">{hall._count.therapySessions + hall._count.treatmentPlans} ارتباط علاجي</span>
-                  </div>
-                </div>
-              ))}
-              {halls.length === 0 ? <div className="text-gray-400">لا توجد قاعات.</div> : null}
-            </div>
-          </div>
+      <Card id="center-halls" title="المراكز والفروع/القاعات" description="إدارة المصدر المعتمد لاختيارات الطابور والمواعيد وخطط رئيس المعالجين." message={message}>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="badge-neutral">{centers.length} مركز</span>
+          <span className="badge-success">{activeHalls} قاعة فعالة</span>
+          <span className="badge-neutral">{hallOptions.length} ربط مركز/قاعة</span>
         </div>
-        <Link href="/settings?tab=lookups" className="btn-ghost">فتح القوائم والفروع</Link>
+
+        {canEdit ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <form action={createTherapyCenter} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[1fr_auto]">
+              <TextInput label="اسم مركز جديد" name="name" required />
+              <div className="self-end"><SmallSubmitButton>إضافة مركز</SmallSubmitButton></div>
+            </form>
+            <form action={addCenterHall} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[220px_1fr_auto]">
+              <SelectInput label="المركز" name="centerId" options={centers.map((center) => ({ value: center.id, label: center.name }))} />
+              <TextInput label="اسم فرع/قاعة جديد" name="name" required />
+              <div className="self-end"><SmallSubmitButton>إضافة قاعة</SmallSubmitButton></div>
+            </form>
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          {centers.map((center) => {
+            const centerResources = resourcesByCenter.get(center.id) ?? [];
+            return (
+              <article key={center.id} className="rounded-lg border border-gray-200 p-3" data-lookup-item data-lookup-text={`${center.name} ${centerResources.map((resource) => resource.therapyHall?.name ?? "").join(" ")}`}>
+                {canEdit ? (
+                  <form action={renameTherapyCenter.bind(null, center.id)} className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <TextInput label="اسم المركز" name="name" defaultValue={center.name} required />
+                    <div className="self-end"><SmallSubmitButton>حفظ</SmallSubmitButton></div>
+                  </form>
+                ) : (
+                  <h3 className="font-semibold text-gray-900">{center.name}</h3>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1 text-xs">
+                  <span className="badge-neutral">{center._count.memberships} عضوية</span>
+                  <span className="badge-neutral">{centerResources.length} قاعة</span>
+                  <span className="badge-neutral">{center._count.programs} برنامج</span>
+                  <span className="badge-neutral">{center._count.centerSessions + center._count.treatmentPlans} علاج</span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {centerResources.map((resource) => {
+                    const hall = resource.therapyHall;
+                    if (!hall) return null;
+                    const used = (hall._count?.therapySessions ?? 0) + (hall._count?.treatmentPlans ?? 0) + (hall._count?.appointments ?? 0);
+                    return (
+                      <div key={resource.id} className="rounded-md bg-gray-50 p-2">
+                        {canEdit ? (
+                          <form action={renameCenterHall.bind(null, hall.id)} className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                            <TextInput label="اسم الفرع/القاعة" name="name" defaultValue={hall.name} required />
+                            <div className="self-end"><SmallSubmitButton>حفظ</SmallSubmitButton></div>
+                          </form>
+                        ) : (
+                          <div className="font-medium">{hall.name}</div>
+                        )}
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                          <span className={hall.active && resource.status === "AVAILABLE" ? "badge-success" : "badge-neutral"}>{hall.active && resource.status === "AVAILABLE" ? "فعالة" : "معطلة"}</span>
+                          <span className="badge-neutral">{used} ارتباط</span>
+                          {canEdit ? (
+                            <form action={setCenterHallActive.bind(null, hall.id, !hall.active)}>
+                              <SmallSubmitButton>{hall.active ? "تعطيل" : "تفعيل"}</SmallSubmitButton>
+                            </form>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {centerResources.length === 0 ? <div className="rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-400">لا توجد قاعات مرتبطة.</div> : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </Card>
     </div>
   );
@@ -508,10 +562,10 @@ function NotificationsTab({ cfg, orgRow, canEdit }: { cfg: Awaited<ReturnType<ty
 }
 
 async function FilesTab({ cfg, canEdit, isAdmin }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean; isAdmin: boolean }) {
-  const [centers, displayDevices, therapyHalls, collabSettings, libreOfficeStatus, clamAvStatus] = await Promise.all([
+  const [centers, displayDevices, centerHalls, collabSettings, libreOfficeStatus, clamAvStatus] = await Promise.all([
     prisma.center.findMany({ orderBy: { name: "asc" } }),
     canEdit ? prisma.displayDevice.findMany({ include: { center: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
-    prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    activeCenterHallOptions(prisma),
     collaborationSettings(),
     getLibreOfficeStatus(),
     checkClamAvStatus(Math.min(3, cfg.clamavScanTimeoutSeconds)),
@@ -604,7 +658,7 @@ async function FilesTab({ cfg, canEdit, isAdmin }: { cfg: Awaited<ReturnType<typ
         <DisplaySettings
           devices={JSON.parse(JSON.stringify(displayDevices))}
           centers={centers}
-          halls={queueHallNames(therapyHalls.map((hall) => hall.name))}
+          centerHalls={JSON.parse(JSON.stringify(centerHalls))}
         />
       ) : null}
     </div>
@@ -679,11 +733,10 @@ function BackupTab({
 }
 
 async function LookupsTab({ canEdit, isAdmin, message }: { canEdit: boolean; isAdmin: boolean; message: any }) {
-  const [branches, mobilityAids, prostheticTypes, centers, injuries, governorates, formations, ranks] = await Promise.all([
+  const [branches, mobilityAids, prostheticTypes, injuries, governorates, formations, ranks] = await Promise.all([
     prisma.branch.findMany({ include: { _count: { select: { users: true, patients: true } } }, orderBy: [{ isActive: "desc" }, { name: "asc" }] }),
     prisma.mobilityAid.findMany({ orderBy: { name: "asc" } }),
     prisma.prostheticType.findMany({ orderBy: { name: "asc" } }),
-    prisma.center.findMany({ include: { _count: { select: { sessions: true, admissions: true, memberships: true, resources: true, programs: true } } }, orderBy: { name: "asc" } }),
     prisma.injuryType.findMany({ include: { _count: { select: { patients: true } } }, orderBy: { name: "asc" } }),
     prisma.governorate.findMany({ include: { districts: { include: { _count: { select: { patients: true } } }, orderBy: { name: "asc" } } }, orderBy: { name: "asc" } }),
     prisma.formation.findMany({ include: { _count: { select: { patients: true } } }, orderBy: { name: "asc" } }),
@@ -699,7 +752,6 @@ async function LookupsTab({ canEdit, isAdmin, message }: { canEdit: boolean; isA
       <div className="grid gap-5 lg:grid-cols-2">
         <LookupCard card="mobility" title="مساعدات الحركة" items={mobilityAids} action={addMobilityAid} del={deleteMobilityAid} canEdit={canEdit} isAdmin={isAdmin} message={message} />
         <LookupCard card="prosthetic" title="الأطراف الصناعية" items={prostheticTypes} action={addProstheticType} del={deleteProstheticType} canEdit={canEdit} isAdmin={isAdmin} message={message} />
-        <LookupCard card="centers" title="المراكز العلاجية" items={centers} action={addCenter} del={deleteCenter} canEdit={canEdit} isAdmin={isAdmin} message={message} />
         <LookupCard card="injuries" title="أنواع الإصابات" items={injuries} action={addInjuryType} del={deleteInjuryType} canEdit={canEdit} isAdmin={isAdmin} message={message} />
         <LookupCard card="formations" title="التشكيلات" items={formations} action={addFormation} del={deleteFormation} canEdit={canEdit} isAdmin={isAdmin} message={message} />
         <LookupCard card="ranks" title="الصفات" items={ranks} action={addRank} del={deleteRank} canEdit={canEdit} isAdmin={isAdmin} message={message} />

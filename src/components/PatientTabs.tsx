@@ -9,7 +9,7 @@ import {
   addProgressMetric, deleteProgressMetric,
   addVitalSign, deleteVitalSign,
   addResidentReview, deleteResidentReview,
-  scheduleSessions, addTherapyHall, setTherapyHallActive,
+  scheduleSessions,
   addTreatmentPlan, setTreatmentPlanStatus, deleteTreatmentPlan, addTherapySessionLog,
   addCareRecord, deleteCareRecord,
   startPathway, addStage, confirmStage, setStageStatus, deleteStage,
@@ -30,6 +30,7 @@ import { PatientReferralTab } from "@/components/referrals/PatientReferralTab";
 import { PatientTherapyProgram } from "@/components/therapy/PatientTherapyProgram";
 import { PatientCenterPrograms } from "@/components/centers/PatientCenterPrograms";
 import { PatientExpenses } from "@/components/expenses/PatientExpenses";
+import { CenterHallSelect } from "@/components/CenterHallSelect";
 
 const TABS = [
   { key: "timeline", label: "الخط الزمني", icon: "🕒", group: "overview" },
@@ -65,7 +66,7 @@ const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأر�
 // التبويبات التي تُحمّل بياناتها عند فتحها فقط (لتخفيف تحميل الصفحة)
 const LAZY_TABS = ["files", "metrics", "plan", "rel", "activity", "care", "resident", "referrals"];
 
-export function PatientTabs({ patient, editable, perms = [], role = "", slApprovals = [], centers = [], medications = [], rooms = [], halls = [], therapyDefaults, therapyStaff = [], expenseRows = [], staffNames = [], staffUsers = [] }: { patient: any; editable: boolean; perms?: string[]; role?: string; slApprovals?: any[]; centers?: any[]; medications?: any[]; rooms?: any[]; halls?: any[]; therapyDefaults?: any; therapyStaff?: any[]; expenseRows?: any[]; staffNames?: string[]; staffUsers?: any[] }) {
+export function PatientTabs({ patient, editable, perms = [], role = "", slApprovals = [], centers = [], medications = [], rooms = [], halls = [], centerHalls = [], therapyDefaults, therapyStaff = [], expenseRows = [], staffNames = [], staffUsers = [] }: { patient: any; editable: boolean; perms?: string[]; role?: string; slApprovals?: any[]; centers?: any[]; medications?: any[]; rooms?: any[]; halls?: any[]; centerHalls?: any[]; therapyDefaults?: any; therapyStaff?: any[]; expenseRows?: any[]; staffNames?: string[]; staffUsers?: any[] }) {
   const can = (k: string) => perms.includes(k);
   const canDel = role === "ADMIN";
   const canSchedule = role === "HEAD_THERAPIST" || role === "ADMIN";
@@ -119,11 +120,11 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         {tab === "official" && <OfficialDocs patient={patient} can={can} id={id} role={role} />}
         {tab === "sickleave" && <SickLeaves patient={patient} can={can} id={id} role={role} approvals={slApprovals} staff={staffNames} staffUsers={staffUsers} />}
         {tab === "diag" && <SpecialistWorkspace patient={patient} can={can} canDel={canDel} patientId={id} openPrescriptions={() => setTab("rx")} />}
-        {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} doctors={staffUsers.filter((user: any) => user.role === "DOCTOR")} halls={halls} defaults={therapyDefaults} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
+        {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} doctors={staffUsers.filter((user: any) => user.role === "DOCTOR")} centerHalls={centerHalls} defaults={therapyDefaults} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
         {tab === "centerPrograms" && can("centers.view") && <PatientCenterPrograms programs={patient.centerPrograms || []} />}
         {tab === "expenses" && can("expenses.view") && <PatientExpenses rows={expenseRows} showAmounts={can("expenses.amounts")} />}
         {tab === "sessions" && canSchedule && (
-          <SchedulePlanner patientId={id} centers={centers} halls={halls} />
+          <SchedulePlanner patientId={id} centers={centers} centerHalls={centerHalls} />
         )}
         {tab === "sessions" && (
           <div className="space-y-4">
@@ -922,14 +923,13 @@ function ActivityLog({ logs }: { logs: any[] }) {
   );
 }
 
-function SchedulePlanner({ patientId, centers, halls }: any) {
+function SchedulePlanner({ patientId, centers, centerHalls }: any) {
   const [open, setOpen] = useState(false);
   const WEEKDAYS = [
     { v: 6, l: "السبت" }, { v: 0, l: "الأحد" }, { v: 1, l: "الإثنين" },
     { v: 2, l: "الثلاثاء" }, { v: 3, l: "الأربعاء" }, { v: 4, l: "الخميس" }, { v: 5, l: "الجمعة" },
   ];
   const THERAPY_OPTS = Object.entries(THERAPY).map(([value, label]: any) => ({ value, label }));
-  const activeHalls = (halls || []).filter((h: any) => h.active);
   return (
     <div className="rounded-xl border-2 border-brand-200 bg-brand-50 p-4">
       <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-right">
@@ -944,15 +944,9 @@ function SchedulePlanner({ patientId, centers, halls }: any) {
                 {THERAPY_OPTS.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
-            <label className="text-xs text-gray-600">المركز
-              <select name="centerId" className="input mt-1 w-full">
-                <option value="">—</option>
-                {(centers || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </label>
-            <label className="text-xs text-gray-600">القاعة المعالِجة
-              <Combobox name="hall" allowFree options={activeHalls.map((h: any) => h.name)} placeholder="اختر أو اكتب..." />
-            </label>
+            <div className="md:col-span-2">
+              <CenterHallSelect centers={centers || []} halls={centerHalls || []} hallFieldName="hall" hallValue="name" requiredCenter requiredHall className="grid gap-3 md:grid-cols-2" />
+            </div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
@@ -994,37 +988,6 @@ function SchedulePlanner({ patientId, centers, halls }: any) {
 
           <button className="btn-primary" type="submit">جدولة الجلسات وإضافتها للمواعيد</button>
         </form>
-      )}
-      {open && <HallManager halls={halls} />}
-    </div>
-  );
-}
-
-function HallManager({ halls }: any) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="mt-3 border-t border-brand-200 pt-3">
-      <button type="button" onClick={() => setShow(!show)} className="text-xs font-medium text-brand-700 hover:underline">
-        {show ? "▲ إخفاء إدارة القاعات" : "⚙ إدارة القاعات"}
-      </button>
-      {show && (
-        <div className="mt-2 space-y-2">
-          <form action={addTherapyHall} className="flex gap-2">
-            <input name="name" className="input flex-1" placeholder="اسم قاعة جديدة" />
-            <button className="btn-primary btn-sm" type="submit">+ إضافة</button>
-          </form>
-          <ul className="space-y-1">
-            {(halls || []).map((h: any) => (
-              <li key={h.id} className="flex items-center justify-between rounded bg-white px-3 py-1.5 text-sm">
-                <span className={h.active ? "text-gray-800" : "text-gray-400 line-through"}>{h.name}</span>
-                <form action={setTherapyHallActive.bind(null, h.id, !h.active)}>
-                  <button className={h.active ? "text-xs text-amber-700 hover:underline" : "text-xs text-emerald-700 hover:underline"}>{h.active ? "تعطيل" : "تفعيل"}</button>
-                </form>
-              </li>
-            ))}
-            {(!halls || halls.length === 0) && <li className="text-xs text-gray-400">لا توجد قاعات. أضف قاعة أعلاه.</li>}
-          </ul>
-        </div>
       )}
     </div>
   );

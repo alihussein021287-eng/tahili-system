@@ -39,7 +39,7 @@ export default async function CalendarView({
   if (sp.st) where.status = sp.st;
 
   const [appts, whoList] = await Promise.all([
-    prisma.appointment.findMany({ where, include: { patient: true, session: { select: { hall: true } } }, orderBy: { scheduledAt: "asc" } }),
+    prisma.appointment.findMany({ where, include: { patient: true, center: true, hall: true, session: { select: { hall: true, center: true, therapyHall: true } } }, orderBy: { scheduledAt: "asc" } }),
     prisma.appointment.findMany({ where: { assignedTo: { not: null } }, select: { assignedTo: true }, distinct: ["assignedTo"] }),
   ]);
 
@@ -130,7 +130,7 @@ export default async function CalendarView({
                       <span className="rounded bg-white/60 px-1 text-[9px]">{APPT_STATUS[a.status as keyof typeof APPT_STATUS]}</span>
                     </div>
                     <div className="mt-0.5 font-medium leading-tight">{a.patient.fullName}</div>
-                    <div className="opacity-70">{a.therapyType ? THERAPY[a.therapyType as keyof typeof THERAPY] : (a.type || "")}{a.assignedTo ? ` — ${a.assignedTo}` : ""}{a.session?.hall ? ` — ${a.session.hall}` : ""}</div>
+                    <div className="opacity-70">{a.therapyType ? THERAPY[a.therapyType as keyof typeof THERAPY] : (a.type || "")}{a.assignedTo ? ` — ${a.assignedTo}` : ""}{(a.hall?.name || a.session?.therapyHall?.name || a.session?.hall) ? ` — ${a.hall?.name || a.session?.therapyHall?.name || a.session?.hall}` : ""}</div>
                   </Link>
                 ))}
                 {list.length === 0 && <div className="py-3 text-center text-xs text-gray-300">لا مواعيد</div>}

@@ -15,6 +15,7 @@ export type SettingsActionState = {
 };
 
 const TAB_LOOKUPS = "/settings?tab=lookups";
+const TAB_THERAPY = "/settings?tab=therapy";
 const DANGEROUS_FILE_TYPES = new Set(DEFAULT_BLOCKED_FILE_TYPES);
 
 function state(ok: boolean, message: string, values?: Record<string, string>): SettingsActionState {
@@ -134,6 +135,21 @@ async function updateAdminConfig(userId: string | undefined, recordId: string, p
 
 function lookupRedirect(card: string, message: string, kind: "saved" | "error" = "saved") {
   redirect(`${TAB_LOOKUPS}&card=${encodeURIComponent(card)}&${kind}=${encodeURIComponent(message)}`);
+}
+
+function therapyRedirect(card: string, message: string, kind: "saved" | "error" = "saved") {
+  redirect(`${TAB_THERAPY}&card=${encodeURIComponent(card)}&${kind}=${encodeURIComponent(message)}`);
+}
+
+function refreshCenterHalls() {
+  revalidatePath("/settings");
+  revalidatePath("/queue");
+  revalidatePath("/visits");
+  revalidatePath("/appointments");
+  revalidatePath("/therapy");
+  revalidatePath("/therapy-centers");
+  revalidatePath("/patients", "layout");
+  revalidateTag("lookups", { expire: 0 });
 }
 
 async function addLookup(card: string, tableName: string, create: () => Promise<unknown>) {
@@ -520,6 +536,87 @@ export async function addCenter(fd: FormData) {
   const name = text(fd, "name", 120);
   if (!name) lookupRedirect("centers", "اسم المركز مطلوب", "error");
   await addLookup("centers", "centers", () => prisma.center.create({ data: { name } }));
+}
+
+export async function createTherapyCenter(fd: FormData) {
+  const userId = await requireSettingsEdit();
+  const name = text(fd, "name", 120);
+  if (!name) therapyRedirect("center-halls", "اسم المركز مطلوب", "error");
+  try {
+    const center = await prisma.center.upsert({ where: { name }, update: {}, create: { name } });
+    await logAudit({ userId, action: "CREATE", tableName: "centers", recordId: String(center.id), newValue: { name } });
+    refreshCenterHalls();
+    therapyRedirect("center-halls", "تم حفظ المركز");
+  } catch {
+    therapyRedirect("center-halls", "تعذر حفظ المركز", "error");
+  }
+}
+
+export async function renameTherapyCenter(id: number, fd: FormData) {
+  const userId = await requireSettingsEdit();
+  const name = text(fd, "name", 120);
+  if (!Number.isInteger(id) || id <= 0 || !name) therapyRedirect("center-halls", "اسم المركز مطلوب", "error");
+  try {
+    const old = await prisma.center.findUnique({ where: { id } });
+    await prisma.center.update({ where: { id }, data: { name } });
+    await logAudit({ userId, action: "UPDATE", tableName: "centers", recordId: String(id), oldValue: old, newValue: { name } });
+    refreshCenterHalls();
+    therapyRedirect("center-halls", "تم تعديل المركز");
+  } catch {
+    therapyRedirect("center-halls", "تعذر تعديل المركز. تحقق من عدم تكرار الاسم.", "error");
+  }
+}
+
+export async function addCenterHall(fd: FormData) {
+  const userId = await requireSettingsEdit();
+  const centerId = Number(fd.get("centerId"));
+  const name = text(fd, "name", 120);
+  if (!Number.isInteger(centerId) || centerId <= 0 || !name) therapyRedirect("center-halls", "اختر المركز واكتب اسم الفرع/القاعة", "error");
+  try {
+    await prisma.$transaction(async (tx) => {
+      const center = await tx.center.findUnique({ where: { id: centerId }, select: { id: true } });
+      if (!center) throw new Error("center");
+      const hall = await tx.therapyHall.upsert({ where: { name }, update: { active: true }, create: { name } });
+      const resource = await tx.centerResource.upsert({
+        where: { centerId_name: { centerId, name } },
+        update: { type: "HALL", status: "AVAILABLE", therapyHallId: hall.id },
+        create: { centerId, name, type: "HALL", status: "AVAILABLE", therapyHallId: hall.id },
+      });
+      await tx.auditLog.create({ data: { userId, action: "CREATE", tableName: "center_resources", recordId: resource.id, newValue: { centerId, hallId: hall.id, name } } });
+    });
+    refreshCenterHalls();
+    therapyRedirect("center-halls", "تمت إضافة الفرع/القاعة");
+  } catch {
+    therapyRedirect("center-halls", "تعذر إضافة الفرع/القاعة. تحقق من الاسم والمركز.", "error");
+  }
+}
+
+export async function renameCenterHall(id: number, fd: FormData) {
+  const userId = await requireSettingsEdit();
+  const name = text(fd, "name", 120);
+  if (!Number.isInteger(id) || id <= 0 || !name) therapyRedirect("center-halls", "اسم الفرع/القاعة مطلوب", "error");
+  try {
+    await prisma.$transaction(async (tx) => {
+      const old = await tx.therapyHall.findUnique({ where: { id } });
+      await tx.therapyHall.update({ where: { id }, data: { name } });
+      await tx.centerResource.updateMany({ where: { therapyHallId: id, type: "HALL" }, data: { name } });
+      await tx.auditLog.create({ data: { userId, action: "UPDATE", tableName: "therapy_halls", recordId: String(id), oldValue: old, newValue: { name } } });
+    });
+    refreshCenterHalls();
+    therapyRedirect("center-halls", "تم تعديل الفرع/القاعة");
+  } catch {
+    therapyRedirect("center-halls", "تعذر تعديل الفرع/القاعة. تحقق من عدم تكرار الاسم.", "error");
+  }
+}
+
+export async function setCenterHallActive(id: number, active: boolean) {
+  const userId = await requireSettingsEdit();
+  if (!Number.isInteger(id) || id <= 0) therapyRedirect("center-halls", "الفرع/القاعة غير صالح", "error");
+  const old = await prisma.therapyHall.findUnique({ where: { id }, select: { active: true } });
+  await prisma.therapyHall.update({ where: { id }, data: { active } });
+  await logAudit({ userId, action: "UPDATE", tableName: "therapy_halls", recordId: String(id), oldValue: old, newValue: { active } });
+  refreshCenterHalls();
+  therapyRedirect("center-halls", active ? "تم تفعيل الفرع/القاعة" : "تم تعطيل الفرع/القاعة");
 }
 
 export async function deleteCenter(id: number) {

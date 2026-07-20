@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { addPeriodicTherapyEvaluation, createPhysicalTherapyPlan, updatePhysicalTherapyPlan } from "@/app/(app)/therapy/actions";
 import { fmtDate, fmtDateTime } from "@/lib/labels";
 
@@ -15,17 +18,37 @@ function PlanFields({ doctors, plan, defaults }: any) {
   </>;
 }
 
-export function PatientTherapyProgram({ patientId, referrals, plans, therapists, doctors, halls, defaults, canManage, canFinalize }: any) {
+export function PatientTherapyProgram({ patientId, referrals, plans, therapists, doctors, centerHalls = [], defaults, canManage, canFinalize }: any) {
   const defaultWorkDays = new Set((defaults?.workDays || ["0", "1", "2", "3", "4"]).map(String));
+  const referralCenters = useMemo(() => {
+    const rows = new Map<number, { id: number; name: string }>();
+    for (const referral of referrals || []) {
+      if (referral.destinationCenterId && referral.destinationCenter) rows.set(referral.destinationCenterId, referral.destinationCenter);
+    }
+    return Array.from(rows.values()).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  }, [referrals]);
+  const [centerId, setCenterId] = useState("");
+  const [referralId, setReferralId] = useState("");
+  const [hallId, setHallId] = useState("");
+  const filteredReferrals = (referrals || []).filter((referral: any) => String(referral.destinationCenterId || "") === centerId);
+  const filteredHalls = (centerHalls || []).filter((hall: any) => String(hall.centerId) === centerId && hall.active && hall.status === "AVAILABLE");
+  const filteredTherapists = (therapists || []).filter((therapist: any) => !centerId || !therapist.centerIds || therapist.centerIds.includes(Number(centerId)));
+
+  useEffect(() => {
+    if (referralId && !filteredReferrals.some((referral: any) => referral.id === referralId)) setReferralId("");
+    if (hallId && !filteredHalls.some((hall: any) => String(hall.hallId) === hallId)) setHallId("");
+  }, [filteredReferrals, filteredHalls, referralId, hallId]);
+
   return <div className="min-w-0 space-y-5">
     {canManage ? <form action={createPhysicalTherapyPlan.bind(null, patientId)} className="grid gap-3 rounded-lg border border-gray-200 p-4 md:grid-cols-2" autoComplete="off">
       <h2 className="text-lg font-bold md:col-span-2">إنشاء برنامج العلاج الطبيعي</h2>
-      <label className="label">الإحالة الداخلية المقبولة<select name="referralRequestId" className="input mt-1" required><option value="">اختر الإحالة</option>{referrals.map((r:any)=><option key={r.id} value={r.id}>{r.requestedService}، {fmtDate(r.acceptedAt)}</option>)}</select></label>
+      <label className="label">المركز<select name="centerId" className="input mt-1" value={centerId} required onChange={(event) => setCenterId(event.target.value)}><option value="">اختر المركز</option>{referralCenters.map((center:any)=><option key={center.id} value={center.id}>{center.name}</option>)}</select></label>
+      <label className="label">الإحالة الداخلية المقبولة<select name="referralRequestId" className="input mt-1" value={referralId} required disabled={!centerId} onChange={(event) => setReferralId(event.target.value)}><option value="">اختر الإحالة</option>{filteredReferrals.map((r:any)=><option key={r.id} value={r.id}>{r.requestedService}، {fmtDate(r.acceptedAt)}</option>)}</select></label>
       <label className="label">عنوان الخطة<input name="title" className="input mt-1" defaultValue="خطة العلاج الطبيعي" required /></label>
       <label className="label">نوع العلاج<select name="therapyType" className="input mt-1" defaultValue="PHYSICAL"><option value="PHYSICAL">علاج طبيعي</option><option value="OCCUPATIONAL">علاج وظيفي</option><option value="BLADDER">تأهيل المثانة</option></select></label>
-      <label className="label">المعالج<select name="therapistId" className="input mt-1" required><option value="">اختر المعالج بعد مراجعة الحمل</option>{therapists.map((t:any)=><option key={t.id} value={t.id}>{t.fullName}، {t.activePlans} خطط، {t.todaySessions} جلسات اليوم</option>)}</select></label>
+      <label className="label">المعالج<select name="therapistId" className="input mt-1" required disabled={!centerId}><option value="">اختر المعالج بعد مراجعة الحمل</option>{filteredTherapists.map((t:any)=><option key={t.id} value={t.id}>{t.fullName}، {t.activePlans} خطط، {t.todaySessions} جلسات اليوم</option>)}</select></label>
       <PlanFields doctors={doctors} defaults={defaults} />
-      <label className="label">القاعة<select name="hallId" className="input mt-1" required><option value="">اختر القاعة</option>{halls.map((h:any)=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label>
+      <label className="label">الفرع/القاعة<select name="hallId" className="input mt-1" value={hallId} required disabled={!centerId} onChange={(event) => setHallId(event.target.value)}><option value="">اختر الفرع/القاعة</option>{filteredHalls.map((h:any)=><option key={`${h.centerId}-${h.resourceId}`} value={h.hallId}>{h.hallName}</option>)}</select></label>
       <label className="label">عدد الجلسات<input name="plannedSessions" type="number" min="1" max="60" defaultValue={defaults?.defaultSessions || 12} className="input mt-1" required /></label>
       <label className="label">تاريخ البداية<input name="startDate" type="date" className="input mt-1" required /></label>
       <label className="label">وقت الجلسة<input name="sessionTime" type="time" defaultValue={defaults?.workStart || "10:00"} className="input mt-1" required /></label>

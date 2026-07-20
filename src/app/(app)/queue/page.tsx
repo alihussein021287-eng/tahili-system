@@ -9,6 +9,8 @@ import { addToQueue, setQueueStatus, removeQueue, clearDoneQueue } from "./actio
 import { normalizeStationName } from "@/lib/stations";
 import { baghdadDayRange } from "@/lib/display-utils";
 import { queueHallNames } from "@/lib/queue";
+import { activeCenterHallNames, activeCenterHallOptions } from "@/lib/center-halls";
+import { CenterHallSelect } from "@/components/CenterHallSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,7 @@ export default async function Queue() {
   const canDeleteQueue = (session?.user as any)?.role === "ADMIN";
   const { start: startToday, end: endToday } = baghdadDayRange(new Date());
 
-  const [entries, patients, centers, therapyHalls] = await Promise.all([
+  const [entries, patients, centers, centerHalls] = await Promise.all([
     prisma.queueEntry.findMany({
       where: { createdAt: { gte: startToday, lt: endToday } },
       include: { patient: { include: { careStages: { where: { status: { in: ["WAITING", "IN_PROGRESS"] } }, orderBy: { sequence: "asc" }, take: 1 } } } },
@@ -34,9 +36,9 @@ export default async function Queue() {
     }),
     prisma.patient.findMany({ where: { archivedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
     prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { name: true } }),
+    activeCenterHallOptions(prisma),
   ]);
-  const halls = queueHallNames(therapyHalls.map((hall) => hall.name));
+  const halls = queueHallNames(activeCenterHallNames(centerHalls));
 
   return (
     <div className="space-y-5">
@@ -56,14 +58,15 @@ export default async function Queue() {
             <label className="label">إضافة مراجع للطابور</label>
 <Combobox name="patientId" required allowFree={false} placeholder="اختر المريض" options={patients.map((p:any)=>({value:String(p.id),label:`${p.fullName} (#${p.fileNumber})`}))} />
           </div>
-          <div className="min-w-[210px]">
-            <label className="label">القاعة</label>
-<Combobox name="hall" required allowFree={false} placeholder="اختر القاعة" options={halls} />
-          </div>
-          <div className="min-w-[210px]">
-            <label className="label">المركز</label>
-<Combobox name="centerId" allowFree={false} placeholder="كل المراكز" options={centers.map((center) => ({ value: String(center.id), label: center.name }))} />
-          </div>
+          <CenterHallSelect
+            centers={centers}
+            halls={centerHalls}
+            hallFieldName="hall"
+            hallValue="name"
+            requiredCenter
+            requiredHall
+            className="grid min-w-[420px] flex-[2] gap-2 md:grid-cols-2"
+          />
           <div className="flex-1 min-w-[160px]"><label className="label">ملاحظة</label><input name="note" className="input" placeholder="اختياري" /></div>
           <button className="btn-primary" type="submit">➕ للطابور</button>
         </form>

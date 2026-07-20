@@ -11,13 +11,14 @@ import { createTask } from "../../tasks/actions";
 import { GENDER, MARITAL, PATIENT_STATUS, CASE_TYPE, ADMISSION, APPT_STATUS, THERAPY, fmtDate } from "@/lib/labels";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { getAdminConfig } from "@/lib/admin-config";
+import { activeCenterHallOptions } from "@/lib/center-halls";
 
 export const dynamic = "force-dynamic";
 
 export default async function PatientDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await requirePerm("patients.view");
-  const [patient, centers, medications, rooms, halls, adminConfig] = await Promise.all([
+  const [patient, centers, medications, rooms, halls, centerHalls, adminConfig] = await Promise.all([
     prisma.patient.findUnique({
       where: { id },
       include: {
@@ -46,18 +47,26 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     getMedicationsList(),
     getRooms(),
     prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    activeCenterHallOptions(prisma),
     getAdminConfig(),
   ]);
   const taskUsers = await prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true }, orderBy: { fullName: "asc" } });
-  const therapyStaff = await prisma.user.findMany({ where: { isActive: true, role: "THERAPIST" }, include: { _count: { select: { therapyPlansAssigned: { where: { status: "ACTIVE" } }, therapyAppointmentsAssigned: { where: { status: "SCHEDULED", scheduledAt: { gte: new Date(new Date().setHours(0,0,0,0)), lt: new Date(new Date().setHours(24,0,0,0)) } } } } } }, orderBy: { fullName: "asc" } });
+  const therapyStaff = await prisma.user.findMany({ where: { isActive: true, role: "THERAPIST" }, include: { centerMemberships: { where: { role: "THERAPIST", status: "ACTIVE" }, select: { centerId: true } }, _count: { select: { therapyPlansAssigned: { where: { status: "ACTIVE" } }, therapyAppointmentsAssigned: { where: { status: "SCHEDULED", scheduledAt: { gte: new Date(new Date().setHours(0,0,0,0)), lt: new Date(new Date().setHours(24,0,0,0)) } } } } } }, orderBy: { fullName: "asc" } });
   if (!patient) notFound();
   const perms = await currentPerms();
+  let visibleCenters = centers;
+  let visibleCenterHalls = centerHalls;
+  let visibleTherapyStaff = therapyStaff;
   if (!perms.has("centers.central.view")) {
     const accessSession = await getSession();
     const memberships = await prisma.centerMembership.findMany({ where: { userId: (accessSession?.user as any)?.id, status: "ACTIVE" }, select: { centerId: true } });
     const allowed = new Set(memberships.map((membership) => membership.centerId));
     (patient as any).centerPrograms = (patient.centerPrograms || []).filter((program: any) => allowed.has(program.centerId));
     (patient as any).treatmentPlans = (patient.treatmentPlans || []).filter((plan: any) => !plan.centerId || allowed.has(plan.centerId));
+    (patient as any).referralRequests = (patient.referralRequests || []).filter((request: any) => !request.destinationCenterId || allowed.has(request.destinationCenterId));
+    visibleCenters = centers.filter((center: any) => allowed.has(center.id));
+    visibleCenterHalls = centerHalls.filter((hall) => allowed.has(hall.centerId));
+    visibleTherapyStaff = therapyStaff.filter((user) => user.centerMemberships.some((membership) => allowed.has(membership.centerId)));
   }
   const slApprovals = patient?.sickLeaves?.length
     ? await prisma.reportApproval.findMany({ where: { kind: "sick-leave", refKey: { in: patient.sickLeaves.map((l: any) => l.id) } } })
@@ -270,13 +279,13 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
       </div>
 
       <PatientTabs patient={JSON.parse(JSON.stringify(patient))} editable={cEdit} perms={Array.from(perms)} role={myRole} slApprovals={JSON.parse(JSON.stringify(slApprovals))}
-        centers={centers} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} therapyDefaults={{
+        centers={visibleCenters} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} centerHalls={JSON.parse(JSON.stringify(visibleCenterHalls))} therapyDefaults={{
           defaultSessions: adminConfig.defaultSessions,
           defaultPlanDays: adminConfig.defaultPlanDays,
           evaluationEvery: adminConfig.evaluationEvery,
           workDays: adminConfig.workDays,
           workStart: adminConfig.workStart,
-        }} therapyStaff={therapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} expenseRows={JSON.parse(JSON.stringify(expenseRows))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
+        }} therapyStaff={visibleTherapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,centerIds:u.centerMemberships.map((membership: any) => membership.centerId),activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} expenseRows={JSON.parse(JSON.stringify(expenseRows))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
     </div>
   );
 }

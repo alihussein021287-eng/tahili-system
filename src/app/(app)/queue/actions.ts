@@ -2,6 +2,7 @@
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
+import { assertCenterHallByName } from "@/lib/center-halls";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -11,8 +12,10 @@ export async function addToQueue(fd: FormData) {
   if (!patientId) redirect("/queue?saved=" + encodeURIComponent("اختر المريض"));
   const centerIdRaw = Number(fd.get("centerId"));
   const centerId = Number.isInteger(centerIdRaw) && centerIdRaw > 0 ? centerIdRaw : null;
-  if (centerId && !(await prisma.center.count({ where: { id: centerId } }))) throw new Error("المركز غير صالح");
-  const created = await prisma.queueEntry.create({ data: { patientId: patientId!, centerId, hall: fd.get("hall")?.toString() || null, note: fd.get("note")?.toString() || null } });
+  if (!centerId) throw new Error("اختر المركز");
+  if (!(await prisma.center.count({ where: { id: centerId } }))) throw new Error("المركز غير صالح");
+  const hallResource = await assertCenterHallByName(prisma, centerId, fd.get("hall")?.toString());
+  const created = await prisma.queueEntry.create({ data: { patientId: patientId!, centerId, hall: hallResource.therapyHall.name, note: fd.get("note")?.toString() || null } });
   await logAudit({ action: "CREATE", tableName: "queue_entries", recordId: created.id });
   revalidatePath("/queue");
 }

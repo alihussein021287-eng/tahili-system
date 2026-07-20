@@ -4,7 +4,7 @@ import { assertPerm, requireSession } from "@/lib/access";
 import { generatePairingCode, hashPairingCode } from "@/lib/display-auth";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
-import { queueHallNames } from "@/lib/queue";
+import { activeCenterHallOptions } from "@/lib/center-halls";
 
 async function requireAdmin() {
   const session = await requireSession();
@@ -21,7 +21,8 @@ async function readConfig(formData: FormData) {
   const centerIdRaw = Number(formData.get("centerId"));
   const centerId = Number.isInteger(centerIdRaw) && centerIdRaw > 0 ? centerIdRaw : null;
   if (centerId && !(await prisma.center.count({ where: { id: centerId } }))) throw new Error("المركز غير صالح");
-  const allowedHalls = new Set(queueHallNames((await prisma.therapyHall.findMany({ where: { active: true }, select: { name: true } })).map((hall) => hall.name)));
+  const centerHalls = await activeCenterHallOptions(prisma);
+  const allowedHalls = new Set(centerHalls.filter((hall) => !centerId || hall.centerId === centerId).map((hall) => hall.hallName));
   const halls = Array.from(new Set(formData.getAll("halls").map(String).filter((hall) => allowedHalls.has(hall)))).slice(0, 20);
   const seconds = Number(formData.get("callDisplaySeconds"));
   const callDisplaySeconds = Number.isInteger(seconds) && seconds >= 10 && seconds <= 300 ? seconds : 45;

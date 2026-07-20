@@ -478,6 +478,7 @@ model Center {
   programs         CenterProgram[]
   centerSessions   CenterSession[]
   treatmentPlans   TreatmentPlan[]
+  appointments     Appointment[]
   queueEntries     QueueEntry[]
   displayDevices   DisplayDevice[]
   collaborationConversations Conversation[]
@@ -1113,6 +1114,10 @@ model Appointment {
   assignedTo      String? // المعالج/الطبيب المسؤول
   assignedToId    String?
   assignedToUser  User?             @relation("AppointmentAssignedUser", fields: [assignedToId], references: [id], onDelete: SetNull)
+  centerId        Int?
+  center          Center?           @relation(fields: [centerId], references: [id], onDelete: SetNull)
+  hallId          Int?
+  hall            TherapyHall?      @relation(fields: [hallId], references: [id], onDelete: SetNull)
   status          AppointmentStatus @default(SCHEDULED)
   patientResponse ConfirmStatus? // رد المريض من البوابة
   notes           String?
@@ -1128,6 +1133,8 @@ model Appointment {
   @@index([scheduledAt])
   @@index([status])
   @@index([assignedToId, scheduledAt])
+  @@index([centerId, scheduledAt])
+  @@index([hallId, scheduledAt])
   @@map("appointments")
 }
 
@@ -1280,7 +1287,7 @@ model QueueEntry {
   patientId String
   patient   Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
   status    QueueStatus @default(WAITING)
-  hall      String? // القاعة (التمارين الميكانيكية / الأجهزة الفيزياوية / العلاج المائي)
+  hall      String? // اسم القاعة/الفرع وقت الإدخال
   note      String?
   createdAt DateTime    @default(now())
   calledAt  DateTime?
@@ -1394,6 +1401,7 @@ model TherapyHall {
   createdAt       DateTime         @default(now())
   treatmentPlans  TreatmentPlan[]
   therapySessions TherapySession[]
+  appointments    Appointment[]
   centerResources CenterResource[]
 
   @@map("therapy_halls")

@@ -39,6 +39,7 @@ async function assertCenterManager(tx: any, who: { id: string; role: string }, c
 export async function createPhysicalTherapyPlan(patientId: string, fd: FormData) {
   const who = await actor("therapy.plan.manage");
   const referralRequestId = fd.get("referralRequestId")?.toString() || "";
+  const selectedCenterId = Number(fd.get("centerId"));
   const therapistId = fd.get("therapistId")?.toString() || "";
   const specialistDoctorId = fd.get("specialistDoctorId")?.toString() || "";
   const hallId = Number(fd.get("hallId"));
@@ -60,15 +61,15 @@ export async function createPhysicalTherapyPlan(patientId: string, fd: FormData)
     if (!referral) throw new Error("الإحالة الداخلية المقبولة غير متاحة");
     const centerId = referral.destinationCenterId;
     if (!centerId) throw new Error("الإحالة غير مرتبطة بمركز داخلي");
+    if (Number.isInteger(selectedCenterId) && selectedCenterId > 0 && selectedCenterId !== centerId) throw new Error("الإحالة لا تتبع المركز المختار");
     await assertCenterManager(tx, who, centerId);
     const [therapist, specialistDoctor, hall] = await Promise.all([
       tx.user.findFirst({ where: { id: therapistId, isActive: true, role: "THERAPIST", centerMemberships: { some: { centerId, role: "THERAPIST", status: "ACTIVE" } } } }),
       tx.user.findFirst({ where: { id: specialistDoctorId, isActive: true, role: "DOCTOR" } }),
       tx.therapyHall.findFirst({ where: { id: hallId, active: true } }),
     ]);
-    const hallMappings = await tx.centerResource.findMany({ where: { therapyHallId: hallId }, select: { centerId: true, status: true } });
-    const hallAvailable = hallMappings.length === 0 || hallMappings.some((resource: any) => resource.centerId === centerId && resource.status === "AVAILABLE");
-    if (!therapist || !specialistDoctor || !hall || !hallAvailable) throw new Error("طبيب الاختصاص أو المعالج أو القاعة غير متاح في هذا المركز");
+    const hallMapping = hall ? await tx.centerResource.findFirst({ where: { centerId, therapyHallId: hallId, type: "HALL", status: "AVAILABLE" } }) : null;
+    if (!therapist || !specialistDoctor || !hall || !hallMapping) throw new Error("طبيب الاختصاص أو المعالج أو القاعة غير متاح في هذا المركز");
     const conflict = await tx.appointment.findFirst({ where: { scheduledAt: { in: dates }, status: "SCHEDULED", OR: [{ patientId }, { assignedToId: therapistId }, { session: { is: { hallId } } }] }, include: { patient: { select: { fullName: true } } } });
     if (conflict) throw new Error(`تعارض في الموعد مع ${conflict.patient.fullName}`);
     const created = await tx.treatmentPlan.create({ data: {

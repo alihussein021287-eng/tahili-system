@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { assertPerm, requireSession } from "@/lib/access";
 import { notifyRoleInTransaction } from "@/lib/notify";
 import { centerStationByName } from "@/lib/stations";
+import { assertCenterHallByName } from "@/lib/center-halls";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
@@ -57,8 +58,20 @@ export async function receptionCheckIn(fd: FormData) {
   const startToday = new Date(now.toDateString());
   const endToday = new Date(startToday.getTime() + 86400000);
   const noteText = fd.get("notes")?.toString().trim();
-  const hall = fd.get("hall")?.toString().trim() || null;
+  const queueCenterIdRaw = Number(fd.get("centerId"));
+  const queueCenterId = Number.isInteger(queueCenterIdRaw) && queueCenterIdRaw > 0 ? queueCenterIdRaw : null;
+  let hall = fd.get("hall")?.toString().trim() || null;
   const queueNote = fd.get("queueNote")?.toString().trim() || noteText || null;
+
+  if (sendQueue) {
+    if (!queueCenterId) redirect(withSaved(returnTo, "اختر المركز قبل الإرسال للطابور"));
+    try {
+      const hallResource = await assertCenterHallByName(prisma, queueCenterId, hall);
+      hall = hallResource.therapyHall.name;
+    } catch (error) {
+      redirect(withSaved(returnTo, error instanceof Error ? error.message : "الفرع/القاعة لا يتبع المركز المختار"));
+    }
+  }
 
   const userId = (session.user as { id?: string })?.id;
   let result: { existingVisit: boolean; queued: boolean; stageCreated: boolean };
@@ -97,7 +110,7 @@ export async function receptionCheckIn(fd: FormData) {
           select: { id: true },
         });
         if (!existingQueue) {
-          const createdQueue = await tx.queueEntry.create({ data: { patientId, hall, note: queueNote } });
+          const createdQueue = await tx.queueEntry.create({ data: { patientId, centerId: queueCenterId, hall, note: queueNote } });
           await tx.auditLog.create({ data: { userId, action: "CREATE", tableName: "queue_entries", recordId: createdQueue.id } });
           queued = true;
         }

@@ -5,9 +5,11 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { currentPerms, getSession, requirePerm } from "@/lib/access";
-import { createAppointment, setAppointmentStatus, deleteAppointment, rescheduleAppointment } from "./actions";
+import { createAppointment, setAppointmentStatus, deleteAppointment, rescheduleAppointment, updateAppointmentCenterHall } from "./actions";
 import { THERAPY, APPT_STATUS, CONFIRM_STATUS, fmtDate, fmtTime } from "@/lib/labels";
 import { currentUserBranch, effectiveBranchId } from "@/lib/branch-context";
+import { activeCenterHallOptions } from "@/lib/center-halls";
+import { CenterHallSelect } from "@/components/CenterHallSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -76,14 +78,21 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
     where.patient = existingPatientWhere ? { AND: [existingPatientWhere, { branchId: activeBranchId }] } : { branchId: activeBranchId };
   }
 
-  const [appts, patients, whoList, branches] = await Promise.all([
+  const [appts, patients, whoList, branches, centers, centerHalls] = await Promise.all([
     prisma.appointment.findMany({
       where,
-      include: { patient: { include: { branch: true } }, session: { select: { hall: true } } }, orderBy: { scheduledAt: "asc" }, take: 200,
+      include: {
+        patient: { include: { branch: true } },
+        center: true,
+        hall: true,
+        session: { select: { id: true, hall: true, center: true, therapyHall: true } },
+      }, orderBy: { scheduledAt: "asc" }, take: 200,
     }),
     prisma.patient.findMany({ where: activeBranchId ? { branchId: activeBranchId } : {}, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
     prisma.appointment.findMany({ where: { assignedTo: { not: null } }, select: { assignedTo: true }, distinct: ["assignedTo"], orderBy: { assignedTo: "asc" } }),
     prisma.branch.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    activeCenterHallOptions(prisma),
   ]);
 
   // تجميع حسب اليوم
@@ -169,6 +178,9 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
           <Combobox name="type" label="نوع الموعد" options={["فحص", "متابعة", "جلسة", "مراجعة"]} />
           <input name="assignedTo" className="input" placeholder="المعالج/الطبيب" />
           <input name="notes" className="input" placeholder="ملاحظات" />
+          <div className="md:col-span-3">
+            <CenterHallSelect centers={centers} halls={centerHalls} requiredCenter={false} requiredHall={false} />
+          </div>
           <div className="md:col-span-3"><button className="btn-primary" type="submit">إضافة موعد</button></div>
         </form>
       )}
@@ -196,7 +208,8 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
                   <div><span className="text-gray-400">النوع:</span> {a.type || (a.therapyType ? THERAPY[a.therapyType as keyof typeof THERAPY] : "—")}</div>
                   <div><span className="text-gray-400">المسؤول:</span> {a.assignedTo || "—"}</div>
                   <div><span className="text-gray-400">الفرع:</span> {(a as any).patient.branch?.name ?? "بدون فرع"}</div>
-                  {a.session?.hall && <div><span className="text-gray-400">القاعة:</span> {a.session.hall}</div>}
+                  {(a.center?.name || a.session?.center?.name) && <div><span className="text-gray-400">المركز:</span> {a.center?.name || a.session?.center?.name}</div>}
+                  {(a.hall?.name || a.session?.therapyHall?.name || a.session?.hall) && <div><span className="text-gray-400">القاعة:</span> {a.hall?.name || a.session?.therapyHall?.name || a.session?.hall}</div>}
                 </div>
                 {(cEdit || cDelete) && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
@@ -214,6 +227,15 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
                       <input name="scheduledAt" type="datetime-local" className="input !py-1.5 text-xs" />
                       <button className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700">نقل</button>
                     </form>}
+                    {cEdit && !a.session?.id && (
+                      <details className="w-full">
+                        <summary className="cursor-pointer text-xs font-medium text-brand-700">المركز/القاعة</summary>
+                        <form action={updateAppointmentCenterHall.bind(null, a.id)} className="mt-2 space-y-2 rounded-lg bg-gray-50 p-2">
+                          <CenterHallSelect centers={centers} halls={centerHalls} defaultCenterId={a.centerId ?? ""} defaultHallValue={a.hallId ?? ""} requiredCenter={false} requiredHall={false} className="grid gap-2" />
+                          <button className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700">حفظ</button>
+                        </form>
+                      </details>
+                    )}
                   </div>
                 )}
               </div>
@@ -228,7 +250,8 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
                   <td className="td"><Link href={`/patients/${a.patientId}`} className="text-brand-700 hover:underline">{a.patient.fullName}</Link>{(a as any).patientResponse && <span className={`badge ms-1 ${(a as any).patientResponse === "CONFIRMED" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{CONFIRM_STATUS[(a as any).patientResponse as keyof typeof CONFIRM_STATUS]}</span>}</td>
                   <td className="td">
                     <div>{a.type || (a.therapyType ? THERAPY[a.therapyType as keyof typeof THERAPY] : "—")}</div>
-                    {a.session?.hall && <div className="text-xs text-gray-400">القاعة: {a.session.hall}</div>}
+                    {(a.center?.name || a.session?.center?.name) && <div className="text-xs text-gray-400">المركز: {a.center?.name || a.session?.center?.name}</div>}
+                    {(a.hall?.name || a.session?.therapyHall?.name || a.session?.hall) && <div className="text-xs text-gray-400">القاعة: {a.hall?.name || a.session?.therapyHall?.name || a.session?.hall}</div>}
                   </td>
                   <td className="td">{a.assignedTo || "—"}</td>
                   <td className="td"><span className={`badge ${a.status === "SCHEDULED" ? "bg-brand-50 text-brand-700" : a.status === "COMPLETED" ? "bg-green-50 text-green-700" : a.status === "NOSHOW" ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-500"}`}>{APPT_STATUS[a.status as keyof typeof APPT_STATUS]}</span></td>
@@ -250,6 +273,15 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
                         <input name="scheduledAt" type="datetime-local" className="input !w-44 !py-0.5 text-xs" />
                         <button className="text-xs text-brand-700 hover:underline">نقل</button>
                       </form>}
+                      {cEdit && !a.session?.id && (
+                        <details className="min-w-64">
+                          <summary className="cursor-pointer text-xs text-brand-700 hover:underline">المركز/القاعة</summary>
+                          <form action={updateAppointmentCenterHall.bind(null, a.id)} className="mt-2 space-y-2 rounded-lg bg-gray-50 p-2">
+                            <CenterHallSelect centers={centers} halls={centerHalls} defaultCenterId={a.centerId ?? ""} defaultHallValue={a.hallId ?? ""} requiredCenter={false} requiredHall={false} className="grid gap-2" />
+                            <button className="text-xs text-brand-700 hover:underline">حفظ</button>
+                          </form>
+                        </details>
+                      )}
                       {cDelete && <form action={deleteAppointment.bind(null, a.id)}><button className="text-xs text-gray-400 hover:text-red-600">حذف</button></form>}
                     </>
                   )}

@@ -5,6 +5,7 @@ import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/componen
 import { PageHeader } from "@/components/PageHeader";
 import { currentPerms, requireSession } from "@/lib/access";
 import { accessibleCenterIds } from "@/lib/center-access";
+import { activeCenterHallOptions } from "@/lib/center-halls";
 import { SERVICE_LABELS } from "@/lib/center-workspaces";
 import { prisma } from "@/lib/db";
 import { baghdadDayRange } from "@/lib/display-utils";
@@ -287,7 +288,7 @@ export default async function TherapyCentersPage({
     medRows,
   ] = await Promise.all([
     canCenterView || canTherapy ? prisma.center.findMany({ where: selectedCenterWhere, orderBy: { name: "asc" } }) : Promise.resolve([]),
-    canTherapy ? prisma.therapyHall.findMany({ where: { active: true }, orderBy: { name: "asc" } }) : Promise.resolve([]),
+    canTherapy ? activeCenterHallOptions(prisma) : Promise.resolve([]),
     canTherapy ? prisma.user.findMany({ where: { isActive: true, role: { in: ["THERAPIST", "HEAD_THERAPIST"] } }, select: { id: true, fullName: true, role: true }, orderBy: { fullName: "asc" } }) : Promise.resolve([]),
     canTherapy ? prisma.user.findMany({ where: { isActive: true, centerMemberships: { some: { role: "HEAD_THERAPIST", status: "ACTIVE" } } }, select: { id: true, fullName: true }, orderBy: { fullName: "asc" } }) : Promise.resolve([]),
     canTherapy ? prisma.treatmentPlan.count({ where: { ...therapyScopeWhere, status: "ACTIVE" } }) : Promise.resolve(0),
@@ -581,6 +582,8 @@ export default async function TherapyCentersPage({
 }
 
 function PlanFilters({ sp, centers, halls, therapists, headTherapists }: { sp: Record<string, string | undefined>; centers: any[]; halls: any[]; therapists: any[]; headTherapists: any[] }) {
+  const visibleHalls = halls.filter((hall) => !sp.center || String(hall.centerId) === sp.center);
+  const uniqueHalls = Array.from(new Map(visibleHalls.map((hall) => [hall.hallId, hall])).values());
   return (
     <form action="/therapy-centers" className="grid gap-3 md:grid-cols-4" autoComplete="off">
       <input type="hidden" name="tab" value="plans" />
@@ -590,7 +593,7 @@ function PlanFilters({ sp, centers, halls, therapists, headTherapists }: { sp: R
       <label className="label">المركز<select name="center" className="input mt-1" defaultValue={sp.center ?? ""}><option value="">كل المراكز</option>{centers.map((center) => <option key={center.id} value={center.id}>{center.name}</option>)}</select></label>
       <label className="label">المعالج<select name="therapist" className="input mt-1" defaultValue={sp.therapist ?? ""}><option value="">كل المعالجين</option>{therapists.map((user) => <option key={user.id} value={user.id}>{user.fullName}</option>)}</select></label>
       <label className="label">رئيس المعالجين<select name="headTherapist" className="input mt-1" defaultValue={sp.headTherapist ?? ""}><option value="">الكل</option>{headTherapists.map((user) => <option key={user.id} value={user.id}>{user.fullName}</option>)}</select></label>
-      <label className="label">القاعة<select name="hall" className="input mt-1" defaultValue={sp.hall ?? ""}><option value="">كل القاعات</option>{halls.map((hall) => <option key={hall.id} value={hall.id}>{hall.name}</option>)}</select></label>
+      <label className="label">القاعة<select name="hall" className="input mt-1" defaultValue={sp.hall ?? ""}><option value="">كل القاعات</option>{uniqueHalls.map((hall) => <option key={`${hall.centerId}-${hall.resourceId}`} value={hall.hallId}>{hall.hallName}</option>)}</select></label>
       <div className="flex items-end gap-2"><button className="btn-primary">تطبيق</button><Link href="/therapy-centers?tab=plans" className="btn-ghost">مسح</Link></div>
     </form>
   );

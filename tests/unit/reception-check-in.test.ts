@@ -112,6 +112,15 @@ function createTransaction(draft: Store) {
 
 const db = vi.hoisted(() => ({
   prisma: {
+    centerResource: {
+      findFirst: vi.fn(async ({ where }: any) => {
+        const hallName = where.OR?.[0]?.name;
+        if (where.centerId === 1 && hallName === "قاعة العلاج المائي") {
+          return { id: "resource-1", centerId: 1, therapyHallId: 10, therapyHall: { id: 10, name: "قاعة العلاج المائي", active: true } };
+        }
+        return null;
+      }),
+    },
     $transaction: vi.fn(async (work: (tx: any) => Promise<any>) => {
       const transactionError = transactionErrors.shift();
       if (transactionError) throw transactionError;
@@ -194,14 +203,15 @@ describe("reception check-in workflow", () => {
   });
 
   it("adds the patient to today's queue when requested", async () => {
-    await submit({ sendQueue: "1", hall: "قاعة العلاج المائي" });
+    await submit({ sendQueue: "1", centerId: "1", hall: "قاعة العلاج المائي" });
     expect(access.assertPerm).toHaveBeenCalledWith("queue.manage");
     expect(store.queues).toHaveLength(1);
+    expect(store.queues[0]).toMatchObject({ centerId: 1, hall: "قاعة العلاج المائي" });
   });
 
   it("does not create a duplicate queue entry on resubmission", async () => {
-    await submit({ sendQueue: "1", hall: "قاعة العلاج المائي" });
-    await submit({ sendQueue: "1", hall: "قاعة العلاج المائي" });
+    await submit({ sendQueue: "1", centerId: "1", hall: "قاعة العلاج المائي" });
+    await submit({ sendQueue: "1", centerId: "1", hall: "قاعة العلاج المائي" });
     expect(store.queues).toHaveLength(1);
   });
 
@@ -266,7 +276,7 @@ describe("reception check-in workflow", () => {
 
   it("rolls back visit, queue, stage, notification, and audit when a step fails", async () => {
     failAt = "notification";
-    await expect(receptionCheckIn(form({ destination: "صيدلية", sendQueue: "1" }))).rejects.toThrow("notification failed");
+    await expect(receptionCheckIn(form({ destination: "صيدلية", sendQueue: "1", centerId: "1", hall: "قاعة العلاج المائي" }))).rejects.toThrow("notification failed");
     expect(store.visits).toHaveLength(0);
     expect(store.queues).toHaveLength(0);
     expect(store.stages).toHaveLength(0);

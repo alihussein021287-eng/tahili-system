@@ -14,6 +14,8 @@ import {
   RX_STATUS,
 } from "@/lib/labels";
 import { receptionCheckIn } from "../visits/actions";
+import { activeCenterHallOptions } from "@/lib/center-halls";
+import { CenterHallSelect } from "@/components/CenterHallSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -120,7 +122,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const availableTabs = TABS.filter((t) => allowed(perms, t.perm));
   const cleanSp: Params = { q, from: sp.from, to: sp.to, branch: sp.branch, status, tab };
 
-  const [branches, patients, officialDocs, appointments, tasks, devices, prescriptions] = await Promise.all([
+  const [branches, patients, officialDocs, appointments, tasks, devices, prescriptions, centers, centerHalls] = await Promise.all([
     prisma.branch.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, isActive: true } }),
     hasFilters && wants(tab, "patients") && perms.has("patients.view")
       ? prisma.patient.findMany({
@@ -262,6 +264,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
           take: limitFor(tab, "pharmacy"),
         })
       : Promise.resolve([]),
+    prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    activeCenterHallOptions(prisma),
   ]);
 
   const counts: Record<Tab, number> = {
@@ -354,14 +358,24 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                   </td>
                   <td className="td">
                     <div className="flex flex-wrap gap-2">
-                      {canVisit && !p.archivedAt && (
+                      {canVisit && !p.archivedAt && !canQueue && (
                         <form action={receptionCheckIn} className="flex flex-wrap items-center gap-2">
                           <input type="hidden" name="patientId" value={p.id} />
                           <input type="hidden" name="returnTo" value={returnTo} />
-                          {canQueue && <input type="hidden" name="sendQueue" value="1" />}
-                          {canQueue && <input type="hidden" name="hall" value="" />}
-                          <button className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700" type="submit">{canQueue ? "زيارة + طابور" : "تسجيل زيارة"}</button>
+                          <button className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700" type="submit">تسجيل زيارة</button>
                         </form>
+                      )}
+                      {canVisit && canQueue && !p.archivedAt && (
+                        <details className="min-w-72">
+                          <summary className="cursor-pointer rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">زيارة + طابور</summary>
+                          <form action={receptionCheckIn} className="mt-2 space-y-2 rounded-lg bg-gray-50 p-2">
+                            <input type="hidden" name="patientId" value={p.id} />
+                            <input type="hidden" name="returnTo" value={returnTo} />
+                            <input type="hidden" name="sendQueue" value="1" />
+                            <CenterHallSelect centers={centers} halls={centerHalls} hallFieldName="hall" hallValue="name" requiredCenter requiredHall className="grid gap-2" />
+                            <button className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700" type="submit">تسجيل وإرسال</button>
+                          </form>
+                        </details>
                       )}
                       <Link href={`/patients/${p.id}`} className="text-xs font-medium text-brand-700 hover:underline">فتح الملف</Link>
                     </div>

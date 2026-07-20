@@ -7,6 +7,7 @@ import { canDelete, ROLE_LABELS } from "@/lib/permissions";
 import { notifyRole } from "@/lib/notify";
 import { logAudit } from "@/lib/audit";
 import { saveFile } from "@/lib/storage";
+import { assertCenterHallByName } from "@/lib/center-halls";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -1051,8 +1052,9 @@ function distributeSessionDates(startDate: Date, weekdays: number[], count: numb
 export async function scheduleSessions(patientId: string, fd: FormData) {
   const ses = await guardScheduler();
   const therapyType = (fd.get("therapyType")?.toString() as any) || "PHYSICAL";
-  const centerId = fd.get("centerId") ? Number(fd.get("centerId")) : null;
-  const hall = fd.get("hall")?.toString().trim() || null;
+  const centerIdRaw = Number(fd.get("centerId"));
+  const centerId = Number.isInteger(centerIdRaw) && centerIdRaw > 0 ? centerIdRaw : null;
+  let hall = fd.get("hall")?.toString().trim() || null;
   const therapist = fd.get("therapist")?.toString().trim() || null;
   const treatmentPlan = fd.get("treatmentPlan")?.toString().trim() || null;
   const totalSessions = fd.get("totalSessions") ? Math.max(1, Math.min(60, Number(fd.get("totalSessions")))) : 1;
@@ -1063,6 +1065,15 @@ export async function scheduleSessions(patientId: string, fd: FormData) {
 
   if (!weekdays.length) { redirect(`/patients/${patientId}?saved=${encodeURIComponent("اختر يوماً واحداً على الأقل للمراجعة")}`); }
   if (Number.isNaN(Date.parse(startRaw || ""))) { redirect(`/patients/${patientId}?saved=${encodeURIComponent("تاريخ البداية غير صحيح")}`); }
+  if (!centerId) { redirect(`/patients/${patientId}?saved=${encodeURIComponent("اختر المركز قبل القاعة")}`); }
+  if ((ses.user as any)?.role !== "ADMIN") {
+    const membership = await prisma.centerMembership.findFirst({ where: { centerId, userId: (ses.user as any)?.id, role: "HEAD_THERAPIST", status: "ACTIVE" } });
+    if (!membership) redirect(`/patients/${patientId}?saved=${encodeURIComponent("لا يمكنك جدولة مركز خارج عضويتك")}`);
+  }
+  const hallResource = await assertCenterHallByName(prisma, centerId, hall).catch((error) => {
+    redirect(`/patients/${patientId}?saved=${encodeURIComponent(error instanceof Error ? error.message : "الفرع/القاعة لا يتبع المركز المختار")}`);
+  });
+  hall = hallResource.therapyHall.name;
 
   const startDate = new Date(startRaw!);
   const dates = distributeSessionDates(startDate, weekdays, totalSessions, sessionTime);
@@ -1070,7 +1081,8 @@ export async function scheduleSessions(patientId: string, fd: FormData) {
   const conflictOr: any[] = [];
   if (therapist) conflictOr.push({ assignedTo: therapist });
   if (hall) {
-    conflictOr.push({ session: { is: { hall } } });
+    conflictOr.push({ hallId: hallResource.therapyHall.id });
+    conflictOr.push({ session: { is: { hallId: hallResource.therapyHall.id } } });
     conflictOr.push({ notes: { contains: `القاعة: ${hall}` } });
   }
   if (dates.length && conflictOr.length) {
@@ -1080,7 +1092,7 @@ export async function scheduleSessions(patientId: string, fd: FormData) {
         scheduledAt: { in: dates },
         OR: conflictOr,
       },
-      include: { patient: { select: { fullName: true, fileNumber: true } }, session: { select: { hall: true } } },
+      include: { patient: { select: { fullName: true, fileNumber: true } }, session: { select: { hall: true, hallId: true } } },
       orderBy: { scheduledAt: "asc" },
       take: 5,
     });
@@ -1094,7 +1106,7 @@ export async function scheduleSessions(patientId: string, fd: FormData) {
   // إنشاء الجلسة العلاجية بالجدولة (لا نمسّ أي جلسة سابقة)
   const session = await prisma.therapySession.create({
     data: {
-      patientId, therapyType, centerId, hall, therapist, treatmentPlan,
+      patientId, therapyType, centerId, hallId: hallResource.therapyHall.id, hall, therapist, treatmentPlan,
       totalSessions, sessionTime, weekdays: csvDays,
       startDate: dates[0] ?? startDate,
       endDate: dates[dates.length - 1] ?? null,
@@ -1107,7 +1119,7 @@ export async function scheduleSessions(patientId: string, fd: FormData) {
     await prisma.appointment.createMany({
       data: dates.map((d) => ({
         patientId, scheduledAt: d, type: "جلسة علاجية", therapyType,
-        assignedTo: therapist, sessionId: session.id, status: "SCHEDULED" as any,
+        assignedTo: therapist, sessionId: session.id, centerId, hallId: hallResource.therapyHall.id, status: "SCHEDULED" as any,
         notes: hall ? `القاعة: ${hall}` : null,
       })),
     });

@@ -6,9 +6,10 @@ import Link from "next/link";
 import { fmtDateTime, fmtDate, PATIENT_STATUS } from "@/lib/labels";
 import { receptionCheckIn, recordVisit } from "./actions";
 import { CENTER_STATIONS } from "@/lib/stations";
+import { activeCenterHallOptions } from "@/lib/center-halls";
+import { CenterHallSelect } from "@/components/CenterHallSelect";
 
 export const dynamic = "force-dynamic";
-const HALLS = ["قاعة التمارين الميكانيكية", "قاعة الأجهزة الفيزياوية", "قاعة العلاج المائي"];
 
 export default async function VisitsPage({ searchParams }: { searchParams: Promise<{ q?: string; saved?: string }> }) {
   await requirePerm("visits.view");
@@ -23,7 +24,7 @@ export default async function VisitsPage({ searchParams }: { searchParams: Promi
   const startToday = new Date(new Date().toDateString());
   const endToday = new Date(startToday.getTime() + 86400000);
 
-  const [patients, todayVisits, matchedPatients] = await Promise.all([
+  const [patients, todayVisits, matchedPatients, centers, centerHalls] = await Promise.all([
     prisma.patient.findMany({ where: { archivedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true, phone: true, status: true } }),
     prisma.visit.findMany({ where: { visitDate: { gte: startToday } }, include: { patient: true }, orderBy: { visitDate: "desc" } }),
     q
@@ -41,6 +42,8 @@ export default async function VisitsPage({ searchParams }: { searchParams: Promi
           take: 10, orderBy: { fullName: "asc" },
         })
       : Promise.resolve([]),
+    prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    activeCenterHallOptions(prisma),
   ]);
 
   return (
@@ -126,9 +129,15 @@ export default async function VisitsPage({ searchParams }: { searchParams: Promi
                     {canQueue && (
                       <>
                         <input type="hidden" name="sendQueue" value="1" />
-                        <div className="min-w-[210px]">
-                          <Combobox name="hall" label="القاعة" allowFree={false} placeholder="اختياري" options={[{ value: "", label: "بدون قاعة" }, ...HALLS.map((h) => ({ value: h, label: h }))]} />
-                        </div>
+                        <CenterHallSelect
+                          centers={centers}
+                          halls={centerHalls}
+                          hallFieldName="hall"
+                          hallValue="name"
+                          requiredCenter
+                          requiredHall
+                          className="grid min-w-[420px] flex-[2] gap-2 md:grid-cols-2"
+                        />
                         <button className="btn-primary" type="submit">تسجيل زيارة + إرسال للطابور</button>
                       </>
                     )}
