@@ -38,7 +38,9 @@ export default async function Queue() {
     prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     activeCenterHallOptions(prisma),
   ]);
-  const halls = queueHallNames(activeCenterHallNames(centerHalls));
+  const activeHalls = queueHallNames(activeCenterHallNames(centerHalls));
+  const historicalEntryHalls = entries.map((entry) => entry.hall).filter((hall): hall is string => Boolean(hall));
+  const halls = queueHallNames([...activeHalls, ...historicalEntryHalls]);
 
   return (
     <div className="space-y-5">

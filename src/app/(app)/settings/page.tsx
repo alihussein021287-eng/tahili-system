@@ -20,6 +20,8 @@ import {
   addMobilityAid,
   addProstheticType,
   addRank,
+  deleteCenterHall,
+  deleteTherapyCenter,
   deleteBranch,
   deleteDistrict,
   deleteFormation,
@@ -48,6 +50,7 @@ import {
 } from "./actions";
 import {
   ConfirmSubmitButton,
+  CenterFilterSelect,
   LookupSearchInput,
   SettingsActionForm,
   SettingsTabSelect,
@@ -99,7 +102,7 @@ function canDeleteCount(item: any) {
 export default async function Settings({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; saved?: string; error?: string; card?: string }>;
+  searchParams: Promise<{ tab?: string; saved?: string; error?: string; card?: string; center?: string }>;
 }) {
   await requirePerm("settings.view");
   const params = await searchParams;
@@ -357,7 +360,7 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
   const [centers, resources] = await Promise.all([
     prisma.center.findMany({
       include: {
-        _count: { select: { memberships: true, resources: true, programs: true, centerSessions: true, treatmentPlans: true } },
+        _count: { select: { memberships: true, resources: true, programs: true, centerSessions: true, treatmentPlans: true, sessions: true, appointments: true, queueEntries: true, referralRequests: true } },
       },
       orderBy: { name: "asc" },
     }),
@@ -381,6 +384,9 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
     resourcesByCenter.set(resource.centerId, group);
   }
   const activeHalls = hallOptions.filter((hall) => hall.active && hall.status === "AVAILABLE").length;
+  const requestedCenterId = Number(message?.center);
+  const selectedCenter = centers.find((center) => center.id === requestedCenterId) ?? centers[0] ?? null;
+  const selectedResources = selectedCenter ? resourcesByCenter.get(selectedCenter.id) ?? [] : [];
   return (
     <div className="space-y-5">
       <Card id="therapy-defaults" title="افتراضيات الخطط العلاجية" description="تستخدم كنقطة بداية عند إنشاء الخطط ولا تغيّر الخطط القديمة تلقائياً.">
@@ -409,64 +415,97 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
               <div className="self-end"><SmallSubmitButton>إضافة مركز</SmallSubmitButton></div>
             </form>
             <form action={addCenterHall} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[220px_1fr_auto]">
-              <SelectInput label="المركز" name="centerId" options={centers.map((center) => ({ value: center.id, label: center.name }))} />
+              <SelectInput label="المركز" name="centerId" defaultValue={selectedCenter?.id ?? ""} options={centers.map((center) => ({ value: center.id, label: center.name }))} />
               <TextInput label="اسم فرع/قاعة جديد" name="name" required />
               <div className="self-end"><SmallSubmitButton>إضافة قاعة</SmallSubmitButton></div>
             </form>
           </div>
         ) : null}
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          {centers.map((center) => {
-            const centerResources = resourcesByCenter.get(center.id) ?? [];
-            return (
-              <article key={center.id} className="rounded-lg border border-gray-200 p-3" data-lookup-item data-lookup-text={`${center.name} ${centerResources.map((resource) => resource.therapyHall?.name ?? "").join(" ")}`}>
-                {canEdit ? (
-                  <form action={renameTherapyCenter.bind(null, center.id)} className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <TextInput label="اسم المركز" name="name" defaultValue={center.name} required />
+        <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <CenterFilterSelect centers={centers.map((center) => ({ id: center.id, name: center.name }))} selectedId={selectedCenter?.id ?? null} />
+            <div className="mt-3 max-h-72 space-y-1 overflow-y-auto pr-1 text-sm">
+              {centers.map((center) => {
+                const isSelected = center.id === selectedCenter?.id;
+                const count = resourcesByCenter.get(center.id)?.length ?? 0;
+                return (
+                  <Link
+                    key={center.id}
+                    href={`/settings?tab=therapy&card=center-halls&center=${center.id}`}
+                    className={`flex items-center justify-between rounded-md px-3 py-2 transition ${isSelected ? "bg-brand-700 text-white" : "bg-white text-gray-700 hover:bg-gray-100"}`}
+                  >
+                    <span className="min-w-0 truncate">{center.name}</span>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>{count}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          {selectedCenter ? (
+            <article className="rounded-lg border border-gray-200 p-3" data-lookup-item data-lookup-text={`${selectedCenter.name} ${selectedResources.map((resource) => resource.therapyHall?.name ?? "").join(" ")}`}>
+              {canEdit ? (
+                <div className="grid gap-2 lg:grid-cols-[1fr_auto]">
+                  <form action={renameTherapyCenter.bind(null, selectedCenter.id)} className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <TextInput label="اسم المركز" name="name" defaultValue={selectedCenter.name} required />
                     <div className="self-end"><SmallSubmitButton>حفظ</SmallSubmitButton></div>
                   </form>
-                ) : (
-                  <h3 className="font-semibold text-gray-900">{center.name}</h3>
-                )}
-                <div className="mt-2 flex flex-wrap gap-1 text-xs">
-                  <span className="badge-neutral">{center._count.memberships} عضوية</span>
-                  <span className="badge-neutral">{centerResources.length} قاعة</span>
-                  <span className="badge-neutral">{center._count.programs} برنامج</span>
-                  <span className="badge-neutral">{center._count.centerSessions + center._count.treatmentPlans} علاج</span>
+                  <form action={deleteTherapyCenter.bind(null, selectedCenter.id)} className="self-end">
+                    <ConfirmSubmitButton ariaLabel={`حذف ${selectedCenter.name}`} message={`تأكيد حذف المركز: ${selectedCenter.name}؟ سيُمنع الحذف إذا كان مستخدماً.`}>حذف المركز</ConfirmSubmitButton>
+                  </form>
                 </div>
-                <div className="mt-3 space-y-2">
-                  {centerResources.map((resource) => {
-                    const hall = resource.therapyHall;
-                    if (!hall) return null;
-                    const used = (hall._count?.therapySessions ?? 0) + (hall._count?.treatmentPlans ?? 0) + (hall._count?.appointments ?? 0);
-                    return (
-                      <div key={resource.id} className="rounded-md bg-gray-50 p-2">
+              ) : (
+                <h3 className="font-semibold text-gray-900">{selectedCenter.name}</h3>
+              )}
+              <div className="mt-2 flex flex-wrap gap-1 text-xs">
+                <span className="badge-neutral">{selectedCenter._count.memberships} عضوية</span>
+                <span className="badge-neutral">{selectedResources.length} قاعة</span>
+                <span className="badge-neutral">{selectedCenter._count.programs} برنامج</span>
+                <span className="badge-neutral">{selectedCenter._count.centerSessions + selectedCenter._count.treatmentPlans + selectedCenter._count.sessions} علاج</span>
+                <span className="badge-neutral">{selectedCenter._count.appointments} موعد</span>
+                <span className="badge-neutral">{selectedCenter._count.queueEntries} طابور</span>
+                <span className="badge-neutral">{selectedCenter._count.referralRequests} إحالة</span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {selectedResources.map((resource) => {
+                  const hall = resource.therapyHall;
+                  if (!hall) return null;
+                  const active = hall.active && resource.status === "AVAILABLE";
+                  const used = (hall._count?.therapySessions ?? 0) + (hall._count?.treatmentPlans ?? 0) + (hall._count?.appointments ?? 0);
+                  return (
+                    <div key={resource.id} className="rounded-md bg-gray-50 p-2">
+                      {canEdit ? (
+                        <form action={renameCenterHall.bind(null, resource.id)} className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                          <TextInput label="اسم الفرع/القاعة" name="name" defaultValue={hall.name} required />
+                          <div className="self-end"><SmallSubmitButton>حفظ</SmallSubmitButton></div>
+                        </form>
+                      ) : (
+                        <div className="font-medium">{hall.name}</div>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span className={active ? "badge-success" : "badge-neutral"}>{active ? "فعالة" : "معطلة"}</span>
+                        <span className="badge-neutral">{used} ارتباط</span>
                         {canEdit ? (
-                          <form action={renameCenterHall.bind(null, hall.id)} className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                            <TextInput label="اسم الفرع/القاعة" name="name" defaultValue={hall.name} required />
-                            <div className="self-end"><SmallSubmitButton>حفظ</SmallSubmitButton></div>
-                          </form>
-                        ) : (
-                          <div className="font-medium">{hall.name}</div>
-                        )}
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                          <span className={hall.active && resource.status === "AVAILABLE" ? "badge-success" : "badge-neutral"}>{hall.active && resource.status === "AVAILABLE" ? "فعالة" : "معطلة"}</span>
-                          <span className="badge-neutral">{used} ارتباط</span>
-                          {canEdit ? (
-                            <form action={setCenterHallActive.bind(null, hall.id, !hall.active)}>
-                              <SmallSubmitButton>{hall.active ? "تعطيل" : "تفعيل"}</SmallSubmitButton>
+                          <>
+                            <form action={setCenterHallActive.bind(null, resource.id, !active)}>
+                              <SmallSubmitButton ariaLabel={`${active ? "تعطيل" : "تفعيل"} ${hall.name}`}>{active ? "تعطيل" : "تفعيل"}</SmallSubmitButton>
                             </form>
-                          ) : null}
-                        </div>
+                            <form action={deleteCenterHall.bind(null, resource.id)}>
+                              <ConfirmSubmitButton ariaLabel={`حذف ${hall.name}`} message={`تأكيد حذف الفرع/القاعة: ${hall.name}؟ سيُمنع الحذف إذا كان مستخدماً.`}>حذف</ConfirmSubmitButton>
+                            </form>
+                          </>
+                        ) : null}
                       </div>
-                    );
-                  })}
-                  {centerResources.length === 0 ? <div className="rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-400">لا توجد قاعات مرتبطة.</div> : null}
-                </div>
-              </article>
-            );
-          })}
+                    </div>
+                  );
+                })}
+                {selectedResources.length === 0 ? <div className="rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-400">لا توجد قاعات مرتبطة بهذا المركز.</div> : null}
+              </div>
+            </article>
+          ) : (
+            <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400">أضف مركزاً أولاً لإدارة فروعه وقاعاته.</div>
+          )}
         </div>
       </Card>
     </div>

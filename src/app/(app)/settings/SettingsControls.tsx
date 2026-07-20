@@ -44,10 +44,10 @@ export function SubmitButton({ children = "حفظ", disabled = false }: { childr
   );
 }
 
-export function SmallSubmitButton({ children = "إضافة", disabled = false }: { children?: ReactNode; disabled?: boolean }) {
+export function SmallSubmitButton({ children = "إضافة", disabled = false, ariaLabel }: { children?: ReactNode; disabled?: boolean; ariaLabel?: string }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className="btn-primary btn-sm" disabled={disabled || pending} aria-disabled={disabled || pending}>
+    <button type="submit" className="btn-primary btn-sm" disabled={disabled || pending} aria-disabled={disabled || pending} aria-label={ariaLabel}>
       {pending ? "..." : children}
     </button>
   );
@@ -58,11 +58,13 @@ export function ConfirmSubmitButton({
   message,
   className = "btn-danger-soft btn-sm",
   disabled = false,
+  ariaLabel,
 }: {
   children?: ReactNode;
   message: string;
   className?: string;
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   const { pending } = useFormStatus();
   return (
@@ -71,6 +73,7 @@ export function ConfirmSubmitButton({
       className={className}
       disabled={disabled || pending}
       aria-disabled={disabled || pending}
+      aria-label={ariaLabel}
       onClick={(event) => {
         if (!window.confirm(message)) event.preventDefault();
       }}
@@ -95,6 +98,37 @@ export function SettingsTabSelect({
         {tabs.map((tab) => (
           <option key={tab.key} value={tab.key}>
             {tab.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export function CenterFilterSelect({
+  centers,
+  selectedId,
+}: {
+  centers: { id: number; name: string }[];
+  selectedId: number | null;
+}) {
+  const router = useRouter();
+  return (
+    <label className="label max-w-md">
+      قائمة المراكز
+      <select
+        className="input mt-1"
+        value={selectedId ? String(selectedId) : ""}
+        onChange={(event) => {
+          const value = event.target.value;
+          const center = value ? `&center=${encodeURIComponent(value)}` : "";
+          router.push(`/settings?tab=therapy&card=center-halls${center}`);
+        }}
+      >
+        {centers.length === 0 ? <option value="">لا توجد مراكز</option> : null}
+        {centers.map((center) => (
+          <option key={center.id} value={center.id}>
+            {center.name}
           </option>
         ))}
       </select>

@@ -3,6 +3,16 @@
 import { assertAdminDelete, assertPerm, requireSession } from "@/lib/access";
 import { logAudit } from "@/lib/audit";
 import { getAdminConfig, type AdminConfig } from "@/lib/admin-config";
+import {
+  assertNoDuplicateCenterHallName,
+  assertNoDuplicateCenterName,
+  centerDeleteUsageCounts,
+  centerHallDeleteUsageCounts,
+  DELETE_BLOCKED_MESSAGE,
+  normalizeLookupName,
+  therapyHallGlobalUsageCounts,
+  usageTotal,
+} from "@/lib/center-halls";
 import { DEFAULT_ALLOWED_FILE_TYPES, DEFAULT_BLOCKED_FILE_TYPES } from "@/lib/collaboration-rules";
 import { prisma } from "@/lib/db";
 import { revalidatePath, revalidateTag } from "next/cache";
@@ -137,17 +147,35 @@ function lookupRedirect(card: string, message: string, kind: "saved" | "error" =
   redirect(`${TAB_LOOKUPS}&card=${encodeURIComponent(card)}&${kind}=${encodeURIComponent(message)}`);
 }
 
-function therapyRedirect(card: string, message: string, kind: "saved" | "error" = "saved") {
-  redirect(`${TAB_THERAPY}&card=${encodeURIComponent(card)}&${kind}=${encodeURIComponent(message)}`);
+function therapyRedirect(card: string, message: string, kind: "saved" | "error" = "saved", centerId?: number | null) {
+  const center = centerId ? `&center=${encodeURIComponent(String(centerId))}` : "";
+  redirect(`${TAB_THERAPY}&card=${encodeURIComponent(card)}${center}&${kind}=${encodeURIComponent(message)}`);
 }
 
 function refreshCenterHalls() {
-  revalidatePath("/settings");
-  revalidatePath("/queue");
-  revalidatePath("/visits");
-  revalidatePath("/appointments");
-  revalidatePath("/therapy");
-  revalidatePath("/therapy-centers");
+  const paths = [
+    "/settings",
+    "/queue",
+    "/visits",
+    "/search",
+    "/appointments",
+    "/appointments/calendar",
+    "/therapy",
+    "/therapy/today",
+    "/therapy-centers",
+    "/workload",
+    "/patients",
+    "/patients-care",
+    "/centers",
+    "/centers/reports",
+    "/referrals",
+    "/analytics",
+    "/collaboration",
+    "/collaboration/files",
+    "/collaboration/admin",
+    "/display",
+  ];
+  for (const path of paths) revalidatePath(path);
   revalidatePath("/patients", "layout");
   revalidateTag("lookups", { expire: 0 });
 }
@@ -540,83 +568,152 @@ export async function addCenter(fd: FormData) {
 
 export async function createTherapyCenter(fd: FormData) {
   const userId = await requireSettingsEdit();
-  const name = text(fd, "name", 120);
+  const name = normalizeLookupName(text(fd, "name", 120));
   if (!name) therapyRedirect("center-halls", "اسم المركز مطلوب", "error");
+  let centerId: number | null = null;
   try {
-    const center = await prisma.center.upsert({ where: { name }, update: {}, create: { name } });
+    const normalizedName = await assertNoDuplicateCenterName(prisma, name);
+    const center = await prisma.center.create({ data: { name: normalizedName } });
+    centerId = center.id;
     await logAudit({ userId, action: "CREATE", tableName: "centers", recordId: String(center.id), newValue: { name } });
     refreshCenterHalls();
-    therapyRedirect("center-halls", "تم حفظ المركز");
-  } catch {
-    therapyRedirect("center-halls", "تعذر حفظ المركز", "error");
+  } catch (error) {
+    therapyRedirect("center-halls", error instanceof Error ? error.message : "تعذر حفظ المركز", "error");
   }
+  therapyRedirect("center-halls", "تم حفظ المركز", "saved", centerId);
 }
 
 export async function renameTherapyCenter(id: number, fd: FormData) {
   const userId = await requireSettingsEdit();
-  const name = text(fd, "name", 120);
+  const name = normalizeLookupName(text(fd, "name", 120));
   if (!Number.isInteger(id) || id <= 0 || !name) therapyRedirect("center-halls", "اسم المركز مطلوب", "error");
   try {
+    const normalizedName = await assertNoDuplicateCenterName(prisma, name, id);
     const old = await prisma.center.findUnique({ where: { id } });
-    await prisma.center.update({ where: { id }, data: { name } });
-    await logAudit({ userId, action: "UPDATE", tableName: "centers", recordId: String(id), oldValue: old, newValue: { name } });
+    await prisma.center.update({ where: { id }, data: { name: normalizedName } });
+    await logAudit({ userId, action: "UPDATE", tableName: "centers", recordId: String(id), oldValue: old, newValue: { name: normalizedName } });
     refreshCenterHalls();
-    therapyRedirect("center-halls", "تم تعديل المركز");
-  } catch {
-    therapyRedirect("center-halls", "تعذر تعديل المركز. تحقق من عدم تكرار الاسم.", "error");
+  } catch (error) {
+    therapyRedirect("center-halls", error instanceof Error ? error.message : "تعذر تعديل المركز. تحقق من عدم تكرار الاسم.", "error", id);
   }
+  therapyRedirect("center-halls", "تم تعديل المركز", "saved", id);
 }
 
 export async function addCenterHall(fd: FormData) {
   const userId = await requireSettingsEdit();
   const centerId = Number(fd.get("centerId"));
-  const name = text(fd, "name", 120);
+  const name = normalizeLookupName(text(fd, "name", 120));
   if (!Number.isInteger(centerId) || centerId <= 0 || !name) therapyRedirect("center-halls", "اختر المركز واكتب اسم الفرع/القاعة", "error");
   try {
     await prisma.$transaction(async (tx) => {
       const center = await tx.center.findUnique({ where: { id: centerId }, select: { id: true } });
       if (!center) throw new Error("center");
-      const hall = await tx.therapyHall.upsert({ where: { name }, update: { active: true }, create: { name } });
-      const resource = await tx.centerResource.upsert({
-        where: { centerId_name: { centerId, name } },
-        update: { type: "HALL", status: "AVAILABLE", therapyHallId: hall.id },
-        create: { centerId, name, type: "HALL", status: "AVAILABLE", therapyHallId: hall.id },
+      const normalizedName = await assertNoDuplicateCenterHallName(tx, centerId, name);
+      const hall = await tx.therapyHall.upsert({ where: { name: normalizedName }, update: { active: true }, create: { name: normalizedName } });
+      const resource = await tx.centerResource.create({
+        data: { centerId, name: normalizedName, type: "HALL", status: "AVAILABLE", therapyHallId: hall.id },
       });
       await tx.auditLog.create({ data: { userId, action: "CREATE", tableName: "center_resources", recordId: resource.id, newValue: { centerId, hallId: hall.id, name } } });
     });
     refreshCenterHalls();
-    therapyRedirect("center-halls", "تمت إضافة الفرع/القاعة");
-  } catch {
-    therapyRedirect("center-halls", "تعذر إضافة الفرع/القاعة. تحقق من الاسم والمركز.", "error");
+  } catch (error) {
+    therapyRedirect("center-halls", error instanceof Error ? error.message : "تعذر إضافة الفرع/القاعة. تحقق من الاسم والمركز.", "error", centerId);
   }
+  therapyRedirect("center-halls", "تمت إضافة الفرع/القاعة", "saved", centerId);
 }
 
-export async function renameCenterHall(id: number, fd: FormData) {
+export async function renameCenterHall(resourceId: string, fd: FormData) {
   const userId = await requireSettingsEdit();
-  const name = text(fd, "name", 120);
-  if (!Number.isInteger(id) || id <= 0 || !name) therapyRedirect("center-halls", "اسم الفرع/القاعة مطلوب", "error");
+  const name = normalizeLookupName(text(fd, "name", 120));
+  if (!resourceId || !name) therapyRedirect("center-halls", "اسم الفرع/القاعة مطلوب", "error");
+  let centerId: number | null = null;
   try {
     await prisma.$transaction(async (tx) => {
-      const old = await tx.therapyHall.findUnique({ where: { id } });
-      await tx.therapyHall.update({ where: { id }, data: { name } });
-      await tx.centerResource.updateMany({ where: { therapyHallId: id, type: "HALL" }, data: { name } });
-      await tx.auditLog.create({ data: { userId, action: "UPDATE", tableName: "therapy_halls", recordId: String(id), oldValue: old, newValue: { name } } });
+      const resource = await tx.centerResource.findUnique({
+        where: { id: resourceId },
+        include: { therapyHall: true },
+      });
+      if (!resource?.therapyHallId || !resource.therapyHall) throw new Error("الفرع/القاعة غير صالح");
+      centerId = resource.centerId;
+      const normalizedName = await assertNoDuplicateCenterHallName(tx, resource.centerId, name, resource.id);
+      const old = { resource, hall: resource.therapyHall };
+      await tx.therapyHall.update({ where: { id: resource.therapyHallId }, data: { name: normalizedName } });
+      await tx.centerResource.updateMany({ where: { therapyHallId: resource.therapyHallId, type: "HALL" }, data: { name: normalizedName } });
+      await tx.auditLog.create({ data: { userId, action: "UPDATE", tableName: "center_resources", recordId: resource.id, oldValue: old, newValue: { centerId: resource.centerId, hallId: resource.therapyHallId, name: normalizedName } } });
     });
     refreshCenterHalls();
-    therapyRedirect("center-halls", "تم تعديل الفرع/القاعة");
-  } catch {
-    therapyRedirect("center-halls", "تعذر تعديل الفرع/القاعة. تحقق من عدم تكرار الاسم.", "error");
+  } catch (error) {
+    therapyRedirect("center-halls", error instanceof Error ? error.message : "تعذر تعديل الفرع/القاعة. تحقق من عدم تكرار الاسم.", "error", centerId);
   }
+  therapyRedirect("center-halls", "تم تعديل الفرع/القاعة", "saved", centerId);
 }
 
-export async function setCenterHallActive(id: number, active: boolean) {
+export async function setCenterHallActive(resourceId: string, active: boolean) {
   const userId = await requireSettingsEdit();
-  if (!Number.isInteger(id) || id <= 0) therapyRedirect("center-halls", "الفرع/القاعة غير صالح", "error");
-  const old = await prisma.therapyHall.findUnique({ where: { id }, select: { active: true } });
-  await prisma.therapyHall.update({ where: { id }, data: { active } });
-  await logAudit({ userId, action: "UPDATE", tableName: "therapy_halls", recordId: String(id), oldValue: old, newValue: { active } });
+  if (!resourceId) therapyRedirect("center-halls", "الفرع/القاعة غير صالح", "error");
+  const old = await prisma.centerResource.findUnique({
+    where: { id: resourceId },
+    select: { centerId: true, status: true, therapyHallId: true },
+  });
+  if (!old) therapyRedirect("center-halls", "الفرع/القاعة غير صالح", "error");
+  await prisma.centerResource.update({ where: { id: resourceId }, data: { status: active ? "AVAILABLE" : "OUT_OF_SERVICE" } });
+  if (active && old.therapyHallId) await prisma.therapyHall.update({ where: { id: old.therapyHallId }, data: { active: true } });
+  await logAudit({ userId, action: "UPDATE", tableName: "center_resources", recordId: resourceId, oldValue: old, newValue: { active, status: active ? "AVAILABLE" : "OUT_OF_SERVICE" } });
   refreshCenterHalls();
-  therapyRedirect("center-halls", active ? "تم تفعيل الفرع/القاعة" : "تم تعطيل الفرع/القاعة");
+  therapyRedirect("center-halls", active ? "تم تفعيل الفرع/القاعة" : "تم تعطيل الفرع/القاعة", "saved", old.centerId);
+}
+
+export async function deleteTherapyCenter(id: number) {
+  const userId = await requireSettingsEdit();
+  if (!Number.isInteger(id) || id <= 0) therapyRedirect("center-halls", "المركز غير صالح", "error");
+  try {
+    await prisma.$transaction(async (tx) => {
+      const center = await tx.center.findUnique({
+        where: { id },
+        include: { resources: { where: { type: "HALL", therapyHallId: { not: null } }, include: { therapyHall: true } } },
+      });
+      if (!center) throw new Error("المركز غير موجود");
+      const counts = await centerDeleteUsageCounts(tx, id);
+      if (usageTotal(counts) > 0) throw new Error(DELETE_BLOCKED_MESSAGE);
+      const hallIds = center.resources.flatMap((resource) => resource.therapyHallId ? [{ id: resource.therapyHallId, name: resource.therapyHall?.name }] : []);
+      await tx.center.delete({ where: { id } });
+      for (const hall of hallIds) {
+        const hallCounts = await therapyHallGlobalUsageCounts(tx, hall.id, hall.name);
+        if (usageTotal(hallCounts) === 0) await tx.therapyHall.delete({ where: { id: hall.id } }).catch(() => {});
+      }
+      await tx.auditLog.create({ data: { userId, action: "DELETE", tableName: "centers", recordId: String(id), oldValue: { name: center.name } } });
+    });
+    refreshCenterHalls();
+  } catch (error) {
+    therapyRedirect("center-halls", error instanceof Error ? error.message : "تعذر حذف المركز", "error", id);
+  }
+  therapyRedirect("center-halls", "تم حذف المركز");
+}
+
+export async function deleteCenterHall(resourceId: string) {
+  const userId = await requireSettingsEdit();
+  if (!resourceId) therapyRedirect("center-halls", "الفرع/القاعة غير صالح", "error");
+  let centerId: number | null = null;
+  try {
+    await prisma.$transaction(async (tx) => {
+      const resource = await tx.centerResource.findUnique({
+        where: { id: resourceId },
+        include: { therapyHall: true },
+      });
+      if (!resource?.therapyHallId || !resource.therapyHall) throw new Error("الفرع/القاعة غير صالح");
+      centerId = resource.centerId;
+      const counts = await centerHallDeleteUsageCounts(tx, resource);
+      if (usageTotal(counts) > 0) throw new Error(DELETE_BLOCKED_MESSAGE);
+      await tx.centerResource.delete({ where: { id: resource.id } });
+      const hallCounts = await therapyHallGlobalUsageCounts(tx, resource.therapyHallId, resource.therapyHall.name);
+      if (usageTotal(hallCounts) === 0) await tx.therapyHall.delete({ where: { id: resource.therapyHallId } }).catch(() => {});
+      await tx.auditLog.create({ data: { userId, action: "DELETE", tableName: "center_resources", recordId: resource.id, oldValue: { centerId: resource.centerId, hallId: resource.therapyHallId, name: resource.name } } });
+    });
+    refreshCenterHalls();
+  } catch (error) {
+    therapyRedirect("center-halls", error instanceof Error ? error.message : "تعذر حذف الفرع/القاعة", "error", centerId);
+  }
+  therapyRedirect("center-halls", "تم حذف الفرع/القاعة", "saved", centerId);
 }
 
 export async function deleteCenter(id: number) {
