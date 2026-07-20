@@ -32,7 +32,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         therapySessions: { include: { center: true }, orderBy: { createdAt: "desc" } },
         treatmentPlans: { include: { therapist: true, specialistDoctor: true, createdBy: true, center: true, hall: true, sessions: { include: { appointments: { orderBy: { scheduledAt: "asc" } } } }, periodicEvaluations: { include: { evaluatedBy: true }, orderBy: { evaluatedAt: "asc" } }, referralRequest: true }, orderBy: { createdAt: "desc" } },
         centerPrograms: { include: { center: true, assignedTo: true }, orderBy: { createdAt: "desc" } },
-        referralRequests: { where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { treatmentPlan: true }, orderBy: { acceptedAt: "desc" } },
+        referralRequests: { where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { treatmentPlan: true, destinationCenter: true }, orderBy: { acceptedAt: "desc" } },
         therapySessionLogs: { include: { session: true, appointment: true }, orderBy: { performedAt: "desc" }, take: 25 },
         prescriptions: { include: { medication: true }, orderBy: { prescribedAt: "desc" } },
         admissions: { include: { center: true, room: true, bed: true }, orderBy: { admissionDate: "desc" } },
