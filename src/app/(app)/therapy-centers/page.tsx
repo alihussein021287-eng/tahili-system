@@ -240,6 +240,7 @@ export default async function TherapyCentersPage({
   };
 
   const selectedCenterWhere: any = {};
+  selectedCenterWhere.active = true;
   if (centerIds) selectedCenterWhere.id = { in: centerIds };
   if (selectedCenterId && !Number.isNaN(selectedCenterId)) {
     selectedCenterWhere.AND = [{ id: selectedCenterId }];
@@ -307,7 +308,7 @@ export default async function TherapyCentersPage({
       : Promise.resolve([]),
     canTherapy
       ? prisma.referralRequest.findMany({
-          where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER", treatmentPlan: null, ...(role === "ADMIN" ? {} : { destinationCenterId: { in: managedCenterIds } }) },
+          where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER", treatmentPlan: null, destinationCenter: { is: { active: true } }, ...(role === "ADMIN" ? {} : { destinationCenterId: { in: managedCenterIds } }) },
           include: { patient: { select: { id: true, fullName: true, fileNumber: true } }, destinationCenter: true },
           orderBy: { acceptedAt: "asc" },
           take: 80,
@@ -331,7 +332,7 @@ export default async function TherapyCentersPage({
       : Promise.resolve([]),
     canCenterView
       ? prisma.center.findMany({
-          where: centerIds ? { id: { in: centerIds } } : {},
+          where: { ...(centerIds ? { id: { in: centerIds } } : {}), active: true },
           include: { _count: { select: { memberships: { where: { status: "ACTIVE" } }, programs: { where: { status: "ACTIVE" } }, resources: true } } },
           orderBy: { name: "asc" },
         })

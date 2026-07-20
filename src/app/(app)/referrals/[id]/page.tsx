@@ -17,7 +17,7 @@ export default async function ReferralDetail({ params, searchParams }: { params:
     prisma.referralRequest.findUnique({ where: { id }, include: { patient: { select: { id: true, fullName: true, fileNumber: true } }, createdBy: { select: { fullName: true } }, assignedReviewer: { select: { fullName: true } }, destinationCenter: { select: { name: true } }, officialDocument: true, careStage: true, reviewedBy: { select: { fullName: true } }, acceptedBy: { select: { fullName: true } } } }),
     currentPerms(), getSession(),
     prisma.user.findMany({ where: { isActive: true, role: "DOCTOR" }, select: { id: true, fullName: true }, orderBy: { fullName: "asc" } }),
-    prisma.center.findMany({ orderBy: { name: "asc" } }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     prisma.auditLog.findMany({ where: { tableName: "referral_requests", recordId: id }, include: { user: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } }),
   ]);
   if (!request) notFound();

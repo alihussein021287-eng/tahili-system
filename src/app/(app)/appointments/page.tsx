@@ -91,7 +91,7 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
     prisma.patient.findMany({ where: activeBranchId ? { branchId: activeBranchId } : {}, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
     prisma.appointment.findMany({ where: { assignedTo: { not: null } }, select: { assignedTo: true }, distinct: ["assignedTo"], orderBy: { assignedTo: "asc" } }),
     prisma.branch.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     activeCenterHallOptions(prisma),
   ]);
 

@@ -117,7 +117,7 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
     admittedNow,
     admissionsInRange,
   ] = await Promise.all([
-    prisma.center.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.center.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.branch.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.patient.count({ where: patientBaseWhere }),
     prisma.patient.count({ where: newPatientWhere }),

@@ -1,6 +1,7 @@
 export type CenterHallOption = {
   centerId: number;
   centerName: string;
+  centerActive: boolean;
   hallId: number;
   hallName: string;
   resourceId: string;
@@ -127,6 +128,7 @@ export function mapCenterHallResources(resources: any[]): CenterHallOption[] {
     .map((resource) => ({
       centerId: resource.centerId,
       centerName: resource.center.name,
+      centerActive: resource.center.active ?? true,
       hallId: resource.therapyHallId,
       hallName: resource.therapyHall.name,
       resourceId: resource.id,
@@ -140,7 +142,7 @@ export function activeCenterHallNames(options: CenterHallOption[]) {
   return Array.from(
     new Set(
       options
-        .filter((option) => option.active && option.status === "AVAILABLE")
+        .filter((option) => option.centerActive && option.active && option.status === "AVAILABLE")
         .map((option) => option.hallName),
     ),
   ).sort((a, b) => a.localeCompare(b, "ar"));
@@ -148,8 +150,8 @@ export function activeCenterHallNames(options: CenterHallOption[]) {
 
 export async function activeCenterHallOptions(db: any): Promise<CenterHallOption[]> {
   const resources = await db.centerResource.findMany({
-    where: { type: "HALL", status: "AVAILABLE", therapyHallId: { not: null }, therapyHall: { is: { active: true } } },
-    include: { center: { select: { id: true, name: true } }, therapyHall: { select: { id: true, name: true, active: true } } },
+    where: { type: "HALL", status: "AVAILABLE", therapyHallId: { not: null }, center: { is: { active: true } }, therapyHall: { is: { active: true } } },
+    include: { center: { select: { id: true, name: true, active: true } }, therapyHall: { select: { id: true, name: true, active: true } } },
     orderBy: [{ centerId: "asc" }, { name: "asc" }],
   });
   return mapCenterHallResources(resources);
@@ -162,6 +164,7 @@ export async function assertCenterHallByName(db: any, centerId: number, hallName
   const resource = await db.centerResource.findFirst({
     where: {
       centerId,
+      center: { is: { active: true } },
       type: "HALL",
       status: "AVAILABLE",
       therapyHallId: { not: null },
@@ -180,6 +183,7 @@ export async function assertCenterHallById(db: any, centerId: number, hallId: nu
   const resource = await db.centerResource.findFirst({
     where: {
       centerId,
+      center: { is: { active: true } },
       type: "HALL",
       status: "AVAILABLE",
       therapyHallId: hallId,

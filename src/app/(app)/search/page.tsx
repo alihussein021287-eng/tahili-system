@@ -264,7 +264,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
           take: limitFor(tab, "pharmacy"),
         })
       : Promise.resolve([]),
-    prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     activeCenterHallOptions(prisma),
   ]);
 

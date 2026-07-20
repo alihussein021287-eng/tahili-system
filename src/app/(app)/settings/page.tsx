@@ -45,6 +45,7 @@ import {
   saveSecurityAction,
   saveTherapyAction,
   setCenterHallActive,
+  setTherapyCenterActive,
   setMaintenanceMode,
   toggleBranch,
 } from "./actions";
@@ -362,12 +363,12 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
       include: {
         _count: { select: { memberships: true, resources: true, programs: true, centerSessions: true, treatmentPlans: true, sessions: true, appointments: true, queueEntries: true, referralRequests: true } },
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ active: "desc" }, { name: "asc" }],
     }),
     prisma.centerResource.findMany({
       where: { type: "HALL", therapyHallId: { not: null } },
       include: {
-        center: { select: { id: true, name: true } },
+        center: { select: { id: true, name: true, active: true } },
         therapyHall: {
           include: { _count: { select: { centerResources: true, therapySessions: true, treatmentPlans: true, appointments: true } } },
         },
@@ -387,6 +388,7 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
   const requestedCenterId = Number(message?.center);
   const selectedCenter = centers.find((center) => center.id === requestedCenterId) ?? centers[0] ?? null;
   const selectedResources = selectedCenter ? resourcesByCenter.get(selectedCenter.id) ?? [] : [];
+  const activeCenters = centers.filter((center) => center.active);
   return (
     <div className="space-y-5">
       <Card id="therapy-defaults" title="افتراضيات الخطط العلاجية" description="تستخدم كنقطة بداية عند إنشاء الخطط ولا تغيّر الخطط القديمة تلقائياً.">
@@ -401,9 +403,10 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
         </SettingsActionForm>
       </Card>
 
-      <Card id="center-halls" title="المراكز والفروع/القاعات" description="إدارة المصدر المعتمد لاختيارات الطابور والمواعيد وخطط رئيس المعالجين." message={message}>
+      <Card id="center-halls" title="المراكز والفروع/القاعات" description="إدارة المصدر المعتمد لاختيارات الطابور والمواعيد وخطط رئيس المعالجين. مكان العلاج هو الفرع أو القاعة التابعة للمركز، ويظهر في الطابور والمواعيد وخطط رئيس المعالجين." message={message}>
         <div className="flex flex-wrap gap-2 text-xs">
           <span className="badge-neutral">{centers.length} مركز</span>
+          <span className="badge-success">{activeCenters.length} مركز فعال</span>
           <span className="badge-success">{activeHalls} قاعة فعالة</span>
           <span className="badge-neutral">{hallOptions.length} ربط مركز/قاعة</span>
         </div>
@@ -415,8 +418,8 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
               <div className="self-end"><SmallSubmitButton>إضافة مركز</SmallSubmitButton></div>
             </form>
             <form action={addCenterHall} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[220px_1fr_auto]">
-              <SelectInput label="المركز" name="centerId" defaultValue={selectedCenter?.id ?? ""} options={centers.map((center) => ({ value: center.id, label: center.name }))} />
-              <TextInput label="اسم فرع/قاعة جديد" name="name" required />
+              <SelectInput label="المركز" name="centerId" defaultValue={selectedCenter?.active ? selectedCenter.id : activeCenters[0]?.id ?? ""} options={activeCenters.map((center) => ({ value: center.id, label: center.name }))} />
+              <TextInput label="اسم الفرع/القاعة / مكان العلاج الجديد" name="name" required />
               <div className="self-end"><SmallSubmitButton>إضافة قاعة</SmallSubmitButton></div>
             </form>
           </div>
@@ -424,7 +427,7 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
 
         <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <CenterFilterSelect centers={centers.map((center) => ({ id: center.id, name: center.name }))} selectedId={selectedCenter?.id ?? null} />
+            <CenterFilterSelect centers={centers.map((center) => ({ id: center.id, name: `${center.name}${center.active ? "" : " - معطل"}` }))} selectedId={selectedCenter?.id ?? null} />
             <div className="mt-3 max-h-72 space-y-1 overflow-y-auto pr-1 text-sm">
               {centers.map((center) => {
                 const isSelected = center.id === selectedCenter?.id;
@@ -433,10 +436,13 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
                   <Link
                     key={center.id}
                     href={`/settings?tab=therapy&card=center-halls&center=${center.id}`}
-                    className={`flex items-center justify-between rounded-md px-3 py-2 transition ${isSelected ? "bg-brand-700 text-white" : "bg-white text-gray-700 hover:bg-gray-100"}`}
+                    className={`flex items-center justify-between gap-2 rounded-md px-3 py-2 transition ${isSelected ? "bg-brand-700 text-white" : "bg-white text-gray-700 hover:bg-gray-100"} ${center.active ? "" : "opacity-75"}`}
                   >
                     <span className="min-w-0 truncate">{center.name}</span>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>{count}</span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {!center.active ? <span className={`rounded-full px-2 py-0.5 text-xs ${isSelected ? "bg-white/20 text-white" : "bg-gray-200 text-gray-600"}`}>معطل</span> : null}
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>{count}</span>
+                    </span>
                   </Link>
                 );
               })}
@@ -446,10 +452,15 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
           {selectedCenter ? (
             <article className="rounded-lg border border-gray-200 p-3" data-lookup-item data-lookup-text={`${selectedCenter.name} ${selectedResources.map((resource) => resource.therapyHall?.name ?? "").join(" ")}`}>
               {canEdit ? (
-                <div className="grid gap-2 lg:grid-cols-[1fr_auto]">
+                <div className="grid gap-2 xl:grid-cols-[1fr_auto_auto]">
                   <form action={renameTherapyCenter.bind(null, selectedCenter.id)} className="grid gap-2 sm:grid-cols-[1fr_auto]">
                     <TextInput label="اسم المركز" name="name" defaultValue={selectedCenter.name} required />
                     <div className="self-end"><SmallSubmitButton>حفظ</SmallSubmitButton></div>
+                  </form>
+                  <form action={setTherapyCenterActive.bind(null, selectedCenter.id, !selectedCenter.active)} className="self-end">
+                    <SmallSubmitButton ariaLabel={`${selectedCenter.active ? "تعطيل المركز" : "تفعيل المركز"} ${selectedCenter.name}`}>
+                      {selectedCenter.active ? "تعطيل المركز" : "تفعيل المركز"}
+                    </SmallSubmitButton>
                   </form>
                   <form action={deleteTherapyCenter.bind(null, selectedCenter.id)} className="self-end">
                     <ConfirmSubmitButton ariaLabel={`حذف ${selectedCenter.name}`} message={`تأكيد حذف المركز: ${selectedCenter.name}؟ سيُمنع الحذف إذا كان مستخدماً.`}>حذف المركز</ConfirmSubmitButton>
@@ -459,6 +470,7 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
                 <h3 className="font-semibold text-gray-900">{selectedCenter.name}</h3>
               )}
               <div className="mt-2 flex flex-wrap gap-1 text-xs">
+                <span className={selectedCenter.active ? "badge-success" : "badge-neutral"}>{selectedCenter.active ? "مركز فعال" : "مركز معطل"}</span>
                 <span className="badge-neutral">{selectedCenter._count.memberships} عضوية</span>
                 <span className="badge-neutral">{selectedResources.length} قاعة</span>
                 <span className="badge-neutral">{selectedCenter._count.programs} برنامج</span>
@@ -477,7 +489,7 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
                     <div key={resource.id} className="rounded-md bg-gray-50 p-2">
                       {canEdit ? (
                         <form action={renameCenterHall.bind(null, resource.id)} className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                          <TextInput label="اسم الفرع/القاعة" name="name" defaultValue={hall.name} required />
+                          <TextInput label="اسم الفرع/القاعة / مكان العلاج" name="name" defaultValue={hall.name} required />
                           <div className="self-end"><SmallSubmitButton>حفظ</SmallSubmitButton></div>
                         </form>
                       ) : (
@@ -489,7 +501,7 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
                         {canEdit ? (
                           <>
                             <form action={setCenterHallActive.bind(null, resource.id, !active)}>
-                              <SmallSubmitButton ariaLabel={`${active ? "تعطيل" : "تفعيل"} ${hall.name}`}>{active ? "تعطيل" : "تفعيل"}</SmallSubmitButton>
+                              <SmallSubmitButton ariaLabel={`${active ? "تعطيل القاعة" : "تفعيل القاعة"} ${hall.name}`}>{active ? "تعطيل القاعة" : "تفعيل القاعة"}</SmallSubmitButton>
                             </form>
                             <form action={deleteCenterHall.bind(null, resource.id)}>
                               <ConfirmSubmitButton ariaLabel={`حذف ${hall.name}`} message={`تأكيد حذف الفرع/القاعة: ${hall.name}؟ سيُمنع الحذف إذا كان مستخدماً.`}>حذف</ConfirmSubmitButton>
@@ -500,7 +512,7 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
                     </div>
                   );
                 })}
-                {selectedResources.length === 0 ? <div className="rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-400">لا توجد قاعات مرتبطة بهذا المركز.</div> : null}
+                {selectedResources.length === 0 ? <div className="rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-400">لا توجد فروع/قاعات لهذا المركز بعد</div> : null}
               </div>
             </article>
           ) : (
@@ -602,7 +614,7 @@ function NotificationsTab({ cfg, orgRow, canEdit }: { cfg: Awaited<ReturnType<ty
 
 async function FilesTab({ cfg, canEdit, isAdmin }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean; isAdmin: boolean }) {
   const [centers, displayDevices, centerHalls, collabSettings, libreOfficeStatus, clamAvStatus] = await Promise.all([
-    prisma.center.findMany({ orderBy: { name: "asc" } }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     canEdit ? prisma.displayDevice.findMany({ include: { center: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
     activeCenterHallOptions(prisma),
     collaborationSettings(),

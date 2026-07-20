@@ -45,7 +45,7 @@ export default async function CollaborationAdminPage({ searchParams }: { searchP
     adminStats(),
     listFiles(actor, "quarantine", ""),
     prisma.user.findMany({ select: { id: true, fullName: true, username: true, isActive: true }, orderBy: { fullName: "asc" }, take: 300 }),
-    prisma.center.findMany({ orderBy: { name: "asc" }, take: 100 }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" }, take: 100 }),
   ]);
 
   return (

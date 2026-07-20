@@ -1066,6 +1066,8 @@ export async function scheduleSessions(patientId: string, fd: FormData) {
   if (!weekdays.length) { redirect(`/patients/${patientId}?saved=${encodeURIComponent("اختر يوماً واحداً على الأقل للمراجعة")}`); }
   if (Number.isNaN(Date.parse(startRaw || ""))) { redirect(`/patients/${patientId}?saved=${encodeURIComponent("تاريخ البداية غير صحيح")}`); }
   if (!centerId) { redirect(`/patients/${patientId}?saved=${encodeURIComponent("اختر المركز قبل القاعة")}`); }
+  const activeCenter = await prisma.center.findUnique({ where: { id: centerId }, select: { active: true } });
+  if (!activeCenter?.active) { redirect(`/patients/${patientId}?saved=${encodeURIComponent("المركز غير صالح")}`); }
   if ((ses.user as any)?.role !== "ADMIN") {
     const membership = await prisma.centerMembership.findFirst({ where: { centerId, userId: (ses.user as any)?.id, role: "HEAD_THERAPIST", status: "ACTIVE" } });
     if (!membership) redirect(`/patients/${patientId}?saved=${encodeURIComponent("لا يمكنك جدولة مركز خارج عضويتك")}`);

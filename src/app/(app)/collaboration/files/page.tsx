@@ -73,7 +73,7 @@ export default async function CollaborationFilesPage({ searchParams }: { searchP
   const [files, users, centers, conversations, folders, patients, adminConfig] = await Promise.all([
     listFiles(actor, filter, params.q || ""),
     prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, username: true }, orderBy: { fullName: "asc" }, take: 200 }),
-    prisma.center.findMany({ orderBy: { name: "asc" }, take: 100 }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" }, take: 100 }),
     listConversations(actor),
     prisma.folder.findMany({
       where: { ownerId: actor.id, deletedAt: null },

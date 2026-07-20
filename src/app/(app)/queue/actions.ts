@@ -13,7 +13,7 @@ export async function addToQueue(fd: FormData) {
   const centerIdRaw = Number(fd.get("centerId"));
   const centerId = Number.isInteger(centerIdRaw) && centerIdRaw > 0 ? centerIdRaw : null;
   if (!centerId) throw new Error("اختر المركز");
-  if (!(await prisma.center.count({ where: { id: centerId } }))) throw new Error("المركز غير صالح");
+  if (!(await prisma.center.count({ where: { id: centerId, active: true } }))) throw new Error("المركز غير صالح");
   const hallResource = await assertCenterHallByName(prisma, centerId, fd.get("hall")?.toString());
   const created = await prisma.queueEntry.create({ data: { patientId: patientId!, centerId, hall: hallResource.therapyHall.name, note: fd.get("note")?.toString() || null } });
   await logAudit({ action: "CREATE", tableName: "queue_entries", recordId: created.id });

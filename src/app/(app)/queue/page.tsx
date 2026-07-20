@@ -35,7 +35,7 @@ export default async function Queue() {
       orderBy: { createdAt: "asc" },
     }),
     prisma.patient.findMany({ where: { archivedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
-    prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     activeCenterHallOptions(prisma),
   ]);
   const activeHalls = queueHallNames(activeCenterHallNames(centerHalls));

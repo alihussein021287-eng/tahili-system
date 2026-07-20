@@ -599,6 +599,17 @@ export async function renameTherapyCenter(id: number, fd: FormData) {
   therapyRedirect("center-halls", "تم تعديل المركز", "saved", id);
 }
 
+export async function setTherapyCenterActive(id: number, active: boolean) {
+  const userId = await requireSettingsEdit();
+  if (!Number.isInteger(id) || id <= 0) therapyRedirect("center-halls", "المركز غير صالح", "error");
+  const old = await prisma.center.findUnique({ where: { id }, select: { id: true, name: true, active: true } });
+  if (!old) therapyRedirect("center-halls", "المركز غير صالح", "error");
+  await prisma.center.update({ where: { id }, data: { active } });
+  await logAudit({ userId, action: "UPDATE", tableName: "centers", recordId: String(id), oldValue: old, newValue: { active } });
+  refreshCenterHalls();
+  therapyRedirect("center-halls", active ? "تم تفعيل المركز" : "تم تعطيل المركز", "saved", id);
+}
+
 export async function addCenterHall(fd: FormData) {
   const userId = await requireSettingsEdit();
   const centerId = Number(fd.get("centerId"));
@@ -606,8 +617,9 @@ export async function addCenterHall(fd: FormData) {
   if (!Number.isInteger(centerId) || centerId <= 0 || !name) therapyRedirect("center-halls", "اختر المركز واكتب اسم الفرع/القاعة", "error");
   try {
     await prisma.$transaction(async (tx) => {
-      const center = await tx.center.findUnique({ where: { id: centerId }, select: { id: true } });
+      const center = await tx.center.findUnique({ where: { id: centerId }, select: { id: true, active: true } });
       if (!center) throw new Error("center");
+      if (!center.active) throw new Error("لا يمكن إضافة فرع/قاعة إلى مركز معطل");
       const normalizedName = await assertNoDuplicateCenterHallName(tx, centerId, name);
       const hall = await tx.therapyHall.upsert({ where: { name: normalizedName }, update: { active: true }, create: { name: normalizedName } });
       const resource = await tx.centerResource.create({

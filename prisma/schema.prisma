@@ -470,6 +470,7 @@ model Center {
   id               Int                @id @default(autoincrement())
   name             String             @unique // اسم المركز
   type             String? // نوع المركز
+  active           Boolean            @default(true)
   sessions         TherapySession[]
   admissions       Admission[]
   referralRequests ReferralRequest[]

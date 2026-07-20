@@ -39,7 +39,7 @@ export function CenterHallSelect({
   const [centerId, setCenterId] = useState(defaultCenterId ? String(defaultCenterId) : "");
   const [selectedHall, setSelectedHall] = useState(defaultHallValue ? String(defaultHallValue) : "");
   const filtered = useMemo(
-    () => halls.filter((hall) => String(hall.centerId) === centerId && hall.active && hall.status === "AVAILABLE"),
+    () => halls.filter((hall) => String(hall.centerId) === centerId && hall.centerActive && hall.active && hall.status === "AVAILABLE"),
     [centerId, halls],
   );
 

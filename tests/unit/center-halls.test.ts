@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  activeCenterHallOptions,
   assertCenterHallByName,
   assertNoDuplicateCenterName,
   assertNoDuplicateCenterHallName,
@@ -21,6 +22,12 @@ describe("center hall validation", () => {
     await expect(assertCenterHallByName(db, 1, "قاعة العلاج المائي")).resolves.toMatchObject({
       therapyHall: { name: "قاعة العلاج المائي" },
     });
+    expect(db.centerResource.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        center: { is: { active: true } },
+        therapyHall: { is: { active: true } },
+      }),
+    }));
   });
 
   it("rejects a hall that is not mapped to the selected center", async () => {
@@ -45,6 +52,20 @@ describe("center hall validation", () => {
     const db = { center: { findFirst: vi.fn(async () => ({ id: 3 })) } };
 
     await expect(assertNoDuplicateCenterName(db, "مركز العلاج الطبيعي")).rejects.toThrow(DUPLICATE_CENTER_MESSAGE);
+  });
+
+  it("loads active hall options only from active centers", async () => {
+    const db = { centerResource: { findMany: vi.fn(async () => []) } };
+
+    await activeCenterHallOptions(db);
+
+    expect(db.centerResource.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        center: { is: { active: true } },
+        status: "AVAILABLE",
+        therapyHall: { is: { active: true } },
+      }),
+    }));
   });
 
   it("counts center usage that blocks physical deletion", async () => {

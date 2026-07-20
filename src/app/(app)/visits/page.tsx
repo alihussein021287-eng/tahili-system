@@ -42,7 +42,7 @@ export default async function VisitsPage({ searchParams }: { searchParams: Promi
           take: 10, orderBy: { fullName: "asc" },
         })
       : Promise.resolve([]),
-    prisma.center.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     activeCenterHallOptions(prisma),
   ]);
 

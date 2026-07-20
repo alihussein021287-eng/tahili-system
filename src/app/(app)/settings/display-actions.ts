@@ -20,7 +20,7 @@ async function readConfig(formData: FormData) {
   if (!name) throw new Error("اسم الشاشة مطلوب");
   const centerIdRaw = Number(formData.get("centerId"));
   const centerId = Number.isInteger(centerIdRaw) && centerIdRaw > 0 ? centerIdRaw : null;
-  if (centerId && !(await prisma.center.count({ where: { id: centerId } }))) throw new Error("المركز غير صالح");
+  if (centerId && !(await prisma.center.count({ where: { id: centerId, active: true } }))) throw new Error("المركز غير صالح");
   const centerHalls = await activeCenterHallOptions(prisma);
   const allowedHalls = new Set(centerHalls.filter((hall) => !centerId || hall.centerId === centerId).map((hall) => hall.hallName));
   const halls = Array.from(new Set(formData.getAll("halls").map(String).filter((hall) => allowedHalls.has(hall)))).slice(0, 20);

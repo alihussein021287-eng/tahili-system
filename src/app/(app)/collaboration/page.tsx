@@ -87,7 +87,7 @@ export default async function CollaborationPage({ searchParams }: { searchParams
       orderBy: { fullName: "asc" },
       take: 200,
     }),
-    prisma.center.findMany({ orderBy: { name: "asc" }, take: 100 }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" }, take: 100 }),
     getAdminConfig(),
   ]);
 

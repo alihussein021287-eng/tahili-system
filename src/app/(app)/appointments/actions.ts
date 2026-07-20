@@ -87,7 +87,7 @@ export async function createAppointment(fd: FormData) {
   const hallId = optionalPositiveInt(fd.get("hallId"));
   if (hallId && !centerId) redirect(withSaved("/appointments", "اختر المركز قبل القاعة"));
   if (centerId) {
-    if (!(await prisma.center.count({ where: { id: centerId } }))) redirect(withSaved("/appointments", "المركز غير صالح"));
+    if (!(await prisma.center.count({ where: { id: centerId, active: true } }))) redirect(withSaved("/appointments", "المركز غير صالح"));
     if (hallId) await assertCenterHallById(prisma, centerId, hallId).catch((error) => redirect(withSaved("/appointments", error instanceof Error ? error.message : "الفرع/القاعة لا يتبع المركز المختار")));
   }
   const policyError = await appointmentPolicyError(when);
@@ -117,7 +117,7 @@ export async function updateAppointmentCenterHall(id: string, fd: FormData) {
   const hallId = optionalPositiveInt(fd.get("hallId"));
   if (hallId && !centerId) redirect(withSaved("/appointments", "اختر المركز قبل القاعة"));
   if (centerId) {
-    if (!(await prisma.center.count({ where: { id: centerId } }))) redirect(withSaved("/appointments", "المركز غير صالح"));
+    if (!(await prisma.center.count({ where: { id: centerId, active: true } }))) redirect(withSaved("/appointments", "المركز غير صالح"));
     if (hallId) await assertCenterHallById(prisma, centerId, hallId).catch((error) => redirect(withSaved("/appointments", error instanceof Error ? error.message : "الفرع/القاعة لا يتبع المركز المختار")));
   }
   if (hallId) {
