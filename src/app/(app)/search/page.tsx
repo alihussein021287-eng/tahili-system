@@ -358,7 +358,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                   </td>
                   <td className="td">
                     <div className="flex flex-wrap gap-2">
-                      {canVisit && !p.archivedAt && !canQueue && (
+                      {canVisit && !p.archivedAt && (
                         <form action={receptionCheckIn} className="flex flex-wrap items-center gap-2">
                           <input type="hidden" name="patientId" value={p.id} />
                           <input type="hidden" name="returnTo" value={returnTo} />

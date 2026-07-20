@@ -126,22 +126,21 @@ export default async function VisitsPage({ searchParams }: { searchParams: Promi
                         {CENTER_STATIONS.map((station) => <option key={station.name} value={station.name}>{station.name}</option>)}
                       </select>
                     </div>
+                    <button className="btn-primary" type="submit">تسجيل زيارة اليوم</button>
                     {canQueue && (
                       <>
-                        <input type="hidden" name="sendQueue" value="1" />
                         <CenterHallSelect
                           centers={centers}
                           halls={centerHalls}
                           hallFieldName="hall"
                           hallValue="name"
-                          requiredCenter
-                          requiredHall
+                          requiredCenter={false}
+                          requiredHall={false}
                           className="grid min-w-[420px] flex-[2] gap-2 md:grid-cols-2"
                         />
-                        <button className="btn-primary" type="submit">تسجيل زيارة + إرسال للطابور</button>
+                        <button className="btn-ghost" type="submit" name="sendQueue" value="1">إرسال للطابور</button>
                       </>
                     )}
-                    {!canQueue && <button className="btn-primary" type="submit">تسجيل زيارة اليوم</button>}
                   </form>
                 )}
               </div>
