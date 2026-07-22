@@ -5,6 +5,7 @@ import { currentPerms, getSession } from "@/lib/access";
 import { markAllNotificationsRead, markNotificationRead } from "@/lib/notif-actions";
 import { canOpenNotification, NOTIFICATION_KINDS, notificationKind, notificationTone } from "@/lib/notifications";
 import { fmtDateTime } from "@/lib/labels";
+import { EmptyState, PageTabs } from "@/components/Ui";
 
 export const dynamic = "force-dynamic";
 
@@ -48,21 +49,11 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         {unreadCount > 0 && <form action={markAllNotificationsRead}><button className="btn-primary" type="submit">تعليم الكل كمقروء</button></form>}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {NOTIFICATION_KINDS.map((item) => (
-          <Link
-            key={item.value}
-            href={`/notifications?filter=${item.value}`}
-            className={`rounded-full border px-3 py-1.5 text-sm font-medium ${filter === item.value ? "border-brand-400 bg-brand-50 text-brand-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
-          >
-            {item.label}
-          </Link>
-        ))}
-      </div>
+      <PageTabs active={filter} label="فلاتر التنبيهات" tabs={NOTIFICATION_KINDS.map((item) => ({ key: item.value, href: `/notifications?filter=${item.value}`, label: item.label }))} />
 
       <div className="card overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-400">لا توجد تنبيهات مطابقة لهذا الفلتر.</div>
+          <EmptyState title="لا توجد تنبيهات مطابقة" description="جرّب فلتر الكل أو ستظهر التنبيهات الجديدة هنا عند وصولها." />
         ) : (
           <div className="divide-y divide-gray-100">
             {filtered.map((n) => {

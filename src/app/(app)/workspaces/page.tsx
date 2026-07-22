@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { currentPerms } from "@/lib/access";
 import { cardsForPermissions } from "@/lib/role-workspaces";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState, SectionCard } from "@/components/Ui";
 
 export const dynamic = "force-dynamic";
 
@@ -9,50 +11,31 @@ export default async function WorkspacesPage() {
   const workspaces = cardsForPermissions(perms);
 
   return (
-    <main className="space-y-6">
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-2">
-          <p className="text-sm text-slate-500">اختصارات حسب الصلاحيات</p>
-          <h1 className="text-2xl font-bold text-slate-900">مساحاتي حسب الدور</h1>
-          <p className="max-w-3xl text-sm leading-7 text-slate-600">
-            هذه الصفحة تجمع أهم الاختصارات العملية لكل فئة داخل المجمع التأهيلي، وتعرض للمستخدم فقط ما تسمح به صلاحياته.
-          </p>
-        </div>
-      </section>
+    <div className="space-y-5">
+      <PageHeader title="مساحاتي" subtitle="اختصارات العمل اليومية المتاحة حسب دورك وصلاحياتك" icon="◇" />
 
       {workspaces.length === 0 ? (
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">لا توجد مساحات متاحة</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            لا توجد صلاحيات كافية لعرض اختصارات العمل. راجع مسؤول النظام.
-          </p>
-        </section>
+        <EmptyState title="لا توجد مساحات متاحة" description="لا توجد اختصارات مرتبطة بصلاحيات حسابك الحالية. راجع مسؤول النظام عند الحاجة." />
       ) : (
-        <section className="grid gap-5">
+        <div className="grid gap-4">
           {workspaces.map((workspace) => (
-            <div key={workspace.key} className="rounded-2xl border bg-white p-5 shadow-sm">
-              <div className="mb-4">
-                <h2 className="text-xl font-bold text-slate-900">{workspace.title}</h2>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{workspace.description}</p>
-              </div>
-
+            <SectionCard key={workspace.key} title={workspace.title} description={workspace.description}>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {workspace.cards.map((card) => (
                   <Link
                     key={`${workspace.key}-${card.href}-${card.title}`}
                     href={card.href}
-                    className="rounded-xl border p-4 transition hover:bg-slate-50"
+                    className="group flex min-h-28 items-start gap-3 rounded-lg border border-gray-200 p-4 transition hover:border-brand-200 hover:bg-brand-50/40"
                   >
-                    <div className="font-semibold text-slate-900">{card.title}</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">{card.description}</p>
-                    <div className="mt-3 text-xs text-slate-400">{card.href}</div>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-brand-700 transition group-hover:bg-white" aria-hidden="true">↗</span>
+                    <span className="min-w-0"><span className="block font-semibold text-gray-900">{card.title}</span><span className="mt-1 block text-sm leading-6 text-gray-600">{card.description}</span></span>
                   </Link>
                 ))}
               </div>
-            </div>
+            </SectionCard>
           ))}
-        </section>
+        </div>
       )}
-    </main>
+    </div>
   );
 }

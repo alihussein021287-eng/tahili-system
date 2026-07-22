@@ -81,6 +81,9 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
   const cFinance = perms.has("finance.view");
   const cPortal = perms.has("patients.portal");
   const cTask = perms.has("tasks.create");
+  const cClinical = perms.has("clinical.view");
+  const cTherapy = perms.has("therapy.view") || perms.has("clinical.session");
+  const cAdmission = perms.has("clinical.admission") || perms.has("beds.view");
   const lastVisit = patient.visits?.[0];
   const lastAppointment = patient.appointments?.[0];
   const lastSession = patient.therapySessions?.[0];
@@ -171,50 +174,42 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl bg-gradient-to-l from-brand-700 to-brand-600 text-white shadow-sm">
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm" aria-labelledby="patient-name">
         <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
           {patient.photoUrl
-            ? <Zoom src={patient.photoUrl} className="h-20 w-20 shrink-0 rounded-2xl border-2 border-white/30 object-cover" />
-            : <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-3xl font-bold">{patient.fullName?.[0] ?? "؟"}</div>}
+            ? <Zoom src={patient.photoUrl} className="h-20 w-20 shrink-0 rounded-lg border border-gray-200 object-cover" />
+            : <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-3xl font-bold text-brand-700">{patient.fullName?.[0] ?? "؟"}</div>}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold">{patient.fullName}</h1>
-              <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium">ملف #{patient.fileNumber}</span>
-              <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs">{PATIENT_STATUS[patient.status as keyof typeof PATIENT_STATUS]}</span>
+              <h1 id="patient-name" className="text-2xl font-bold text-gray-900">{patient.fullName}</h1>
+              <span className="badge-brand">ملف #{patient.fileNumber}</span>
+              <span className="badge-neutral">{PATIENT_STATUS[patient.status as keyof typeof PATIENT_STATUS]}</span>
               {patient.archivedAt && <span className="rounded-full bg-amber-300 px-2.5 py-0.5 text-xs font-medium text-amber-950">مؤرشف</span>}
             </div>
-            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-brand-50/90">
-              {patient.phone && <span>📞 {patient.phone}</span>}
-              {patient.governorate?.name && <span>📍 {patient.governorate.name}{patient.district?.name ? ` — ${patient.district.name}` : ""}</span>}
-              {patient.injuryType?.name && <span>🩹 {patient.injuryType.name}</span>}
-              <span>🗓 سُجّل {fmtDate(patient.registrationDate)}</span>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-600">
+              {patient.phone && <span>الهاتف: {patient.phone}</span>}
+              {patient.governorate?.name && <span>السكن: {patient.governorate.name}{patient.district?.name ? ` - ${patient.district.name}` : ""}</span>}
+              <span>سُجّل {fmtDate(patient.registrationDate)}</span>
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 border-t border-white/15 sm:grid-cols-4">
-          {[["الجلسات", patient.therapySessions?.length ?? 0], ["التشخيصات", patient.diagnoses?.length ?? 0], ["حالات الرقود", patient.admissions?.length ?? 0], ["الخطط العلاجية", patient._count?.treatmentPlans ?? 0]].map(([l, v], i) => (
-            <div key={l as string} className={`px-4 py-3 text-center ${i > 0 ? "border-r border-white/10" : ""}`}>
-              <div className="text-2xl font-bold">{v as number}</div>
-              <div className="text-xs text-brand-50/80">{l}</div>
+        <div className="grid grid-cols-2 border-t border-gray-100 bg-gray-50/60 sm:grid-cols-4">
+          {[
+            ["الزيارات", patient.visits?.length ?? 0, true],
+            ["الجلسات", patient.therapySessions?.length ?? 0, cTherapy],
+            ["التشخيصات", patient.diagnoses?.length ?? 0, cClinical],
+            ["حالات الرقود", patient.admissions?.length ?? 0, cAdmission],
+          ].filter((item) => item[2]).map(([l, v], i) => (
+            <div key={l as string} className={`px-4 py-3 text-center ${i > 0 ? "border-r border-gray-200" : ""}`}>
+              <div className="text-xl font-bold text-gray-900">{v as number}</div>
+              <div className="text-xs text-gray-500">{l}</div>
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="card p-5">
-        <h2 className="mb-4 text-sm font-semibold text-gray-500">ملخص المراجع</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-          {summary.map(([label, value]) => (
-            <div key={label as string} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
-              <div className="text-xs text-gray-400">{label}</div>
-              <div className="mt-1 text-sm font-semibold text-gray-800">{value || "—"}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="card p-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-500">البيانات التفصيلية</h2>
+      {(cEdit || cClinical) && <details className="card p-5">
+        <summary className="cursor-pointer list-none font-semibold text-gray-700">البيانات التفصيلية <span className="mr-1 text-xs font-normal text-gray-400">اضغط للعرض</span></summary>
         <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:grid-cols-4">
           {info.map(([k, v]) => (
             <div key={k as string} className="border-r-2 border-gray-100 pr-3">
@@ -224,15 +219,16 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
           ))}
         </div>
         {patient.notes && <p className="mt-5 rounded-xl border-r-4 border-amber-300 bg-amber-50 p-3 text-sm text-gray-700">📝 {patient.notes}</p>}
-      </div>
+      </details>}
 
       {cPortal && (() => {
         const base = process.env.NEXTAUTH_URL || "";
         const url = patient.accessToken ? `${base}/portal/${patient.accessToken}` : "";
         const wa = patient.phone ? `https://wa.me/${String(patient.phone).replace(/\D/g, "").replace(/^0/, "964")}?text=${encodeURIComponent("مرحباً " + patient.fullName + "، رابط بوابتك في المجمع التأهيلي: " + url)}` : "";
         return (
-          <div className="no-print card p-5">
-            <h2 className="mb-3 font-semibold text-gray-700">بوابة المريض والمشاركة</h2>
+          <details className="no-print card p-5">
+            <summary className="cursor-pointer list-none font-semibold text-gray-700">بوابة المراجع والمشاركة</summary>
+            <div className="mt-4">
             {patient.accessToken ? (
               <div className="space-y-3 text-sm">
                 <div className="break-all rounded-lg bg-gray-50 p-2 text-gray-600">{url}</div>
@@ -249,34 +245,10 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
                 <button className="btn-primary" type="submit">إنشاء رابط البوابة</button>
               </form>
             )}
-          </div>
+            </div>
+          </details>
         );
       })()}
-
-      <div className="card p-5">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-600">آخر الأحداث المهمة</h2>
-          <span className="text-xs text-gray-400">ملخص سريع، والتفاصيل داخل التبويبات</span>
-        </div>
-        {quickEvents.length ? (
-          <div className="grid gap-2 md:grid-cols-2">
-            {quickEvents.map((event: any, idx: number) => (
-              <div key={`${event.type}-${idx}`} className="flex items-start gap-3 rounded-xl border border-gray-100 px-3 py-2">
-                <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-brand-500" />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="badge-neutral">{event.type}</span>
-                    <span className="text-xs text-gray-400">{fmtDate(event.date)}</span>
-                  </div>
-                  <div className="mt-1 truncate text-sm text-gray-700">{event.title || "—"}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-400">لا توجد أحداث مهمة بعد.</p>
-        )}
-      </div>
 
       <PatientTabs patient={JSON.parse(JSON.stringify(patient))} editable={cEdit} perms={Array.from(perms)} role={myRole} slApprovals={JSON.parse(JSON.stringify(slApprovals))}
         centers={visibleCenters} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} centerHalls={JSON.parse(JSON.stringify(visibleCenterHalls))} therapyDefaults={{

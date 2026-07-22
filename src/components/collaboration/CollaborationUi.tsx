@@ -1,6 +1,8 @@
 import Link from "next/link";
 import React from "react";
 import { CollaborationHelpButton } from "@/components/collaboration/CollaborationHelpButton";
+import { PageHeader } from "@/components/PageHeader";
+import { PageTabs } from "@/components/Ui";
 
 export type IconName =
   | "archive"
@@ -104,42 +106,10 @@ export function CollaborationTopNav({ active, unreadCount }: { active: "chats" |
     { key: "files" as const, href: "/collaboration/files", label: "الملفات", icon: "folder" as IconName },
   ];
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900 sm:text-xl">مركز التعاون</h1>
-          <p className="mt-1 text-sm text-gray-500">دردشات وملفات العمل الداخلية دون خلطها مع وثائق المراجعين.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <CollaborationHelpButton />
-        </div>
-      </div>
-      <nav className="mt-4 grid gap-2 sm:grid-cols-2" aria-label="تبويبات مركز التعاون">
-        {tabs.map((tab) => {
-          const selected = active === tab.key;
-          return (
-            <Link
-              key={tab.key}
-              href={tab.href}
-              className={`flex min-h-12 items-center justify-between rounded-xl border px-4 py-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-100 ${
-                selected ? "border-brand-200 bg-brand-50 text-brand-800" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-              }`}
-              aria-current={selected ? "page" : undefined}
-            >
-              <span className="flex items-center gap-2">
-                <Icon name={tab.icon} className="h-5 w-5" />
-                {tab.label}
-              </span>
-              {tab.key === "chats" && unreadCount > 0 && (
-                <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-red-600 px-2 text-xs font-bold text-white" aria-label={`${unreadCount} رسالة جديدة`}>
-                  {unreadCount}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
-    </section>
+    <div className="space-y-3">
+      <PageHeader title="مركز التعاون" subtitle="دردشات وملفات العمل الداخلية" icon="□"><CollaborationHelpButton /></PageHeader>
+      <PageTabs active={active} label="تبويبات مركز التعاون" tabs={tabs.map((tab) => ({ key: tab.key, href: tab.href, label: tab.label, count: tab.key === "chats" ? unreadCount : undefined }))} />
+    </div>
   );
 }
 

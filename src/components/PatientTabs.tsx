@@ -33,6 +33,7 @@ import { PatientCenterPrograms } from "@/components/centers/PatientCenterProgram
 import { PatientExpenses } from "@/components/expenses/PatientExpenses";
 import { CenterHallSelect } from "@/components/CenterHallSelect";
 import { EmptyState, LoadingState, SectionCard, StatCard } from "@/components/Ui";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const TABS = [
   { key: "overview", label: "نظرة عامة", icon: "▦", group: "followup", perms: ["patients.view"] },
@@ -163,7 +164,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
       <div className="min-w-0 flex-1 p-4 sm:p-5">
         {activeTab ? <div className="mb-5 border-b border-gray-100 pb-4"><h2 className="text-lg font-bold text-gray-900">{activeTab.label}</h2><p className="mt-1 text-sm text-gray-500">{TAB_DESCRIPTIONS[activeTab.key]}</p></div> : null}
         {tab === "overview" && <PatientOverview patient={patient} can={can} role={role} openTab={openTab} />}
-        {tab === "timeline" && <Timeline patient={patient} can={can} />}
+        {tab === "timeline" && <Timeline patient={patient} can={can} openTab={openTab} />}
         {tab === "journey" && <Journey patient={patient} can={can} id={id} role={role} />}
         {tab === "official" && <OfficialDocs patient={patient} can={can} id={id} role={role} />}
         {tab === "sickleave" && <SickLeaves patient={patient} can={can} id={id} role={role} approvals={slApprovals} staff={staffNames} staffUsers={staffUsers} />}
@@ -351,7 +352,7 @@ function PatientOverview({ patient, can, role, openTab }: { patient: any; can: (
         {nextActions.length ? <div className="flex flex-wrap gap-2">{nextActions.map((item, index) => <button key={item.key} type="button" className={index === 0 ? "btn-primary" : "btn-ghost"} onClick={() => openTab(item.key)}>{item.label}</button>)}</div> : <EmptyState compact title="لا توجد إجراءات متاحة" description="يمكنك قراءة بيانات الملف الأساسية فقط ضمن صلاحياتك الحالية." />}
       </SectionCard>
       {medical && patient.diagnoses?.[0] ? <div className="alert-info"><span aria-hidden="true">i</span><div><b>آخر تقييم طبي:</b> {patient.diagnoses[0].text || "تقييم مسجل"} <span className="text-xs">({fmtDate(patient.diagnoses[0].date)})</span></div></div> : null}
-      {upcomingAppointment ? <div className="alert-success"><span aria-hidden="true">✓</span><div><b>الموعد القادم:</b> {fmtDateTime(upcomingAppointment.scheduledAt)}{upcomingAppointment.type ? ` - ${upcomingAppointment.type}` : ""}</div></div> : null}
+      {can("appointments.view") && upcomingAppointment ? <div className="alert-success"><span aria-hidden="true">✓</span><div><b>الموعد القادم:</b> {fmtDateTime(upcomingAppointment.scheduledAt)}{upcomingAppointment.type ? ` - ${upcomingAppointment.type}` : ""}</div></div> : null}
     </div>
   );
 }
@@ -366,10 +367,10 @@ function Section({ rows, cols, editable, action, fields, del, canDel, edit, edit
     <div className="space-y-4">
       {editable && (
         <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
-          {fields}<button className="btn-primary" type="submit">إضافة</button>
+          {fields}<SubmitButton>إضافة</SubmitButton>
         </form>
       )}
-      <table className="w-full">
+      {rows.length === 0 ? <EmptyState compact title="لا توجد سجلات" description={editable ? "استخدم النموذج أعلاه لإضافة أول سجل." : "لم يُسجل أي عنصر في هذا القسم بعد."} /> : <div className="data-table-wrap"><table className="w-full">
         <thead><tr>{cols.map(([h]: any) => <th key={h} className="th">{h}</th>)}{extra ? <th className="th"></th> : null}</tr></thead>
         <tbody>
           {rows.map((r: any) => (
@@ -380,7 +381,7 @@ function Section({ rows, cols, editable, action, fields, del, canDel, edit, edit
                   <td className="td">
                     <div className="flex items-center gap-2">
                       {editable && edit && <button type="button" className="text-brand-600 hover:text-brand-800" title="تعديل" onClick={(e) => { const row = (e.currentTarget.closest("tr") as any)?.nextElementSibling; if (row) row.hidden = !row.hidden; }}>✎</button>}
-                      {canDel && del && <form action={del.bind(null, r.id)}><button className="btn-icon-danger" title="حذف (أدمن)">×</button></form>}
+                      {canDel && del && <form action={del.bind(null, r.id)} onSubmit={(event) => { if (!window.confirm("تأكيد حذف السجل؟ لا يمكن التراجع عن هذا الإجراء.")) event.preventDefault(); }}><button className="btn-icon-danger" title="حذف (أدمن)" aria-label="حذف السجل">×</button></form>}
                     </div>
                   </td>
                 ) : null}
@@ -398,7 +399,7 @@ function Section({ rows, cols, editable, action, fields, del, canDel, edit, edit
           ))}
           {rows.length === 0 && <tr><td className="td text-center text-gray-400" colSpan={cols.length + extra}>لا توجد سجلات.</td></tr>}
         </tbody>
-      </table>
+      </table></div>}
     </div>
   );
 }
@@ -968,31 +969,38 @@ function SectionFiles({ rows, officialDocs = [], editable, patientId, afterMutat
         </div>
       )}
 
-      {filtered.length === 0 && <p className="text-sm text-gray-400">لا توجد مرفقات مطابقة لهذا الفلتر.</p>}
+      {filtered.length === 0 && <EmptyState compact title="لا توجد مرفقات مطابقة" description="غيّر التصنيف أو ارفع المرفق الأول إذا كانت لديك صلاحية الإضافة." />}
     </div>
   );
 }
 
-function Timeline({ patient, can }: { patient: any; can: (key: string) => boolean }) {
-  type Ev = { date: any; type: string; title: string; color: string };
+function Timeline({ patient, can, openTab }: { patient: any; can: (key: string) => boolean; openTab: (key: string) => void }) {
+  type Ev = { key: string; date: any; type: string; title: string; color: string; category: "medical" | "therapy" | "admin"; tab: string };
+  const [filter, setFilter] = useState<"all" | Ev["category"]>("all");
   const evs: Ev[] = [];
-  if (can("clinical.view") || can("clinical.diagnosis")) (patient.diagnoses || []).forEach((r: any) => evs.push({ date: r.date, type: "تشخيص", title: `${DIAGNOSIS[r.type as keyof typeof DIAGNOSIS] || ""}: ${r.text || ""}`, color: "bg-sky-500" }));
-  if (can("clinical.view") || can("clinical.report")) (patient.medicalReports || []).forEach((r: any) => evs.push({ date: r.date, type: "تقرير طبي", title: r.content || "", color: "bg-indigo-500" }));
-  if (can("therapy.view") || can("clinical.session")) (patient.therapySessions || []).forEach((r: any) => evs.push({ date: r.createdAt, type: "جلسة علاجية", title: `${THERAPY[r.therapyType as keyof typeof THERAPY] || ""}${r.center?.name ? " - " + r.center.name : ""}`, color: "bg-brand-500" }));
-  if (can("clinical.prescription") || can("pharmacy.view")) (patient.prescriptions || []).forEach((r: any) => evs.push({ date: r.prescribedAt, type: "وصفة", title: r.medication?.name || r.materialName || "", color: "bg-emerald-500" }));
-  if (can("clinical.admission") || can("beds.view")) (patient.admissions || []).forEach((r: any) => evs.push({ date: r.admissionDate, type: "رقود", title: `${r.center?.name || ""}${r.dischargeDate ? " (خرج " + fmtDate(r.dischargeDate) + ")" : " (راقد)"}`, color: "bg-amber-500" }));
-  if (can("clinical.wound")) (patient.woundAssessments || []).forEach((r: any) => evs.push({ date: r.assessmentDate, type: "تقييم جرح", title: r.woundType || "تقييم جرح", color: "bg-rose-500" }));
-  if (can("clinical.report")) (patient.correspondence || []).forEach((r: any) => evs.push({ date: r.bookDate || r.createdAt, type: "مخاطبة", title: `${DIRECTION[r.direction as keyof typeof DIRECTION] || ""}: ${r.subject || ""}`, color: "bg-gray-500" }));
-  if (can("appointments.view")) (patient.appointments || []).forEach((r: any) => evs.push({ date: r.scheduledAt, type: "موعد", title: `${r.type || ""} — ${APPT_STATUS[r.status as keyof typeof APPT_STATUS] || ""}`, color: "bg-purple-500" }));
+  if (can("clinical.view") || can("clinical.diagnosis")) (patient.diagnoses || []).forEach((r: any) => evs.push({ key: `diagnosis:${r.id}`, date: r.date, type: "تشخيص", title: `${DIAGNOSIS[r.type as keyof typeof DIAGNOSIS] || ""}: ${r.text || ""}`, color: "bg-sky-500", category: "medical", tab: "diag" }));
+  if (can("clinical.view") || can("clinical.report")) (patient.medicalReports || []).forEach((r: any) => evs.push({ key: `report:${r.id}`, date: r.date, type: "تقرير طبي", title: r.content || "", color: "bg-indigo-500", category: "medical", tab: "diag" }));
+  if (can("therapy.view") || can("clinical.session")) (patient.therapySessions || []).forEach((r: any) => evs.push({ key: `session:${r.id}`, date: r.createdAt, type: "جلسة علاجية", title: `${THERAPY[r.therapyType as keyof typeof THERAPY] || ""}${r.center?.name ? " - " + r.center.name : ""}`, color: "bg-brand-500", category: "therapy", tab: "sessions" }));
+  if (can("clinical.prescription") || can("pharmacy.view")) (patient.prescriptions || []).forEach((r: any) => evs.push({ key: `rx:${r.id}`, date: r.prescribedAt, type: "وصفة", title: r.medication?.name || r.materialName || "", color: "bg-emerald-500", category: "admin", tab: "rx" }));
+  if (can("clinical.admission") || can("beds.view")) (patient.admissions || []).forEach((r: any) => evs.push({ key: `admission:${r.id}`, date: r.admissionDate, type: "رقود", title: `${r.center?.name || ""}${r.dischargeDate ? " (خرج " + fmtDate(r.dischargeDate) + ")" : " (راقد)"}`, color: "bg-amber-500", category: "admin", tab: "adm" }));
+  if (can("clinical.wound")) (patient.woundAssessments || []).forEach((r: any) => evs.push({ key: `wound:${r.id}`, date: r.assessmentDate, type: "تقييم جرح", title: r.woundType || "تقييم جرح", color: "bg-rose-500", category: "medical", tab: "resident" }));
+  if (can("clinical.report")) (patient.correspondence || []).forEach((r: any) => evs.push({ key: `correspondence:${r.id}`, date: r.bookDate || r.createdAt, type: "مخاطبة", title: `${DIRECTION[r.direction as keyof typeof DIRECTION] || ""}: ${r.subject || ""}`, color: "bg-gray-500", category: "admin", tab: "corr" }));
+  if (can("appointments.view")) (patient.appointments || []).forEach((r: any) => evs.push({ key: `appointment:${r.id}`, date: r.scheduledAt, type: "موعد", title: `${r.type || ""} - ${APPT_STATUS[r.status as keyof typeof APPT_STATUS] || ""}`, color: "bg-purple-500", category: "admin", tab: "overview" }));
 
   evs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const unique = [...new Map(evs.map((event) => [event.key, event])).values()];
+  const visible = filter === "all" ? unique : unique.filter((event) => event.category === filter);
 
   if (evs.length === 0) return <EmptyState title="لا توجد أحداث ضمن صلاحياتك" description="ستظهر الزيارات أو السجلات الجديدة هنا حسب مستوى الوصول الممنوح لك." />;
   return (
-    <div className="relative space-y-4 pr-4">
-      <div className="absolute right-1.5 top-2 bottom-2 w-px bg-gray-200" />
-      {evs.map((e, i) => (
-        <div key={i} className="relative flex gap-3">
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="تصفية الخط الزمني">
+        {[["all", "الكل"], ["medical", "طبي"], ["therapy", "علاجي"], ["admin", "إداري"]].map(([key, label]) => <button key={key} type="button" onClick={() => setFilter(key as any)} className={filter === key ? "btn-primary btn-sm" : "btn-ghost btn-sm"}>{label}</button>)}
+      </div>
+      {visible.length === 0 ? <EmptyState compact title="لا توجد أحداث في هذا التصنيف" description="اختر تصنيفاً آخر لعرض الأحداث المتاحة." /> : <div className="relative space-y-4 pr-4">
+      <div className="absolute bottom-2 right-1.5 top-2 w-px bg-gray-200" />
+      {visible.map((e) => (
+        <div key={e.key} className="relative flex gap-3">
           <div className={`absolute right-0 mt-1.5 h-3 w-3 -translate-x-1/2 rounded-full ${e.color} ring-2 ring-white`} style={{ right: "-2px" }} />
           <div className="mr-3 flex-1">
             <div className="flex items-center gap-2">
@@ -1000,9 +1008,11 @@ function Timeline({ patient, can }: { patient: any; can: (key: string) => boolea
               <span className="text-xs text-gray-400">{fmtDate(e.date)}</span>
             </div>
             <div className="text-sm text-gray-800">{e.title || "—"}</div>
+            <button type="button" onClick={() => openTab(e.tab)} className="mt-1 text-xs font-medium text-brand-700 hover:underline">عرض التفاصيل</button>
           </div>
         </div>
       ))}
+      </div>}
     </div>
   );
 }
@@ -1013,7 +1023,7 @@ function ActivityLog({ logs }: { logs: any[] }) {
   return (
     <div>
       <p className="mb-3 text-xs text-gray-400">آخر النشاط على ملف هذا المراجع (من فتح أو عدّل).</p>
-      {(!logs || logs.length === 0) && <p className="text-sm text-gray-400">لا يوجد نشاط مسجّل.</p>}
+      {(!logs || logs.length === 0) && <EmptyState compact title="لا يوجد نشاط مسجّل" description="ستظهر عمليات فتح الملف وتعديله هنا عند تسجيلها." />}
       <div className="space-y-1.5">
         {logs?.map((l) => (
           <div key={l.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">

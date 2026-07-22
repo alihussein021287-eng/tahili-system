@@ -119,6 +119,7 @@ export default function LoginPage() {
         .lp-pulse{position:absolute;bottom:0;left:0;right:0;z-index:1;opacity:.5}
         .lp-pulse path{stroke:#5eead4;stroke-width:2;fill:none;stroke-dasharray:1400;stroke-dashoffset:1400;animation:lp-draw 5.5s ease-in-out infinite}
         @keyframes lp-draw{0%{stroke-dashoffset:1400}55%{stroke-dashoffset:0}100%{stroke-dashoffset:-1400}}
+        @media (prefers-reduced-motion:reduce){.lp-pulse path{animation:none;stroke-dashoffset:0}*{scroll-behavior:auto!important}}
         .lp-logo{width:54px;height:54px;border-radius:16px;display:flex;align-items:center;justify-content:center;
           background:linear-gradient(135deg,#2dd4bf,#0f766e);box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:26px;font-weight:800;color:#fff}
         .lp-caps{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin:1.6rem 0}
