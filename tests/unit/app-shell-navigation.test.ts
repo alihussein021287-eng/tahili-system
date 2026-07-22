@@ -14,21 +14,28 @@ describe("AppShell navigation", () => {
   });
 
   it("routes grouped sidebar links through hub tabs", () => {
-    expect(source).toContain('href: "/patients-care?tab=overview"');
-    expect(source).toContain('href: "/patients-care?tab=queue"');
-    expect(source).toContain('href: "/therapy-centers?tab=plans"');
-    expect(source).toContain('href: "/reports-finance?tab=overview"');
-    expect(source).toContain('href: "/pharmacy-inventory?tab=overview"');
-    expect(source).toContain('href: "/staff?tab=overview"');
+    expect(source).toContain('href: "/patients-care?tab=overview", hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=visits", "/patients-care?tab=appointments", "/patients-care?tab=referrals"]');
+    expect(source).toContain('href: "/therapy-centers?tab=overview", hrefs: ["/therapy-centers?tab=overview", "/therapy-centers?tab=plans", "/therapy-centers?tab=sessions", "/therapy-centers?tab=today", "/therapy-centers?tab=centers", "/therapy-centers?tab=beds", "/therapy-centers?tab=meds"]');
+    expect(source).toContain('href: "/pharmacy-inventory?tab=overview", hrefs: ["/pharmacy-inventory?tab=overview", "/pharmacy-inventory?tab=dispense", "/pharmacy-inventory?tab=stock", "/pharmacy-inventory?tab=batches", "/pharmacy-inventory?tab=purchases", "/pharmacy-inventory?tab=reports"]');
+    expect(source).toContain('href: "/reports-finance?tab=overview", hrefs: ["/reports-finance?tab=overview", "/reports-finance?tab=official", "/reports-finance?tab=patients", "/reports-finance?tab=finance", "/reports-finance?tab=wounded", "/reports-finance?tab=approvals"]');
+    expect(source).toContain('href: "/staff?tab=overview", hrefs: ["/staff?tab=overview", "/staff?tab=employees", "/staff?tab=tasks", "/staff?tab=attendance", "/staff?tab=shifts", "/staff?tab=leaves"]');
+    expect(source).toContain('href: "/settings", hrefs: ["/settings", "/users", "/permissions", "/audit", "/login-log", "/backup", "/readiness"]');
   });
 
   it("keeps focused role sidebar rules for noisy groups", () => {
     expect(source).toContain("RECEPTION:");
-    expect(source).toContain('groups: ["care"]');
+    expect(source).toContain('hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=visits", "/patients-care?tab=appointments"]');
     expect(source).toContain("PHARMACIST:");
     expect(source).toContain('groups: ["pharm"]');
     expect(source).toContain("ACCOUNTANT:");
     expect(source).toContain('groups: ["reports"]');
     expect(source).toContain("role === \"ADMIN\"");
+  });
+
+  it("makes group titles navigable and uses a separate disclosure button", () => {
+    expect(source).toContain("<Link href={headerLink.href}");
+    expect(source).toContain("aria-controls={`sidebar-group-${g.key}`}");
+    expect(source).toContain('aria-label={`${isOpen ? "إغلاق" : "فتح"} روابط ${g.title}`}');
+    expect(source).toContain("onClick={() => toggleGroup(g.key)}");
   });
 });
