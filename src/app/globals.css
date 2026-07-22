@@ -51,6 +51,20 @@ body {
 *:focus-visible { outline: 3px solid rgba(15, 118, 110, 0.24); outline-offset: 2px; }
 a, button, input, select, textarea, summary { -webkit-tap-highlight-color: transparent; }
 button, summary { touch-action: manipulation; }
+.skip-link {
+  position: fixed;
+  inset-inline-start: 1rem;
+  top: 0.5rem;
+  z-index: 100;
+  transform: translateY(-150%);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.6rem 0.9rem;
+  color: #0a4f49;
+  font-weight: 700;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.16);
+}
+.skip-link:focus { transform: translateY(0); }
 
 @layer components {
   /* ===== الحقول ===== */

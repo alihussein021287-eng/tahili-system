@@ -38,4 +38,12 @@ describe("AppShell navigation", () => {
     expect(source).toContain('aria-label={`${isOpen ? "إغلاق" : "فتح"} روابط ${g.title}`}');
     expect(source).toContain("onClick={() => toggleGroup(g.key)}");
   });
+
+  it("keeps the mobile drawer and main content keyboard accessible", () => {
+    expect(source).toContain('href="#main-content"');
+    expect(source).toContain('id="main-content"');
+    expect(source).toContain("aria-hidden={!open}");
+    expect(source).toContain("inert={!open ? true : undefined}");
+    expect(source).toContain('aria-label={dark ? "استخدام الوضع الفاتح" : "استخدام الوضع الداكن"}');
+  });
 });

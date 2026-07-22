@@ -417,6 +417,7 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen">
+      <a href="#main-content" className="skip-link">تخطي إلى المحتوى</a>
       <CommandPalette items={allItems} />
       <IdleTimeout minutes={20} />
       <PresencePing config={presenceConfig} />
@@ -433,7 +434,7 @@ export function AppShell({
       {open && (
         <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setOpen(false)} />
       )}
-      <aside id="mobile-sidebar" aria-label="القائمة الرئيسية" className={`no-print fixed inset-y-0 right-0 z-50 w-72 max-w-[86vw] overflow-y-auto bg-brand-900 text-white transform transition-transform duration-200 md:hidden
+      <aside id="mobile-sidebar" aria-label="القائمة الرئيسية" aria-hidden={!open} inert={!open ? true : undefined} className={`no-print fixed inset-y-0 right-0 z-50 w-72 max-w-[86vw] overflow-y-auto overscroll-contain bg-brand-900 text-white transform transition-transform duration-200 md:hidden
         ${open ? "translate-x-0" : "translate-x-full"}`}>
         <Brand />
         <NavLinks />
@@ -479,7 +480,7 @@ export function AppShell({
           </nav>
         ) : null}
 
-        <main className="flex-1 p-3 pb-24 sm:p-4 md:p-6 md:pb-6">{children}</main>
+        <main id="main-content" tabIndex={-1} className="flex-1 p-3 pb-24 sm:p-4 md:p-6 md:pb-6">{children}</main>
       </div>
       <MobileQuickNav />
     </div>
@@ -592,6 +593,6 @@ function ThemeToggle() {
     setDark(next);
   };
   return (
-    <button onClick={toggle} title="الوضع الداكن" className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-lg leading-none">{dark ? "☀️" : "🌙"}</button>
+    <button onClick={toggle} title={dark ? "استخدام الوضع الفاتح" : "استخدام الوضع الداكن"} aria-label={dark ? "استخدام الوضع الفاتح" : "استخدام الوضع الداكن"} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-lg leading-none">{dark ? "☀️" : "🌙"}</button>
   );
 }
