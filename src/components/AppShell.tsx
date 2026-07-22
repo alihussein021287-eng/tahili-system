@@ -180,6 +180,7 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const path = usePathname();
   const searchParams = useSearchParams();
 
@@ -264,45 +265,73 @@ export function AppShell({
     for (const g of NAV_GROUPS) init[g.key] = g.key === activeGroupKey;
     return init;
   });
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem("tahili-sidebar-collapsed") === "1");
+      const saved = localStorage.getItem("tahili-sidebar-groups");
+      if (saved) setOpenGroups((current) => ({ ...current, ...JSON.parse(saved) }));
+    } catch {}
+  }, []);
   // افتح مجموعة الصفحة الحالية تلقائياً عند التنقل (دون طيّ ما فتحه المستخدم)
   useEffect(() => {
     if (activeGroupKey) setOpenGroups((p) => (p[activeGroupKey] ? p : { ...p, [activeGroupKey]: true }));
   }, [activeGroupKey]);
 
+  useEffect(() => {
+    try { localStorage.setItem("tahili-sidebar-groups", JSON.stringify(openGroups)); } catch {}
+  }, [openGroups]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  const toggleCollapsed = () => {
+    setCollapsed((current) => {
+      const next = !current;
+      try { localStorage.setItem("tahili-sidebar-collapsed", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+
   const toggleGroup = (k: string) => setOpenGroups((p) => ({ ...p, [k]: !p[k] }));
 
-  const renderItem = (it: Item, nested = false) => {
+  const renderItem = (it: Item, nested = false, compact = false) => {
     const active = it.href === activeHref;
     const badge = badgeFor(it);
     const label = nested ? it.navLabel ?? it.label : it.label;
     return (
       <Link key={it.href} href={it.href} onClick={() => setOpen(false)}
-        className={`flex items-center gap-3 rounded-lg py-2 text-sm transition ${nested ? "px-3" : "px-3"}
+        title={compact ? label : undefined}
+        aria-label={compact ? label : undefined}
+        className={`flex items-center gap-3 rounded-lg py-2 text-sm transition ${compact ? "justify-center px-2" : "px-3"}
           ${active ? "bg-white/15 font-medium" : "text-brand-100/80 hover:bg-white/10"}`}>
         <span className="shrink-0 text-base">{it.icon}</span>
-        <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
+        {!compact && <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>}
         {badge.count > 0 && <span title={badge.title} className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{badge.count}</span>}
       </Link>
     );
   };
-  const renderGroupLink = (group: NavGroup, it: Item) => {
+  const renderGroupLink = (group: NavGroup, it: Item, compact = false) => {
     const active = it.href === activeHref;
     const badge = badgeFor(it);
     const label = it.navLabel === "نظرة عامة" ? group.title : it.label;
     return (
-      <Link key={group.key} href={it.href} onClick={() => setOpen(false)}
-        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${active ? "bg-white/15 font-medium" : "text-brand-100/80 hover:bg-white/10"}`}>
+      <Link key={group.key} href={it.href} onClick={() => setOpen(false)} title={compact ? label : undefined} aria-label={compact ? label : undefined}
+        className={`flex items-center gap-3 rounded-lg py-2 text-sm transition ${compact ? "justify-center px-2" : "px-3"} ${active ? "bg-white/15 font-medium" : "text-brand-100/80 hover:bg-white/10"}`}>
         <span className="shrink-0 text-base">{group.icon}</span>
-        <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
+        {!compact && <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>}
         {badge.count > 0 && <span title={badge.title} className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{badge.count}</span>}
       </Link>
     );
   };
 
-  const NavLinks = () => (
+  const NavLinks = ({ compact = false }: { compact?: boolean }) => (
     <nav className="space-y-1 p-3">
       {/* عناصر مفردة (الرئيسية) */}
-      {STANDALONE.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsStandalone(it.href)).map((it) => renderItem(it))}
+      {STANDALONE.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsStandalone(it.href)).map((it) => renderItem(it, false, compact))}
 
       {/* المجموعات */}
       {NAV_GROUPS.map((g) => {
@@ -310,9 +339,9 @@ export function AppShell({
         const groupItem = byHref[g.href];
         const groupLink = groupItem && hasAccess(groupItem) ? groupItem : undefined;
         const items = g.hrefs.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsHref(it.href));
-        if (items.length === 0) return groupLink ? renderGroupLink(g, groupLink) : null;
-        if (items.length === 1) return renderGroupLink(g, items[0]);
-        const isOpen = !!openGroups[g.key];
+        if (items.length === 0) return groupLink ? renderGroupLink(g, groupLink, compact) : null;
+        if (items.length === 1) return renderGroupLink(g, items[0], compact);
+        const isOpen = !compact && !!openGroups[g.key];
         const hasActive = items.some((it) => it.href === activeHref);
         const groupBadge = items.reduce((n, it) => n + badgeFor(it).count, 0);
         const headerLink = groupLink ?? items[0];
@@ -321,13 +350,15 @@ export function AppShell({
           <div key={g.key}>
             <div className="flex items-center gap-1">
               <Link href={headerLink.href} onClick={() => setOpen(false)}
-                className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-sm transition
+                title={compact ? g.title : undefined}
+                aria-label={compact ? g.title : undefined}
+                className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg py-2 text-sm transition ${compact ? "justify-center px-2" : "px-3"}
                   ${headerActive ? "bg-white/15 font-medium text-white" : "text-brand-100/90 hover:bg-white/10"}`}>
                 <span className="shrink-0 text-base">{g.icon}</span>
-                <span className="min-w-0 flex-1 truncate text-right" title={g.title}>{g.title}</span>
+                {!compact && <span className="min-w-0 flex-1 truncate text-right" title={g.title}>{g.title}</span>}
                 {!isOpen && groupBadge > 0 && <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{groupBadge}</span>}
               </Link>
-              <button
+              {!compact && <button
                 type="button"
                 onClick={() => toggleGroup(g.key)}
                 aria-controls={`sidebar-group-${g.key}`}
@@ -336,7 +367,7 @@ export function AppShell({
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[10px] text-brand-100/70 transition hover:bg-white/10 ${hasActive && !isOpen ? "bg-white/10 text-white" : ""}`}
               >
                 <span className={`transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}>◀</span>
-              </button>
+              </button>}
             </div>
             {isOpen && (
               <div id={`sidebar-group-${g.key}`} className="mt-1 mr-3 space-y-1 border-r border-white/10 pr-2">
@@ -371,13 +402,18 @@ export function AppShell({
     );
   };
 
-  const Brand = () => (
-    <div className="flex items-center gap-2 border-b border-white/10 px-5 py-5">
+  const Brand = ({ compact = false }: { compact?: boolean }) => (
+    <div className={`flex items-center border-b border-white/10 py-4 ${compact ? "justify-center px-2" : "gap-2 px-5"}`}>
       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 font-bold">ت</div>
-      <div className="text-sm font-bold leading-tight text-white">المجمع التأهيلي
+      {!compact && <div className="text-sm font-bold leading-tight text-white">المجمع التأهيلي
         <br /><span className="text-xs font-normal text-brand-100/70">نظام المراجعين</span></div>
+      }
     </div>
   );
+
+  const activeItem = byHref[activeHref];
+  const activeGroup = NAV_GROUPS.find((group) => group.key === activeGroupKey);
+  const breadcrumbLabel = activeItem?.navLabel ?? activeItem?.label;
 
   return (
     <div className="flex min-h-screen">
@@ -385,16 +421,19 @@ export function AppShell({
       <IdleTimeout minutes={20} />
       <PresencePing config={presenceConfig} />
       {/* القائمة الجانبية — ثابتة على الشاشات الكبيرة */}
-      <aside className="no-print hidden bg-brand-900 text-white md:flex md:w-60 md:shrink-0 md:flex-col md:overflow-y-auto">
-        <Brand />
-        <NavLinks />
+      <aside className={`no-print hidden bg-brand-900 text-white transition-[width] md:flex md:shrink-0 md:flex-col md:overflow-y-auto ${collapsed ? "md:w-[4.5rem]" : "md:w-60"}`}>
+        <Brand compact={collapsed} />
+        <NavLinks compact={collapsed} />
+        <button type="button" onClick={toggleCollapsed} className="mt-auto flex min-h-11 items-center justify-center border-t border-white/10 px-3 text-sm text-brand-100/80 hover:bg-white/10 focus-visible:outline-white" aria-label={collapsed ? "توسيع القائمة الجانبية" : "طي القائمة الجانبية"} title={collapsed ? "توسيع القائمة" : "طي القائمة"}>
+          <span aria-hidden="true">{collapsed ? "◀" : "▶"}</span>{!collapsed && <span className="mr-2">طي القائمة</span>}
+        </button>
       </aside>
 
       {/* درج القائمة — للموبايل */}
       {open && (
         <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setOpen(false)} />
       )}
-      <aside className={`no-print fixed inset-y-0 right-0 z-50 w-72 max-w-[86vw] overflow-y-auto bg-brand-900 text-white transform transition-transform duration-200 md:hidden
+      <aside id="mobile-sidebar" aria-label="القائمة الرئيسية" className={`no-print fixed inset-y-0 right-0 z-50 w-72 max-w-[86vw] overflow-y-auto bg-brand-900 text-white transform transition-transform duration-200 md:hidden
         ${open ? "translate-x-0" : "translate-x-full"}`}>
         <Brand />
         <NavLinks />
@@ -405,7 +444,7 @@ export function AppShell({
         <header className="no-print sticky top-0 z-30 border-b border-gray-200 bg-white/95 px-3 py-2 backdrop-blur md:px-6 md:py-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
-              <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-xl leading-none text-gray-700 md:hidden" onClick={() => setOpen(true)} aria-label="القائمة">☰</button>
+              <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-700 md:hidden" onClick={() => setOpen(true)} aria-label="فتح القائمة الرئيسية" aria-expanded={open} aria-controls="mobile-sidebar">☰</button>
               <div className="min-w-0 text-sm text-gray-500">
                 أهلاً، <span className="font-medium text-gray-800">{name}</span>
                 <span className="badge-brand mr-2 hidden sm:inline">{ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? ""}</span>
@@ -417,14 +456,28 @@ export function AppShell({
               </form>
               <NotificationBell alerts={alerts} notifs={notifs} perms={perms} />
               <ThemeToggle />
-              <Link href="/account" className="hidden text-xs text-gray-500 hover:text-brand-700 hover:underline sm:inline md:text-sm">حسابي</Link>
-              <button className="btn-ghost btn-sm hidden sm:inline-flex" onClick={() => signOut({ callbackUrl: "/login" })}>تسجيل الخروج</button>
+              <details className="action-menu hidden sm:block">
+                <summary className="flex h-10 min-w-10 cursor-pointer list-none items-center justify-center rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-700" aria-label="قائمة الحساب">{name.split(" ")[0]}</summary>
+                <div className="action-menu-content">
+                  <Link href="/account">إعدادات الحساب</Link>
+                  <button type="button" onClick={() => signOut({ callbackUrl: "/login" })}>تسجيل الخروج</button>
+                </div>
+              </details>
             </div>
           </div>
           <form action="/search" className="mt-2 sm:hidden">
             <input name="q" placeholder="بحث شامل عن مراجع أو ملف..." className="input !h-10" aria-label="بحث شامل" autoComplete="off" />
           </form>
         </header>
+
+        {breadcrumbLabel && path !== "/" ? (
+          <nav className="no-print flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-2 text-xs text-gray-500 md:px-6" aria-label="مسار الصفحة">
+            <Link href="/" className="hover:text-brand-700">الرئيسية</Link>
+            <span aria-hidden="true">/</span>
+            {activeGroup && activeGroup.title !== breadcrumbLabel ? <><Link href={activeGroup.href} className="hover:text-brand-700">{activeGroup.title}</Link><span aria-hidden="true">/</span></> : null}
+            <span aria-current="page" className="font-medium text-gray-700">{breadcrumbLabel}</span>
+          </nav>
+        ) : null}
 
         <main className="flex-1 p-3 pb-24 sm:p-4 md:p-6 md:pb-6">{children}</main>
       </div>

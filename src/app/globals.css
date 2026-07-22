@@ -32,8 +32,14 @@
   src: url('/fonts/plex-arabic-700.woff2') format('woff2');
 }
 
-:root { --bg: #f6f7f8; }
-html, body { padding: 0; margin: 0; }
+:root {
+  --bg: #f4f6f6;
+  --surface: #ffffff;
+  --border: #dde3e2;
+  --muted: #66706f;
+  --radius: 8px;
+}
+html, body { padding: 0; margin: 0; max-width: 100%; }
 body {
   background: var(--bg);
   color: #1f2937;
@@ -42,18 +48,21 @@ body {
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: 0;
 }
+*:focus-visible { outline: 3px solid rgba(15, 118, 110, 0.24); outline-offset: 2px; }
+a, button, input, select, textarea, summary { -webkit-tap-highlight-color: transparent; }
+button, summary { touch-action: manipulation; }
 
 @layer components {
   /* ===== الحقول ===== */
   .input {
-    @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
-           outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+    @apply min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
+           outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500;
   }
   .label { @apply mb-1 block text-sm font-medium text-gray-700; }
 
   /* ===== الأزرار — نظام موحّد ===== */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm
            font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
   }
   /* الإجراء الأساسي (حفظ، إضافة، تأكيد) */
@@ -73,7 +82,7 @@ body {
   .btn-icon-danger { @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition hover:bg-red-50 active:bg-red-100; }
 
   /* ===== البطاقات ===== */
-  .card { @apply rounded-xl border border-gray-200 bg-white shadow-sm; }
+  .card { @apply min-w-0 rounded-lg border border-gray-200 bg-white shadow-sm; }
   /* بطاقة تحذيرية بارزة (للأقسام الخطرة مثل الصيانة) */
   .card-danger { @apply rounded-xl border-2 border-red-300 bg-red-50 shadow-sm; }
   /* بطاقة تنبيه (كهرماني) */
@@ -98,6 +107,54 @@ body {
   .alert-warning { @apply alert border-amber-200 bg-amber-50 text-amber-800; }
   .alert-danger  { @apply alert border-red-200 bg-red-50 text-red-800; }
   .alert-info    { @apply alert border-sky-200 bg-sky-50 text-sky-800; }
+
+  .page-header { @apply flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between; border-right: 4px solid #0f766e; }
+  .page-header-icon { @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-lg text-brand-700; }
+  .page-header-title { @apply text-xl font-bold text-gray-900; }
+  .page-header-subtitle { @apply mt-1 max-w-3xl text-sm text-gray-500; }
+  .page-header-actions { @apply flex flex-wrap items-center gap-2 sm:justify-end; }
+  .page-tabs { @apply flex max-w-full gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-white p-1; scrollbar-width: thin; }
+  .page-tab { @apply inline-flex min-h-9 shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900; }
+  .page-tab-active { @apply bg-brand-700 text-white shadow-sm hover:bg-brand-700 hover:text-white; }
+  .page-tab-count { @apply inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gray-100 px-1.5 text-[11px] text-gray-600; }
+  .page-tab-active .page-tab-count { @apply bg-white/20 text-white; }
+  .section-card { @apply min-w-0 space-y-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm; }
+  .section-card-header { @apply flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 pb-4; }
+  .section-card-title { @apply text-base font-semibold text-gray-900; }
+  .section-card-description { @apply mt-1 text-sm text-gray-500; }
+  .section-card-action { @apply shrink-0; }
+  .stat-card { @apply relative min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-sm; }
+  .stat-card::before { content: ""; @apply absolute inset-y-0 right-0 w-1 bg-gray-300; }
+  .stat-card-brand::before { @apply bg-brand-600; }
+  .stat-card-success::before { @apply bg-emerald-600; }
+  .stat-card-warning::before { @apply bg-amber-500; }
+  .stat-card-danger::before { @apply bg-red-600; }
+  .stat-card-info::before { @apply bg-sky-600; }
+  .stat-card-label { @apply text-xs font-medium text-gray-500; }
+  .stat-card-value { @apply mt-1 text-2xl font-bold text-gray-900; }
+  .stat-card-description { @apply mt-1 text-xs text-gray-400; }
+  .filter-bar { @apply flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm sm:flex-row sm:items-end sm:justify-between; }
+  .filter-bar-fields { @apply flex min-w-0 flex-1 flex-wrap items-end gap-2; }
+  .filter-bar-summary { @apply shrink-0 text-xs font-medium text-gray-500; }
+  .data-table-wrap { @apply max-w-full overflow-x-auto rounded-lg border border-gray-200 bg-white; scrollbar-width: thin; }
+  .data-table-wrap table { @apply w-full; }
+  .data-table-wrap thead { @apply bg-gray-50; }
+  .data-table-wrap tbody tr { @apply transition hover:bg-brand-50/30; }
+  .mobile-list { @apply grid gap-2 md:hidden; }
+  .empty-state { @apply flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50/60 p-6 text-center; }
+  .empty-state-compact { @apply min-h-24 p-4; }
+  .empty-state-icon { @apply mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-400; }
+  .loading-state { @apply flex min-h-32 items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-500; }
+  .loading-spinner { @apply h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-brand-600; }
+  .error-state { @apply rounded-lg border border-red-200 bg-red-50 p-4 text-red-800; }
+  .form-field { @apply block min-w-0; }
+  .form-hint { @apply mt-1 block text-xs text-gray-500; }
+  .action-menu { @apply relative; }
+  .action-menu-trigger { @apply flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-gray-200 bg-white font-bold text-gray-600 hover:bg-gray-50; }
+  .action-menu-trigger::-webkit-details-marker { display: none; }
+  .action-menu-content { @apply absolute left-0 top-full z-30 mt-1 min-w-44 space-y-1 rounded-lg border border-gray-200 bg-white p-1 shadow-lg; }
+  .action-menu-content > a, .action-menu-content > button, .action-menu-content form > button { @apply flex min-h-9 w-full items-center rounded-md px-3 py-2 text-right text-sm text-gray-700 hover:bg-gray-50; }
+  .confirm-dialog-panel { @apply fixed left-1/2 top-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-gray-200 bg-white p-5 shadow-xl; }
 }
 
 
@@ -105,7 +162,7 @@ body {
 @media (max-width: 768px) {
   body { font-size: 14px; }
   main { overflow-x: hidden; }
-  .card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .card { -webkit-overflow-scrolling: touch; }
   .table-wrap, .overflow-x-auto { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .overflow-x-auto::after {
     content: "";
@@ -116,12 +173,12 @@ body {
     height: 1px;
     box-shadow: -10px 0 18px rgba(15, 23, 42, 0.10);
   }
-  table { min-width: 520px; }
+  .table-wrap table, .overflow-x-auto table, .data-table-wrap table { min-width: 520px; }
   .p-8 { padding: 1.1rem !important; }
   .text-2xl { font-size: 1.4rem !important; }
   .btn, .btn-primary, .btn-ghost, .btn-danger, .btn-warning, .btn-danger-soft {
     min-height: 2.5rem;
-    white-space: nowrap;
+    white-space: normal;
   }
   .no-print.rounded-2xl.bg-gradient-to-l,
   .rounded-2xl.bg-gradient-to-l {

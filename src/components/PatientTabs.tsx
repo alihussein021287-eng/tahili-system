@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   addDiagnosis, addReport, setReportStatus, addSession, addPrescription, addAdmission,
   dischargeAdmission, updateAdmissionDuration, addCorrespondence, addRelative, addWound, addAttachment,
@@ -31,35 +32,60 @@ import { PatientTherapyProgram } from "@/components/therapy/PatientTherapyProgra
 import { PatientCenterPrograms } from "@/components/centers/PatientCenterPrograms";
 import { PatientExpenses } from "@/components/expenses/PatientExpenses";
 import { CenterHallSelect } from "@/components/CenterHallSelect";
+import { EmptyState, LoadingState, SectionCard, StatCard } from "@/components/Ui";
 
 const TABS = [
-  { key: "timeline", label: "الخط الزمني", icon: "🕒", group: "overview" },
-  { key: "journey", label: "مسار المتابعة", icon: "🧭", group: "overview" },
-  { key: "diag", label: "الاستشارية الطبية", icon: "🩺", group: "medical" },
-  { key: "resident", label: "الطبيب المقيم", icon: "🩺", group: "medical" },
-  { key: "referrals", label: "الفحوص والإحالات", icon: "↗", group: "medical" },
-  { key: "sessions", label: "الجلسات العلاجية", icon: "🏃", group: "therapy" },
-  { key: "therapyProgram", label: "برنامج العلاج الطبيعي", icon: "📅", group: "therapy" },
-  { key: "centerPrograms", label: "برامج المراكز", icon: "🏥", group: "therapy" },
-  { key: "expenses", label: "الصرفيات المالية", icon: "💳", group: "admin" },
-  { key: "plan", label: "الخطة العلاجية", icon: "🎯", group: "therapy" },
-  { key: "metrics", label: "المقاييس", icon: "📈", group: "therapy" },
-  { key: "care", label: "التداوي والتضميد", icon: "🩼", group: "therapy" },
-  { key: "rx", label: "الوصفات والتجهيز", icon: "💊", group: "admin" },
-  { key: "adm", label: "الرقود", icon: "🛏", group: "admin" },
-  { key: "official", label: "الإجراءات الرسمية", icon: "📄", group: "admin" },
-  { key: "sickleave", label: "الإجازات المرضية", icon: "🩺", group: "admin" },
-  { key: "corr", label: "المخاطبات", icon: "✉", group: "admin" },
-  { key: "files", label: "المرفقات", icon: "📎", group: "admin" },
-  { key: "rel", label: "ذوو القربى", icon: "👪", group: "admin" },
-  { key: "activity", label: "النشاط", icon: "📌", group: "system" },
+  { key: "overview", label: "نظرة عامة", icon: "▦", group: "followup", perms: ["patients.view"] },
+  { key: "timeline", label: "الخط الزمني", icon: "◷", group: "followup", perms: ["patients.view"] },
+  { key: "journey", label: "مسار المتابعة", icon: "◇", group: "followup", perms: ["journey.view"] },
+  { key: "diag", label: "الاستشارية الطبية", icon: "+", group: "medical", perms: ["clinical.view", "clinical.diagnosis", "clinical.report"] },
+  { key: "resident", label: "الطبيب المقيم", icon: "○", group: "medical", perms: ["clinical.view", "clinical.wound", "clinical.metrics"] },
+  { key: "referrals", label: "الفحوص والإحالات", icon: "↗", group: "medical", perms: ["referrals.view", "referrals.create"] },
+  { key: "sessions", label: "الجلسات العلاجية", icon: "▷", group: "therapy", perms: ["clinical.session", "therapy.view", "therapy.session.record"] },
+  { key: "therapyProgram", label: "برنامج العلاج الطبيعي", icon: "▤", group: "therapy", perms: ["therapy.view"] },
+  { key: "centerPrograms", label: "برامج المراكز", icon: "⌂", group: "therapy", perms: ["centers.view"] },
+  { key: "plan", label: "الخطة العلاجية", icon: "◎", group: "therapy", perms: ["clinical.plan", "therapy.view"] },
+  { key: "metrics", label: "المقاييس", icon: "↗", group: "therapy", perms: ["clinical.metrics"] },
+  { key: "care", label: "التداوي والتضميد", icon: "✚", group: "therapy", perms: ["clinical.care"] },
+  { key: "expenses", label: "الصرفيات المالية", icon: "¤", group: "admin", perms: ["expenses.view"] },
+  { key: "rx", label: "الوصفات والتجهيز", icon: "⊕", group: "admin", perms: ["clinical.prescription", "pharmacy.view"] },
+  { key: "adm", label: "الرقود", icon: "□", group: "admin", perms: ["clinical.admission", "beds.view"] },
+  { key: "official", label: "الإجراءات الرسمية", icon: "§", group: "admin", perms: ["officialdocs.view"] },
+  { key: "sickleave", label: "الإجازات المرضية", icon: "△", group: "admin", perms: ["sickleave.view"] },
+  { key: "corr", label: "المخاطبات", icon: "✉", group: "admin", perms: ["clinical.report"] },
+  { key: "files", label: "المرفقات", icon: "⌕", group: "admin", perms: ["clinical.view", "officialdocs.view"] },
+  { key: "rel", label: "ذوو القربى", icon: "⋈", group: "admin", perms: ["patients.view"] },
+  { key: "activity", label: "سجل النشاط", icon: "≡", group: "system", perms: ["audit.view"] },
 ];
 const TAB_GROUPS: Record<string, string> = {
-  overview: "نظرة عامة",
+  followup: "المتابعة",
   medical: "الملف الطبي",
   therapy: "المسار العلاجي",
   admin: "الملف الإداري",
-  system: "النشاط",
+  system: "سجل الملف",
+};
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  overview: "ملخص عملي لأهم حالة وإجراء قادم ضمن صلاحياتك.",
+  timeline: "أحدث الأحداث الطبية والعلاجية والإدارية بترتيب زمني.",
+  journey: "المحطات المكتملة والحالية والقادمة في مسار المتابعة.",
+  diag: "التشخيصات والتقارير الطبية المعتمدة في الاستشارية.",
+  resident: "مراجعات الطبيب المقيم والعلامات الحيوية وتقييم الجروح.",
+  referrals: "طلبات الفحوص والإحالات ونتائجها وحالتها الحالية.",
+  sessions: "جدولة الجلسات وسجل التنفيذ والتقدم.",
+  therapyProgram: "البرنامج المعتمد للعلاج الطبيعي وتقييماته.",
+  centerPrograms: "برامج التأهيل المسندة ضمن المراكز.",
+  plan: "أهداف الخطة العلاجية وحالتها ونسبة الإنجاز.",
+  metrics: "قياسات التقدم التاريخية ومؤشرات التحسن.",
+  care: "سجل التداوي والتضميد والمواد المستخدمة.",
+  expenses: "الصرفيات المرتبطة بالمراجع وفق صلاحية عرض المبالغ.",
+  rx: "الوصفات الداخلية والخارجية وحالة التجهيز.",
+  adm: "تاريخ الرقود والتخصيص والخروج.",
+  official: "الكتب والإجراءات الرسمية المؤرشفة.",
+  sickleave: "الإجازات المرضية واعتماداتها ونماذجها.",
+  corr: "المخاطبات الواردة والصادرة المرتبطة بالملف.",
+  files: "المرفقات والوثائق المتاحة للقراءة.",
+  rel: "بيانات ذوي القربى والمرافقين المسجلين.",
+  activity: "سجل آخر التغييرات المنفذة على ملف المراجع.",
 };
 const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
@@ -70,9 +96,16 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
   const can = (k: string) => perms.includes(k);
   const canDel = role === "ADMIN";
   const canSchedule = role === "HEAD_THERAPIST" || role === "ADMIN";
-  const [tab, setTab] = useState("timeline");
   const [lazy, setLazy] = useState<Record<string, any>>({});
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ followup: true });
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const id = patient.id;
+  const visibleTabs = TABS.filter((item) => item.perms.some(can));
+  const requestedTab = searchParams.get("tab");
+  const tab = visibleTabs.some((item) => item.key === requestedTab) ? requestedTab! : (visibleTabs[0]?.key ?? "overview");
+  const activeTab = visibleTabs.find((item) => item.key === tab) ?? visibleTabs[0];
 
   const loadTab = async (key: string) => {
     try {
@@ -91,35 +124,50 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
     }
   };
   const openTab = (key: string) => {
-    setTab(key);
-    if (LAZY_TABS.includes(key) && lazy[key] === undefined) loadTab(key);
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", key);
+    router.push(`${pathname}?${next.toString()}`, { scroll: false });
   };
+  useEffect(() => {
+    if (activeTab) setOpenGroups((current) => ({ ...current, [activeTab.group]: true }));
+    if (LAZY_TABS.includes(tab) && lazy[tab] === undefined) loadTab(tab);
+  }, [tab]);
   // تُستدعى بعد أي إضافة/حذف داخل تبويب مؤجّل لإعادة جلب بياناته
   const reload = (key: string) => () => loadTab(key);
 
   return (
-    <div className="card flex flex-col md:flex-row">
-      <div className="flex gap-1.5 overflow-x-auto border-b border-gray-200 p-3 md:w-56 md:shrink-0 md:flex-col md:gap-1 md:overflow-visible md:border-b-0 md:border-l">
-        {TABS.map((t, idx) => (
-          <React.Fragment key={t.key}>
-            {(idx === 0 || TABS[idx - 1].group !== t.group) && (
-              <div className="mt-2 px-2 text-[11px] font-semibold text-gray-400 first:mt-0">{TAB_GROUPS[t.group]}</div>
-            )}
-            <button onClick={() => openTab(t.key)}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition md:w-full
-                ${tab === t.key ? "bg-brand-600 text-white shadow-sm" : "bg-gray-100 text-gray-600 hover:bg-gray-200 md:bg-transparent md:hover:bg-gray-100"}`}>
-              <span className="text-base leading-none">{t.icon}</span>
-              <span>{t.label}</span>
-            </button>
-          </React.Fragment>
-        ))}
+    <div className="card flex min-w-0 flex-col overflow-hidden md:flex-row">
+      <div className="border-b border-gray-200 bg-gray-50/50 p-3 md:w-64 md:shrink-0 md:border-b-0 md:border-l">
+        <label className="label md:hidden" htmlFor="patient-tab-select">قسم ملف المراجع</label>
+        <select id="patient-tab-select" className="input md:hidden" value={tab} onChange={(event) => openTab(event.target.value)}>
+          {visibleTabs.map((item) => <option key={item.key} value={item.key}>{TAB_GROUPS[item.group]} - {item.label}</option>)}
+        </select>
+        <div className="hidden space-y-2 md:block">
+          {Object.keys(TAB_GROUPS).map((group) => {
+            const items = visibleTabs.filter((item) => item.group === group);
+            if (!items.length) return null;
+            const expanded = !!openGroups[group];
+            return (
+              <div key={group} className="rounded-lg border border-gray-200 bg-white p-1">
+                <button type="button" onClick={() => setOpenGroups((current) => ({ ...current, [group]: !expanded }))} className="flex w-full items-center justify-between rounded-md px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50" aria-expanded={expanded} aria-controls={`patient-tabs-${group}`}>
+                  <span>{TAB_GROUPS[group]}</span><span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                </button>
+                {expanded ? <div id={`patient-tabs-${group}`} className="space-y-1 border-t border-gray-100 pt-1">
+                  {items.map((item) => <button key={item.key} type="button" onClick={() => openTab(item.key)} aria-current={tab === item.key ? "page" : undefined} className={`flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-right text-sm transition ${tab === item.key ? "bg-brand-700 font-semibold text-white" : "text-gray-600 hover:bg-gray-100"}`}><span className="w-5 text-center" aria-hidden="true">{item.icon}</span><span>{item.label}</span></button>)}
+                </div> : null}
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <div className="flex-1 p-5">
-        {tab === "timeline" && <Timeline patient={patient} />}
+      <div className="min-w-0 flex-1 p-4 sm:p-5">
+        {activeTab ? <div className="mb-5 border-b border-gray-100 pb-4"><h2 className="text-lg font-bold text-gray-900">{activeTab.label}</h2><p className="mt-1 text-sm text-gray-500">{TAB_DESCRIPTIONS[activeTab.key]}</p></div> : null}
+        {tab === "overview" && <PatientOverview patient={patient} can={can} role={role} openTab={openTab} />}
+        {tab === "timeline" && <Timeline patient={patient} can={can} />}
         {tab === "journey" && <Journey patient={patient} can={can} id={id} role={role} />}
         {tab === "official" && <OfficialDocs patient={patient} can={can} id={id} role={role} />}
         {tab === "sickleave" && <SickLeaves patient={patient} can={can} id={id} role={role} approvals={slApprovals} staff={staffNames} staffUsers={staffUsers} />}
-        {tab === "diag" && <SpecialistWorkspace patient={patient} can={can} canDel={canDel} patientId={id} openPrescriptions={() => setTab("rx")} />}
+        {tab === "diag" && <SpecialistWorkspace patient={patient} can={can} canDel={canDel} patientId={id} openPrescriptions={() => openTab("rx")} />}
         {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} doctors={staffUsers.filter((user: any) => user.role === "DOCTOR")} centerHalls={centerHalls} defaults={therapyDefaults} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
         {tab === "centerPrograms" && can("centers.view") && <PatientCenterPrograms programs={patient.centerPrograms || []} />}
         {tab === "expenses" && can("expenses.view") && <PatientExpenses rows={expenseRows} showAmounts={can("expenses.amounts")} />}
@@ -248,13 +296,68 @@ function rxStatusBadge(r: any) {
   return <span className={`badge ${cls}`}>{label}</span>;
 }
 
-function TabLoading() {
+function PatientOverview({ patient, can, role, openTab }: { patient: any; can: (key: string) => boolean; role: string; openTab: (key: string) => void }) {
+  const now = new Date();
+  const lastVisit = patient.visits?.[0];
+  const upcomingAppointment = [...(patient.appointments || [])]
+    .filter((item: any) => item.status === "SCHEDULED" && new Date(item.scheduledAt) >= now)
+    .sort((a: any, b: any) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())[0];
+  const activePlan = (patient.treatmentPlans || []).find((item: any) => item.status === "ACTIVE");
+  const activeAdmission = (patient.admissions || []).find((item: any) => item.status === "ADMITTED");
+  const completedSessions = (patient.therapySessionLogs || []).filter((item: any) => item.status === "COMPLETED").length;
+  const plannedSessions = plannedTherapySessions(patient);
+  const progress = plannedSessions > 0 ? Math.min(100, Math.round((completedSessions / plannedSessions) * 100)) : 0;
+  const openReferrals = (patient.referralRequests || []).filter((item: any) => !["COMPLETED", "REJECTED", "CANCELLED"].includes(item.status)).length;
+  const activePrescriptions = (patient.prescriptions || []).filter((item: any) => !item.isDispensed && item.status !== "REJECTED").length;
+  const medical = can("clinical.view") || can("clinical.diagnosis") || can("clinical.report");
+  const therapy = can("therapy.view") || can("clinical.session") || can("clinical.plan");
+  const pharmacy = can("clinical.prescription") || can("pharmacy.view");
+  const admission = can("clinical.admission") || can("beds.view");
+  const summary = [
+    { show: true, label: "حالة الملف", value: patient.archivedAt ? "مؤرشف" : "نشط", tone: patient.archivedAt ? "warning" : "success" },
+    { show: true, label: "آخر زيارة", value: lastVisit ? fmtDate(lastVisit.visitDate) : "لا توجد", tone: "neutral" },
+    { show: can("appointments.view"), label: "الموعد القادم", value: upcomingAppointment ? fmtDateTime(upcomingAppointment.scheduledAt) : "لا يوجد", tone: upcomingAppointment ? "info" : "neutral" },
+    { show: therapy, label: "تقدم البرنامج", value: activePlan ? `${progress}%` : "لا توجد خطة نشطة", tone: activePlan ? "brand" : "neutral" },
+    { show: can("referrals.view"), label: "إحالات مفتوحة", value: openReferrals, tone: openReferrals ? "warning" : "success" },
+    { show: pharmacy, label: "وصفات نشطة", value: activePrescriptions, tone: activePrescriptions ? "warning" : "neutral" },
+    { show: admission, label: "حالة الرقود", value: activeAdmission ? "راقد حالياً" : "غير راقد", tone: activeAdmission ? "warning" : "neutral" },
+  ].filter((item) => item.show);
+  const nextActions = [
+    { show: medical, key: "diag", label: role === "RESIDENT" ? "فتح مساحة الطبيب المقيم" : "فتح الاستشارية الطبية" },
+    { show: can("referrals.view"), key: "referrals", label: "متابعة الإحالات" },
+    { show: therapy, key: "therapyProgram", label: "متابعة البرنامج العلاجي" },
+    { show: pharmacy, key: "rx", label: "مراجعة الوصفات" },
+    { show: can("journey.view"), key: "journey", label: "فتح مسار المتابعة" },
+  ].filter((item) => item.show);
+
   return (
-    <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-400">
-      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-brand-600" />
-      جارٍ التحميل…
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {summary.map((item) => <StatCard key={item.label} label={item.label} value={item.value} tone={item.tone as any} />)}
+      </div>
+      {therapy && activePlan ? (
+        <SectionCard title="الخطة العلاجية النشطة" description={activePlan.goal || activePlan.notes || "الخطة قيد التنفيذ"}>
+          <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div>
+              <div className="mb-2 flex items-center justify-between text-sm"><span className="text-gray-600">التقدم المسجل</span><b>{progress}%</b></div>
+              <div className="h-2 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-brand-600" style={{ width: `${progress}%` }} /></div>
+              <div className="mt-2 text-xs text-gray-500">{completedSessions} جلسة منجزة من أصل {plannedSessions || "غير محدد"}</div>
+            </div>
+            <button type="button" className="btn-ghost" onClick={() => openTab("therapyProgram")}>عرض البرنامج</button>
+          </div>
+        </SectionCard>
+      ) : null}
+      <SectionCard title="الإجراء التالي" description="اختصارات مرتبطة بدورك وصلاحياتك الحالية.">
+        {nextActions.length ? <div className="flex flex-wrap gap-2">{nextActions.map((item, index) => <button key={item.key} type="button" className={index === 0 ? "btn-primary" : "btn-ghost"} onClick={() => openTab(item.key)}>{item.label}</button>)}</div> : <EmptyState compact title="لا توجد إجراءات متاحة" description="يمكنك قراءة بيانات الملف الأساسية فقط ضمن صلاحياتك الحالية." />}
+      </SectionCard>
+      {medical && patient.diagnoses?.[0] ? <div className="alert-info"><span aria-hidden="true">i</span><div><b>آخر تقييم طبي:</b> {patient.diagnoses[0].text || "تقييم مسجل"} <span className="text-xs">({fmtDate(patient.diagnoses[0].date)})</span></div></div> : null}
+      {upcomingAppointment ? <div className="alert-success"><span aria-hidden="true">✓</span><div><b>الموعد القادم:</b> {fmtDateTime(upcomingAppointment.scheduledAt)}{upcomingAppointment.type ? ` - ${upcomingAppointment.type}` : ""}</div></div> : null}
     </div>
   );
+}
+
+function TabLoading() {
+  return <LoadingState />;
 }
 
 function Section({ rows, cols, editable, action, fields, del, canDel, edit, editFields }: any) {
@@ -870,21 +973,21 @@ function SectionFiles({ rows, officialDocs = [], editable, patientId, afterMutat
   );
 }
 
-function Timeline({ patient }: { patient: any }) {
+function Timeline({ patient, can }: { patient: any; can: (key: string) => boolean }) {
   type Ev = { date: any; type: string; title: string; color: string };
   const evs: Ev[] = [];
-  (patient.diagnoses || []).forEach((r: any) => evs.push({ date: r.date, type: "تشخيص", title: `${DIAGNOSIS[r.type as keyof typeof DIAGNOSIS] || ""}: ${r.text || ""}`, color: "bg-sky-500" }));
-  (patient.medicalReports || []).forEach((r: any) => evs.push({ date: r.date, type: "تقرير طبي", title: r.content || "", color: "bg-indigo-500" }));
-  (patient.therapySessions || []).forEach((r: any) => evs.push({ date: r.createdAt, type: "جلسة علاجية", title: `${THERAPY[r.therapyType as keyof typeof THERAPY] || ""}${r.center?.name ? " - " + r.center.name : ""}`, color: "bg-brand-500" }));
-  (patient.prescriptions || []).forEach((r: any) => evs.push({ date: r.prescribedAt, type: "وصفة", title: r.medication?.name || r.materialName || "", color: "bg-emerald-500" }));
-  (patient.admissions || []).forEach((r: any) => evs.push({ date: r.admissionDate, type: "رقود", title: `${r.center?.name || ""}${r.dischargeDate ? " (خرج " + fmtDate(r.dischargeDate) + ")" : " (راقد)"}`, color: "bg-amber-500" }));
-  (patient.woundAssessments || []).forEach((r: any) => evs.push({ date: r.assessmentDate, type: "تقييم جرح", title: r.woundType || "تقييم جرح", color: "bg-rose-500" }));
-  (patient.correspondence || []).forEach((r: any) => evs.push({ date: r.bookDate || r.createdAt, type: "مخاطبة", title: `${DIRECTION[r.direction as keyof typeof DIRECTION] || ""}: ${r.subject || ""}`, color: "bg-gray-500" }));
-  (patient.appointments || []).forEach((r: any) => evs.push({ date: r.scheduledAt, type: "موعد", title: `${r.type || ""} — ${APPT_STATUS[r.status as keyof typeof APPT_STATUS] || ""}`, color: "bg-purple-500" }));
+  if (can("clinical.view") || can("clinical.diagnosis")) (patient.diagnoses || []).forEach((r: any) => evs.push({ date: r.date, type: "تشخيص", title: `${DIAGNOSIS[r.type as keyof typeof DIAGNOSIS] || ""}: ${r.text || ""}`, color: "bg-sky-500" }));
+  if (can("clinical.view") || can("clinical.report")) (patient.medicalReports || []).forEach((r: any) => evs.push({ date: r.date, type: "تقرير طبي", title: r.content || "", color: "bg-indigo-500" }));
+  if (can("therapy.view") || can("clinical.session")) (patient.therapySessions || []).forEach((r: any) => evs.push({ date: r.createdAt, type: "جلسة علاجية", title: `${THERAPY[r.therapyType as keyof typeof THERAPY] || ""}${r.center?.name ? " - " + r.center.name : ""}`, color: "bg-brand-500" }));
+  if (can("clinical.prescription") || can("pharmacy.view")) (patient.prescriptions || []).forEach((r: any) => evs.push({ date: r.prescribedAt, type: "وصفة", title: r.medication?.name || r.materialName || "", color: "bg-emerald-500" }));
+  if (can("clinical.admission") || can("beds.view")) (patient.admissions || []).forEach((r: any) => evs.push({ date: r.admissionDate, type: "رقود", title: `${r.center?.name || ""}${r.dischargeDate ? " (خرج " + fmtDate(r.dischargeDate) + ")" : " (راقد)"}`, color: "bg-amber-500" }));
+  if (can("clinical.wound")) (patient.woundAssessments || []).forEach((r: any) => evs.push({ date: r.assessmentDate, type: "تقييم جرح", title: r.woundType || "تقييم جرح", color: "bg-rose-500" }));
+  if (can("clinical.report")) (patient.correspondence || []).forEach((r: any) => evs.push({ date: r.bookDate || r.createdAt, type: "مخاطبة", title: `${DIRECTION[r.direction as keyof typeof DIRECTION] || ""}: ${r.subject || ""}`, color: "bg-gray-500" }));
+  if (can("appointments.view")) (patient.appointments || []).forEach((r: any) => evs.push({ date: r.scheduledAt, type: "موعد", title: `${r.type || ""} — ${APPT_STATUS[r.status as keyof typeof APPT_STATUS] || ""}`, color: "bg-purple-500" }));
 
   evs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  if (evs.length === 0) return <p className="text-center text-sm text-gray-400">لا أحداث بعد.</p>;
+  if (evs.length === 0) return <EmptyState title="لا توجد أحداث ضمن صلاحياتك" description="ستظهر الزيارات أو السجلات الجديدة هنا حسب مستوى الوصول الممنوح لك." />;
   return (
     <div className="relative space-y-4 pr-4">
       <div className="absolute right-1.5 top-2 bottom-2 w-px bg-gray-200" />

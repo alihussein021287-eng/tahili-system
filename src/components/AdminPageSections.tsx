@@ -1,6 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { AdminTabSelect } from "@/components/AdminTabSelect";
+import { PageTabs, SectionCard, StatCard as SharedStatCard } from "@/components/Ui";
 
 type AdminTab = {
   key: string;
@@ -20,19 +20,7 @@ export function AdminSectionTabs({
   return (
     <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
       <AdminTabSelect tabs={tabs} active={active} label={label} />
-      <nav className="hidden gap-2 overflow-x-auto md:flex" aria-label={label}>
-        {tabs.map((tab) => (
-          <Link
-            key={tab.key}
-            href={tab.href}
-            className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${
-              active === tab.key ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </nav>
+      <div className="hidden md:block"><PageTabs tabs={tabs} active={active} label={label} /></div>
     </div>
   );
 }
@@ -69,13 +57,7 @@ export function AdminSection({
   className?: string;
 }) {
   return (
-    <section id={id} className={`card min-w-0 space-y-4 p-5 ${className}`}>
-      <div>
-        <h2 className="font-semibold text-gray-900">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-gray-500">{description}</p> : null}
-      </div>
-      {children}
-    </section>
+    <SectionCard id={id} title={title} description={description} className={className}>{children}</SectionCard>
   );
 }
 
@@ -118,10 +100,6 @@ export function StatCard({
   tone?: string;
 }) {
   return (
-    <div className="card p-4">
-      <div className={`text-2xl font-bold ${tone}`}>{value}</div>
-      <div className="text-sm text-gray-500">{label}</div>
-      {description ? <div className="mt-1 text-xs text-gray-400">{description}</div> : null}
-    </div>
+    <SharedStatCard label={label} value={<span className={tone}>{value}</span>} description={description} />
   );
 }
