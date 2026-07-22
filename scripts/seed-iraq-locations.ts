@@ -1,8 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import { pathToFileURL } from "node:url";
 
 const prisma = new PrismaClient();
 
-const IRAQ_LOCATIONS: Record<string, string[]> = {
+export const IRAQ_LOCATIONS: Record<string, string[]> = {
   "بغداد": ["الرصافة", "الكرخ", "الأعظمية", "الكاظمية", "مدينة الصدر", "المنصور", "الكرادة", "الدورة", "المدائن", "أبو غريب", "التاجي", "الطارمية", "المحمودية", "اليوسفية", "اللطيفية", "النهروان", "الشعلة", "الحرية", "الغزالية", "البياع", "زيونة", "الجادرية"],
   "البصرة": ["مركز البصرة", "أبو الخصيب", "الزبير", "القرنة", "المدينة", "شط العرب", "الفاو", "الهارثة", "الدير", "الثغر", "الإمام الصادق", "سفوان", "أم قصر"],
   "نينوى": ["الموصل", "تلكيف", "الحمدانية", "الشيخان", "سنجار", "تلعفر", "البعاج", "الحضر", "مخمور", "القيارة", "بعشيقة", "زمار", "ربيعة"],
@@ -24,7 +25,7 @@ const IRAQ_LOCATIONS: Record<string, string[]> = {
   "حلبجة": ["مركز حلبجة", "خورمال", "بيارة", "سيروان", "بمو", "طويلة"],
 };
 
-async function main() {
+export async function seedIraqLocations() {
   let districtCount = 0;
   for (const [name, districts] of Object.entries(IRAQ_LOCATIONS)) {
     const governorate = await prisma.governorate.upsert({ where: { name }, update: {}, create: { name } });
@@ -39,4 +40,6 @@ async function main() {
   console.log(`Seeded ${Object.keys(IRAQ_LOCATIONS).length} governorates and ${districtCount} districts/areas.`);
 }
 
-main().finally(() => prisma.$disconnect());
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  seedIraqLocations().finally(() => prisma.$disconnect());
+}

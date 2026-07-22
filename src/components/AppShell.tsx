@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import type { MouseEvent } from "react";
 import Link from "next/link";
 import { markAllNotificationsRead } from "@/lib/notif-actions";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -10,6 +11,7 @@ import { CommandPalette } from "./CommandPalette";
 import { PresencePing } from "./PresencePing";
 import { canOpenNotification, notificationTone } from "@/lib/notifications";
 import type { PresenceConfig } from "@/lib/presence";
+import { isThemePreference, resolveTheme, THEME_STORAGE_KEY, type ThemePreference } from "@/lib/theme";
 
 type Item = { href: string; label: string; icon: string; navLabel?: string; perm?: string; perms?: string[] };
 type NavGroup = { key: string; title: string; icon: string; href: string; hrefs: string[] };
@@ -584,15 +586,59 @@ function NotificationBell({ alerts, notifs = [], perms = [] }: { alerts?: AlertC
 
 
 function ThemeToggle() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => { setDark(document.documentElement.classList.contains("dark")); }, []);
-  const toggle = () => {
-    const next = !document.documentElement.classList.contains("dark");
-    document.documentElement.classList.toggle("dark", next);
-    try { localStorage.theme = next ? "dark" : "light"; } catch {}
-    setDark(next);
+  const [preference, setPreference] = useState<ThemePreference>("system");
+  const [resolved, setResolved] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem("theme"); } catch {}
+    const initial = isThemePreference(stored) ? stored : "system";
+    const apply = (value: ThemePreference) => {
+      const next = resolveTheme(value, media.matches);
+      document.documentElement.classList.toggle("dark", next === "dark");
+      document.documentElement.dataset.theme = value;
+      document.documentElement.style.colorScheme = next;
+      setResolved(next);
+    };
+    setPreference(initial);
+    try { localStorage.setItem(THEME_STORAGE_KEY, initial); } catch {}
+    apply(initial);
+    const onSystemChange = () => {
+      const current = document.documentElement.dataset.theme;
+      if (current === "system") apply("system");
+    };
+    media.addEventListener("change", onSystemChange);
+    return () => media.removeEventListener("change", onSystemChange);
+  }, []);
+
+  const selectTheme = (value: ThemePreference, event: MouseEvent<HTMLButtonElement>) => {
+    const mediaDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = resolveTheme(value, mediaDark);
+    try { localStorage.setItem(THEME_STORAGE_KEY, value); } catch {}
+    document.documentElement.classList.toggle("dark", next === "dark");
+    document.documentElement.dataset.theme = value;
+    document.documentElement.style.colorScheme = next;
+    setPreference(value);
+    setResolved(next);
+    const details = event.currentTarget.closest("details");
+    if (details) details.open = false;
   };
+
+  const icon = preference === "system" ? "◐" : resolved === "dark" ? "☾" : "☀";
+  const labels: Record<ThemePreference, string> = { light: "فاتح", dark: "داكن", system: "حسب النظام" };
   return (
-    <button onClick={toggle} title={dark ? "استخدام الوضع الفاتح" : "استخدام الوضع الداكن"} aria-label={dark ? "استخدام الوضع الفاتح" : "استخدام الوضع الداكن"} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-lg leading-none">{dark ? "☀️" : "🌙"}</button>
+    <details className="action-menu">
+      <summary title={`المظهر: ${labels[preference]}`} aria-label={`اختيار المظهر، الحالي ${labels[preference]}`} className="action-menu-trigger text-lg leading-none">{icon}</summary>
+      <div className="action-menu-content" role="menu" aria-label="المظهر">
+        {(["light", "dark", "system"] as ThemePreference[]).map((value) => (
+          <button key={value} type="button" role="menuitemradio" aria-checked={preference === value} onClick={(event) => selectTheme(value, event)}>
+            <span className="w-5" aria-hidden="true">{value === "light" ? "☀" : value === "dark" ? "☾" : "◐"}</span>
+            <span>{labels[value]}</span>
+            {preference === value ? <span className="mr-auto text-brand-600" aria-hidden="true">✓</span> : null}
+          </button>
+        ))}
+      </div>
+    </details>
   );
 }

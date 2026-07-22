@@ -1,5 +1,11 @@
 # System Map
 
+## Shared presentation and reference sources
+
+- Theme contract: `src/lib/theme.ts` + semantic variables and legacy compatibility in `src/app/globals.css`; AppShell exposes `light/dark/system`.
+- Approved reference source: `scripts/reference-data.ts`; operator workflow: `scripts/sync-reference-data.ts` with dry-run by default and transactional `--apply`.
+- Reference matching uses normalized names and center + hall natural pairs. Medicine sync creates catalog rows at zero only and never creates stock batches.
+
 خريطة مختصرة تساعد Codex والمطورين على الوصول السريع للملفات. المصدر النهائي للسلوك هو الكود.
 
 | الوحدة | routes مهمة | ملفات `src/app` | logic في `src/lib` | صلاحيات رئيسية | علاقات وتبعيات |

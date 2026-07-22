@@ -947,7 +947,7 @@ function FilePreviewModal({
               <img src={src} alt={file.displayName} className="max-h-[72vh] max-w-full rounded-lg object-contain shadow-sm" />
             </div>
           )}
-          {policy?.kind === "pdf" && policy.canStream && <iframe src={src} title={file.displayName} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" referrerPolicy="same-origin" />}
+          {policy?.kind === "pdf" && policy.canStream && <iframe src={src} title={file.displayName} className="document-preview-surface h-[72vh] w-full rounded-lg border border-gray-200 bg-white" referrerPolicy="same-origin" />}
           {policy?.kind === "video" && policy.canStream && (
             <div className="flex min-h-[60vh] items-center justify-center">
               <video src={src} controls className="max-h-[72vh] w-full max-w-5xl rounded-lg bg-black" />
@@ -970,7 +970,7 @@ function FilePreviewModal({
             </div>
           )}
           {policy?.kind === "text" && (
-            <div className="min-h-[60vh] rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="document-preview-surface min-h-[60vh] rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
               {loading && <p className="text-sm text-gray-500">جاري تحميل المعاينة...</p>}
               {!loading && payload?.error && <p className="text-sm text-red-700">{payload.error}</p>}
               {!loading && payload?.text !== undefined && (
@@ -1000,7 +1000,7 @@ function FilePreviewModal({
                     <span className="font-semibold">معاينة PDF</span>
                     <span>{payload.cached ? "جاهزة من cache مؤقت" : "تم تجهيزها الآن"}</span>
                   </div>
-                  <iframe src={payload.streamUrl} title={file.displayName} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" referrerPolicy="same-origin" />
+                  <iframe src={payload.streamUrl} title={file.displayName} className="document-preview-surface h-[72vh] w-full rounded-lg border border-gray-200 bg-white" referrerPolicy="same-origin" />
                 </>
               )}
               {!loading && !payload?.streamUrl && (

@@ -1,8 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import { pathToFileURL } from "node:url";
 
 const prisma = new PrismaClient();
 
-const lookups = {
+export const COMMON_LOOKUPS = {
   mobilityAid: [
     "كرسي متحرك يدوي", "كرسي متحرك كهربائي", "عكاز إبطي", "عكاز مرفقي",
     "عكاز رباعي", "عصا مشي", "مشاية ثابتة", "مشاية بعجلات", "روليتور",
@@ -36,13 +37,15 @@ const lookups = {
   ],
 } as const;
 
-async function main() {
-  for (const [model, values] of Object.entries(lookups)) {
+export async function seedCommonLookups() {
+  for (const [model, values] of Object.entries(COMMON_LOOKUPS)) {
     for (const name of values) {
-      await (prisma[model as keyof typeof lookups] as any).upsert({ where: { name }, update: {}, create: { name } });
+      await (prisma[model as keyof typeof COMMON_LOOKUPS] as any).upsert({ where: { name }, update: {}, create: { name } });
     }
     console.log(`${model}: ${values.length}`);
   }
 }
 
-main().finally(() => prisma.$disconnect());
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  seedCommonLookups().finally(() => prisma.$disconnect());
+}

@@ -1,6 +1,6 @@
 import React from "react";
 
-const PALETTE = ["#0f766e", "#0d655e", "#f59e0b", "#0ea5e9", "#8b5cf6", "#ef4444", "#10b981", "#6366f1"];
+const PALETTE = ["#0f766e", "#2a9489", "#d99512", "#1687ad", "#7c65bd", "#d74a55", "#2b9b61", "#536fc4"];
 
 export function BarChart({ data, height = 160 }: { data: { label: string; value: number }[]; height?: number }) {
   const max = Math.max(1, ...data.map((d) => d.value));
@@ -12,7 +12,7 @@ export function BarChart({ data, height = 160 }: { data: { label: string; value:
         {data.map((d, i) => {
           const h = (d.value / max) * 52;
           return (
-            <rect key={i} x={i * bw + bw * 0.18} y={56 - h} width={bw * 0.64} height={h} fill="#0f766e" rx="0.6">
+            <rect key={i} x={i * bw + bw * 0.18} y={56 - h} width={bw * 0.64} height={h} fill="var(--color-brand-text)" rx="0.6">
               <title>{`${d.label}: ${d.value}`}</title>
             </rect>
           );
@@ -35,7 +35,7 @@ export function Donut({ data, size = 150 }: { data: { label: string; value: numb
     <div className="flex items-center gap-4">
       <svg viewBox="0 0 160 160" style={{ width: size, height: size }}>
         <g transform="rotate(-90 80 80)">
-          <circle cx="80" cy="80" r={r} fill="none" stroke="#f1f5f9" strokeWidth="22" />
+          <circle cx="80" cy="80" r={r} fill="none" stroke="var(--chart-grid)" strokeWidth="22" />
           {data.map((d, i) => {
             const dash = (d.value / total) * c;
             const seg = (

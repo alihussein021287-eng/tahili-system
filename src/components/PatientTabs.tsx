@@ -651,8 +651,8 @@ function MiniChart({ values }: { values: number[] }) {
   });
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxWidth: W }} preserveAspectRatio="xMidYMid meet">
-      {n > 1 && <polyline points={coords.map((c) => c.join(",")).join(" ")} fill="none" stroke="#0f766e" strokeWidth="2" />}
-      {coords.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="2.5" fill="#0f766e" />)}
+      {n > 1 && <polyline points={coords.map((c) => c.join(",")).join(" ")} fill="none" stroke="var(--color-brand-text)" strokeWidth="2" />}
+      {coords.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="2.5" fill="var(--color-brand-text)" />)}
     </svg>
   );
 }

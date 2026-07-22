@@ -38,6 +38,10 @@ docker compose exec -T app npx prisma migrate deploy
 
 استخدم `migrate deploy` فقط للبيئات المشتركة. لا تستخدم `prisma db push`.
 
+## مزامنة البيانات المرجعية
+
+المصدر المعتمد في `scripts/reference-data.ts`. ابدأ دائماً بـ`npm run reference:dry-run`، وراجع `planned` و`existingQa`، ثم استخدم `npm run reference:sync` فقط للبيئة المقصودة. السكربت يضيف القوائم وكتالوج الأدوية المفقود برصيد صفر داخل transaction، ولا ينسخ أو يعدل دفعات أو كميات أو سجلات QA.
+
 ## إعادة إنشاء app فقط
 
 ```bash

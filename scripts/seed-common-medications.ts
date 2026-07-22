@@ -1,8 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import { pathToFileURL } from "node:url";
 
 const prisma = new PrismaClient();
 
-const medications = [
+export const COMMON_MEDICATIONS = [
   ["باراسيتامول 500 ملغ - Paracetamol", "شريط", 20],
   ["إيبوبروفين 400 ملغ - Ibuprofen", "شريط", 20],
   ["ديكلوفيناك 50 ملغ - Diclofenac", "شريط", 15],
@@ -45,13 +46,15 @@ const medications = [
   ["ليدوكائين جل 2%", "أنبوب", 5],
 ] as const;
 
-async function main() {
-  for (const [name, unit, minQuantity] of medications) {
+export async function seedCommonMedications() {
+  for (const [name, unit, minQuantity] of COMMON_MEDICATIONS) {
     await prisma.medication.upsert({
       where: { name }, update: {}, create: { name, unit, minQuantity, quantity: 0 },
     });
   }
-  console.log(`Seeded ${medications.length} editable common medication entries with zero stock.`);
+  console.log(`Seeded ${COMMON_MEDICATIONS.length} editable common medication entries with zero stock.`);
 }
 
-main().finally(() => prisma.$disconnect());
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  seedCommonMedications().finally(() => prisma.$disconnect());
+}

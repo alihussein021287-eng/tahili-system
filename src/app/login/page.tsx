@@ -109,7 +109,7 @@ export default function LoginPage() {
   return (
     <div className="lp-root">
       <style>{`
-        .lp-root{min-height:100vh;display:flex;background:#f4f9f8;font-family:Tajawal,'Segoe UI',Tahoma,system-ui,sans-serif;color:#1e293b}
+        .lp-root{min-height:100vh;display:flex;background:#f4f9f8;font-family:'IBM Plex Sans Arabic','Segoe UI',Tahoma,system-ui,sans-serif;color:#1e293b}
         .lp-brand{position:relative;flex:1.15;overflow:hidden;color:#eafffb;
           background:radial-gradient(120% 90% at 85% 0%,#13746b 0%,#0a4f49 45%,#073d38 100%)}
         .lp-brand-in{position:relative;z-index:2;display:flex;flex-direction:column;height:100%;padding:3.2rem 3rem}
@@ -159,6 +159,16 @@ export default function LoginPage() {
         @media (max-width:560px){ .lp-caps{display:none} .lp-updates{display:none} }
         @media (prefers-reduced-motion:reduce){ .lp-pulse path{animation:none;stroke-dashoffset:0} }
         .lp-input:focus-visible,.lp-btn:focus-visible,.lp-eye:focus-visible,.lp-back:focus-visible{outline:2px solid #0f766e;outline-offset:2px}
+        html.dark .lp-root{background:var(--color-bg);color:var(--color-text)}
+        html.dark .lp-form{background:var(--color-bg)}
+        html.dark .lp-card h1{color:var(--color-brand-text)!important}
+        html.dark .lp-card p{color:var(--color-text-muted)!important}
+        html.dark .lp-label{color:var(--color-text-secondary)}
+        html.dark .lp-input{background:var(--color-surface);border-color:var(--color-border-strong);color:var(--color-text)}
+        html.dark .lp-input::placeholder{color:var(--color-text-subtle)}
+        html.dark .lp-eye{color:var(--color-text-muted)}
+        html.dark .lp-err{background:var(--color-danger-bg);border-color:var(--color-danger-border);color:var(--color-danger-text)}
+        html.dark .lp-back{color:var(--color-brand-text)}
       `}</style>
 
       <aside className="lp-brand">

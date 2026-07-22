@@ -44,6 +44,8 @@ describe("AppShell navigation", () => {
     expect(source).toContain('id="main-content"');
     expect(source).toContain("aria-hidden={!open}");
     expect(source).toContain("inert={!open ? true : undefined}");
-    expect(source).toContain('aria-label={dark ? "استخدام الوضع الفاتح" : "استخدام الوضع الداكن"}');
+    expect(source).toContain('aria-label={`اختيار المظهر، الحالي ${labels[preference]}`}');
+    expect(source).toContain('role="menuitemradio"');
+    expect(source).toContain('aria-checked={preference === value}');
   });
 });

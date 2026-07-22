@@ -9,6 +9,8 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "reference:dry-run": "tsx scripts/sync-reference-data.ts",
+    "reference:sync": "tsx scripts/sync-reference-data.ts --apply",
     "db:studio": "prisma studio",
     "release:pack": "bash scripts/make-release.sh",
     "test": "vitest run",

@@ -1,5 +1,16 @@
 # Acceptance Matrix
 
+## Theme and approved reference data
+
+| Area | Acceptance |
+| --- | --- |
+| Theme | `light`, `dark`, and `system` persist across reload; `system` follows OS changes; initialization occurs before hydration. |
+| Shared UI | Shell, forms, tables, dialogs, statuses, collaboration, charts, mobile, and RTL remain readable with no unintended white data cells in dark mode. |
+| Print/viewers | Print and PDF/Office document canvases remain white and readable regardless of application theme. |
+| Reference dry-run | Reports approved, existing, QA, and planned counts without writes. |
+| Reference apply | Transactional and idempotent; repeated dry-run reports zero remaining approved additions and one counts-only audit row exists per apply. |
+| Pharmacy | Approved catalog may be created at zero; no batch, quantity, supplier, expiry, prescription, or movement is invented or transferred. |
+
 مصفوفة قابلة للتحديث بعد كل فحص شامل. استخدم بيانات موسومة `ACCEPTANCE` أو `e2e` فقط عند الحاجة، ولا تنظفها إلا بسكربت dry-run ثم تنفيذ صريح.
 
 | الدورة | المستخدم/الدور | بيانات مطلوبة | خطوات مختصرة | نتيجة متوقعة | tests/routes |
