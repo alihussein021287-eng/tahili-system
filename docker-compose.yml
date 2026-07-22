@@ -50,7 +50,9 @@ services:
       DATABASE_URL: postgresql://${DB_USER:?set DB_USER in .env}:${DB_PASSWORD:?set DB_PASSWORD in .env}@postgres:5432/${DB_NAME:?set DB_NAME in .env}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
       NEXTAUTH_URL: ${NEXTAUTH_URL:?set NEXTAUTH_URL in .env}
+      NEXTAUTH_URL_INTERNAL: ${NEXTAUTH_URL_INTERNAL:?set NEXTAUTH_URL_INTERNAL in .env}
       NEXTAUTH_ALLOW_HTTP_LOGIN: ${NEXTAUTH_ALLOW_HTTP_LOGIN:-false}
+      AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-false}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?set ADMIN_INITIAL_PASSWORD in .env}
       ALLOW_INITIAL_SETUP: ${ALLOW_INITIAL_SETUP:-false}
       MINIO_ENDPOINT: minio
@@ -66,7 +68,8 @@ services:
     volumes:
       - uploads:/app/uploads
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+      - "${TAHILI_LAN_IP:?set TAHILI_LAN_IP in .env}:3000:3000"
 
 volumes:
   pgdata:

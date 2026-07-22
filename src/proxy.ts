@@ -1,24 +1,61 @@
-import authMiddleware from "next-auth/middleware";
+import { getToken } from "next-auth/jwt";
+import { type NextRequest, NextResponse } from "next/server";
+import {
+  downstreamCookiesForLocalSession,
+  EnvironmentAccessConfigError,
+  resolveEnvironmentAccess,
+  serializedCookieHeader,
+} from "@/lib/environment-access";
 
-const authProxy = authMiddleware({
-  pages: { signIn: "/login" },
-  cookies: {
-    sessionToken: {
-      name: process.env.NEXTAUTH_ALLOW_HTTP_LOGIN === "true"
-        ? "next-auth.session-token"
-        : "__Secure-next-auth.session-token",
-    },
-  },
-});
+const PUBLIC_PATHS = [
+  /^\/setup(?:\/|$)/,
+  /^\/login(?:\/|$)/,
+  /^\/display(?:\/|$)/,
+  /^\/portal(?:\/|$)/,
+  /^\/api\/auth(?:\/|$)/,
+  /^\/api\/display(?:\/|$)/,
+  /^\/api\/reminders(?:\/|$)/,
+  /^\/favicon\.ico$/,
+  /^\/manifest\.json$/,
+  /^\/sw\.js$/,
+  /^\/icon-(?:192|512)\.png$/,
+];
 
-export function proxy(...args: Parameters<typeof authProxy>) {
-  return authProxy(...args);
+function isPublicPath(pathname: string) {
+  return PUBLIC_PATHS.some((pattern) => pattern.test(pathname));
+}
+
+export async function proxy(request: NextRequest) {
+  try {
+    const access = resolveEnvironmentAccess(request.headers);
+    if (!access) return new NextResponse("Unrecognized Tahili host", { status: 421 });
+    if (isPublicPath(request.nextUrl.pathname)) return NextResponse.next();
+
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
+      cookieName: access.sessionCookieName,
+    });
+    if (!token) {
+      const signInUrl = new URL("/login", access.origin);
+      signInUrl.searchParams.set("callbackUrl", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(signInUrl);
+    }
+
+    if (access.secure) return NextResponse.next();
+
+    const headers = new Headers(request.headers);
+    headers.set("cookie", serializedCookieHeader(downstreamCookiesForLocalSession(request.cookies.getAll())));
+    return NextResponse.next({ request: { headers } });
+  } catch (error) {
+    if (error instanceof EnvironmentAccessConfigError) {
+      console.error("[proxy] invalid environment access configuration");
+      return new NextResponse("Invalid authentication environment", { status: 500 });
+    }
+    throw error;
+  }
 }
 
 export const config = {
-  // حماية كل الصفحات ما عدا: الدخول، شاشة العرض باعتمادها المحدود، بوابة المريض، auth، راوت التذكيرات (محمي بمفتاح)،
-  // وملفات الـ PWA الثابتة (manifest/sw/الأيقونات) حتى يعمل التثبيت والعمل دون اتصال قبل الدخول
-  matcher: [
-    "/((?!setup|login|display(?:/|$)|portal|api/auth|api/display(?:/|$)|api/reminders|_next|favicon.ico|manifest.json|sw.js|icon-192.png|icon-512.png).*)",
-  ],
+  matcher: ["/((?!_next/).*)"],
 };

@@ -2,7 +2,8 @@
 set -u
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_URL="${TAHILI_HEALTH_URL:-http://127.0.0.1:3000}"
+configured_url="$(awk -F= '$1=="NEXTAUTH_URL_INTERNAL"{print $2}' "$ROOT_DIR/.env" 2>/dev/null | tail -1)"
+APP_URL="${TAHILI_HEALTH_URL:-$configured_url}"
 APP_CONTAINER="${TAHILI_APP_CONTAINER:-tahili_app}"
 DB_CONTAINER="${TAHILI_DB_CONTAINER:-tahili_db}"
 MINIO_CONTAINER="${TAHILI_MINIO_CONTAINER:-tahili_storage}"
@@ -43,7 +44,9 @@ else
 fi
 
 section "HTTP /login"
-if command -v curl >/dev/null 2>&1; then
+if [ -z "$APP_URL" ]; then
+  printf 'WARN: NEXTAUTH_URL_INTERNAL or TAHILI_HEALTH_URL is required; localhost fallback is disabled.\n'
+elif command -v curl >/dev/null 2>&1; then
   status_code="$(curl -fsS -o /dev/null -w '%{http_code}' "${APP_URL%/}/login" 2>/dev/null || printf '000')"
   printf '/login status: %s\n' "$status_code"
 else
@@ -79,15 +82,6 @@ if command -v docker >/dev/null 2>&1 && docker inspect "$APP_CONTAINER" >/dev/nu
   fi
 else
   printf 'WARN: app container unavailable; cannot read logs\n'
-fi
-
-section "Caddy"
-if systemctl list-unit-files caddy.service >/dev/null 2>&1; then
-  run_readonly systemctl is-active caddy
-elif command -v docker >/dev/null 2>&1; then
-  docker ps --filter "name=caddy" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
-else
-  printf 'WARN: Caddy status unavailable\n'
 fi
 
 printf '\nHealth check finished without making changes.\n'

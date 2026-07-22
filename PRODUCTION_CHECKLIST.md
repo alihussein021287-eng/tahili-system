@@ -2,6 +2,8 @@
 
 بوابة أمان قبل أي نقل إلى الإنتاج. إذا فشل أي بند قبل النقل، توقف ولا تلمس الإنتاج.
 
+العناوين وقاعدة الفحص في `ENVIRONMENTS.md`: فحص التطوير عبر `http://192.168.17.20:3000` والإنتاج عبر `http://192.168.17.228:3000` فقط. لا تجعل DNS أو الدومين أو Caddy بوابة للنشر دون طلب صريح.
+
 ## Preflight
 
 | البند | PASS/FAIL | ملاحظات |
@@ -43,7 +45,9 @@
 | `/reports-finance`, `/staff`, `/collaboration/files`, `/notifications` |  |  |
 | السايدبار بلا تكرار أو مجموعات فارغة أو overflow واضح |  |  |
 | logs الإنتاج بلا `500` أو Prisma أو `ERROR/FATAL` |  |  |
-| app/PostgreSQL/MinIO/Caddy/ClamAV تعمل |  |  |
+| `NEXTAUTH_URL` بقي دومين HTTPS و`NEXTAUTH_URL_INTERNAL` هو IP البيئة |  |  |
+| cookie IP غير Secure وhost-only؛ cookie الدومين Secure وhost-only وفق الاختبارات |  |  |
+| app/PostgreSQL/MinIO/ClamAV تعمل دون إعادة تشغيل غير لازمة |  |  |
 
 ## قيود ثابتة
 

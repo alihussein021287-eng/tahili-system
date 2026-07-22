@@ -6,6 +6,8 @@ description: Release a Tahili change to the development VM only. Use automatical
 # Tahili Development Release
 
 - Work only on the development VM at `/tahili-system`; never on production.
+- Read `ENVIRONMENTS.md`. Health checks, smoke tests, and Playwright use only `http://192.168.17.20:3000`; do not use localhost or the development domain.
+- Do not inspect DNS, FRP, or Caddy unless explicitly requested, and do not treat their state as an ordinary release blocker.
 - Before release actions, read `AGENTS.md`, `RUNBOOK.md`, `PRODUCTION_CHECKLIST.md`, and `OFFLINE_DEPLOYMENT.md`; use `scripts/health-check.sh` when a read-only service check is useful.
 - Confirm the requested commit exists in `origin/main` and the working tree has no relevant uncommitted tracked changes.
 - Fast-forward to the requested commit from `origin/main`; do not merge manually.
@@ -16,7 +18,7 @@ description: Release a Tahili change to the development VM only. Use automatical
 - Recreate only the app service with `--no-deps`.
 - Do not restart PostgreSQL or MinIO without an explicit need.
 - If ClamAV was added or changed, recreate only the needed service too; otherwise leave supporting services untouched.
-- Verify `/login`, changed pages, and the application startup log. For protected pages, verify either 200 with a valid session or expected redirect for unauthenticated access.
+- Verify `/login`, changed pages, and the application startup log through the development LAN IP. For protected pages, verify either 200 with a valid session or expected redirect for unauthenticated access.
 - Do not create rollback images or backups unless requested.
 - Never clean images, volumes, or data without an explicit request.
 - Never touch the production VM.

@@ -2,6 +2,8 @@
 
 دليل تشغيل يومي لتطوير Tahili على VM التطوير. لا تستخدمه لتغيير الإنتاج إلا مع طلب إنتاج صريح.
 
+اقرأ `ENVIRONMENTS.md` أولاً. كل فحص حي يستخدم IP البيئة فقط؛ لا تستخدم الدومين أو `localhost` ولا تفحص DNS/FRP/Caddy إلا بطلب صريح.
+
 ## فحص سريع
 
 ```bash
@@ -11,7 +13,7 @@ git rev-parse origin/main
 docker compose ps
 docker inspect -f '{{.Image}}' tahili_app
 docker image inspect tahili-system-app:latest --format '{{.Id}} {{.Created}}'
-curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/login
+curl -fsS -o /dev/null -w '%{http_code}\n' http://192.168.17.20:3000/login
 ```
 
 اترك `skills-lock.json` إذا ظهر untracked ولا تضفه إلا بطلب واضح.
@@ -52,10 +54,9 @@ docker inspect -f '{{.State.Status}} {{.State.RestartCount}}' tahili_db tahili_s
 docker logs --tail 80 tahili_db
 docker logs --tail 80 tahili_storage
 docker logs --tail 80 tahili_clamav
-systemctl status caddy --no-pager
 ```
 
-إذا لم يكن Caddy على systemd، افحصه بـ `docker ps --filter name=caddy`.
+لا يدخل Caddy أو DNS أو FRP في الفحص الاعتيادي. افحصها فقط عندما يطلب المستخدم ذلك صراحة.
 
 ## أوامر آمنة وممنوعة
 

@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { LOGIN_MAX_ATTEMPTS, LOGIN_LOCK_MINUTES } from "./security";
 import { getAdminConfig } from "./admin-config";
+import { type EnvironmentAccess, safeAuthRedirect } from "./environment-access";
 
 export function applyUserClaims(token: Record<string, unknown>, user?: Record<string, unknown>) {
   if (!user) return token;
@@ -36,7 +37,9 @@ export function loginLogWriteFailure(error: unknown) {
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: { signIn: "/login" },
-  useSecureCookies: process.env.NEXTAUTH_ALLOW_HTTP_LOGIN === "true" ? false : undefined,
+  // Server Components read the canonical secure name. LAN requests receive a
+  // request-only alias from proxy.ts; browsers never receive the secure alias.
+  useSecureCookies: true,
   providers: [
     CredentialsProvider({
       name: "credentials",
@@ -117,3 +120,14 @@ export const authOptions: NextAuthOptions = {
     },
   },
 };
+
+export function authOptionsForAccess(access: EnvironmentAccess): NextAuthOptions {
+  return {
+    ...authOptions,
+    useSecureCookies: access.secure,
+    callbacks: {
+      ...authOptions.callbacks,
+      redirect: ({ url }) => safeAuthRedirect(url, access.origin),
+    },
+  };
+}

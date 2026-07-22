@@ -32,7 +32,7 @@ npm run test:e2e -- --grep "[relevant pattern]"
 npx playwright test tests/e2e/[file].spec.ts --workers=1
 ```
 
-Use `localhost` for authenticated browser checks when NextAuth cookies matter.
+Read `ENVIRONMENTS.md` and use the environment LAN IP for authenticated browser checks. Never use localhost or either domain for live tests.
 
 ## Output Shape
 

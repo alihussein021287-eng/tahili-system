@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Environment Access"
+  short_description: "Enforce Tahili URL and live-check boundaries."
+  default_prompt: "Use $tahili-environment-access to apply the access matrix in ENVIRONMENTS.md."

@@ -6,6 +6,8 @@ description: Test and inspect Tahili changes on the development VM. Use automati
 # Tahili Quality Check
 
 - Work in `/tahili-system` on the development VM. Do not use the Windows checkout as the execution source unless explicitly requested.
+- Read `ENVIRONMENTS.md`. All live HTTP and Playwright checks use only `http://192.168.17.20:3000`; do not use localhost or either domain.
+- Do not inspect DNS, FRP, or Caddy unless explicitly requested. Their failure is not an ordinary application-check blocker.
 - Confirm `HEAD` matches the intended commit and note any untracked files before testing.
 - Run TypeScript checks and related tests first; run the full suite for shared or high-risk changes.
 - Inspect Server Actions, server-side permissions, and center isolation.
@@ -15,7 +17,7 @@ description: Test and inspect Tahili changes on the development VM. Use automati
 - Distinguish environment failures from application failures.
 - If Playwright CLI cannot start because npm access or browser channels are unavailable, use the repo's installed `@playwright/test` Chromium in a small headless check. Do not install browsers unless necessary.
 - If sandbox blocks local ports, Docker, browser launch, or localhost DB access during visual checks, rerun that read/verify step with escalation and classify it as environment-only unless the app still fails outside sandbox.
-- If local HTTP auth checks run while `NEXTAUTH_URL` is HTTPS, expect secure NextAuth cookies not to persist; use a temporary signed/manual auth cookie or local-only `NEXTAUTH_ALLOW_HTTP_LOGIN=true` for the check, without changing deployed env.
+- Keep `NEXTAUTH_URL` on the development HTTPS domain. Direct LAN authentication uses `NEXTAUTH_URL_INTERNAL` and the host-only non-Secure LAN cookie; do not replace the canonical URL with the IP.
 - Inspect application logs for HTTP 500 and Prisma errors.
 - For Docker-applied app changes, verify app is running, `/login` returns 200, and the changed route loads or redirects correctly for unauthenticated users.
 - For collaboration/files changes, verify ClamAV behavior only when the change affects upload, scan, download, permissions, or sharing.

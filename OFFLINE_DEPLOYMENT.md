@@ -2,6 +2,8 @@
 
 دليل نقل إنتاج عندما يكون الإنتاج بلا إنترنت. نفّذه فقط بعد بوابة `PRODUCTION_CHECKLIST.md` وبطلب إنتاج صريح.
 
+اتبع `ENVIRONMENTS.md`: كل فحص حي بعد النقل عبر `http://192.168.17.228:3000` فقط. لا تفحص الدومين أو DNS أو Caddy ضمن النقل الاعتيادي.
+
 ## البناء على VM التطوير
 
 ```bash
@@ -47,7 +49,7 @@ docker compose up -d --no-deps app
 ## فحوص بعد النقل
 
 ```bash
-curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/login
+curl -fsS -o /dev/null -w '%{http_code}\n' http://192.168.17.228:3000/login
 docker compose ps
 docker logs --tail 300 tahili_app 2>&1 | grep -Ei '500|Prisma|ERROR|FATAL' || true
 ```
@@ -56,4 +58,4 @@ docker logs --tail 300 tahili_app 2>&1 | grep -Ei '500|Prisma|ERROR|FATAL' || tr
 
 ## ملاحظات Caddy وDNS
 
-Caddy وDNS خارج app. لا تعدلهما أثناء نقل image إلا إذا كان العائق مثبتاً في التوجيه، وتوقف قبل أي تغيير خطر. إذا كانت المشكلة 502، افحص أن app يستمع على المنفذ المحلي المتوقع قبل لمس Caddy.
+Caddy وDNS وFRP خارج app ولا تدخل في health check أو smoke test. لا تفحصها أو تعدلها إلا بطلب صريح؛ فشلها لا يمنع اجتياز فحص التطبيق عبر IP.

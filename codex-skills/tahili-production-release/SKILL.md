@@ -9,13 +9,15 @@ description: Release Tahili to the production VM only after an explicit producti
 - Before production actions, read `AGENTS.md`, `RUNBOOK.md`, `PRODUCTION_CHECKLIST.md`, and `OFFLINE_DEPLOYMENT.md`; use `scripts/health-check.sh` for read-only development checks when useful.
 - The user has a separate development VM and production VM. Confirm the development VM is already green before production.
 - Target production only when explicitly requested: `root@192.168.17.228`; project `/tahili-system`; internal domain `https://tah.elaqat.site`.
+- Read `ENVIRONMENTS.md`. All production health checks, smoke tests, and Playwright use only `http://192.168.17.228:3000`; do not use localhost or the production domain.
+- Do not inspect DNS or Caddy unless explicitly requested, and do not treat their state as an ordinary application-release blocker.
 - Do not install Codex skills on production or depend on them there.
 - Keep production operable without Internet access: build the image on the development VM, confirm required runtime tools are inside the image, then transfer the image to production.
 - Office preview must use LibreOffice inside the Docker image, not the production host; before transfer, verify inside the image with `libreoffice --version` or `soffice --version`.
 - Apply migrations only with `prisma migrate deploy`; never use `prisma db push`.
 - If `DATABASE_URL` in compose uses an internal hostname, run migrations from the correct container/network context or with a correct URL, and never print secrets.
 - Preserve DNS, Caddy/domain/HTTPS, volumes, database, attachments, and Admin data unless an explicit clear request covers that exact action.
-- Verify after deployment: `/login`, `/readiness`, `/users` presence, `/collaboration/files`, ordinary PDF/text previews, Office preview with a nonsensitive test file when possible, cleanup any test file, and logs without HTTP 500 or Prisma errors.
+- Verify after deployment through the production LAN IP: `/login`, `/readiness`, `/users` presence, `/collaboration/files`, ordinary PDF/text previews, Office preview with a nonsensitive test file when possible, cleanup any test file, and logs without HTTP 500 or Prisma errors.
 - If Office preview fails on production, do not install LibreOffice on the host first; verify the image contains LibreOffice and the app uses the new image.
 - If a serious production blocker appears, stop and report before any step that could erase data or change DNS/Caddy/volumes.
 - Report a concise result without secrets or passwords.
