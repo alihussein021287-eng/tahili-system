@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili System Design"
+  short_description: "Design larger Tahili modules and workflows."
+  default_prompt: "Use $tahili-system-design to design this larger Tahili module or workflow."

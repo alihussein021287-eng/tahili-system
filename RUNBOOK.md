@@ -15,6 +15,7 @@ curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/login
 ```
 
 اترك `skills-lock.json` إذا ظهر untracked ولا تضفه إلا بطلب واضح.
+للفحص المجمع الآمن استخدم `scripts/health-check.sh`; السكربت للقراءة فقط ولا يطبع أسراراً.
 
 ## Logs والأخطاء
 
@@ -24,6 +25,7 @@ docker logs --tail 300 tahili_app 2>&1 | grep -Ei '500|Prisma|ERROR|FATAL' || tr
 ```
 
 عند 500: افتح آخر logs، حدّد route، افحص Prisma error أو permission redirect. عند Prisma: افحص `DATABASE_URL` داخل app فقط ولا تطبعها، ثم شغّل `migrate status`. عند فشل login: افحص NextAuth URL، الكوكيز، حالة المستخدم، و`authVersion`. عند فشل preview/رفع ملفات التعاون: افحص app logs، MinIO، ClamAV، وحالة scan.
+إذا ظهر Server Action mismatch بعد نشر حديث، اطلب من المستخدم تحديث الصفحة وتحقق من أنه غير متكرر في آخر logs قبل اعتباره عطل تطبيق.
 
 ## Migrations
 
@@ -62,3 +64,7 @@ systemctl status caddy --no-pager
 تحتاج موافقة أو طلب صريح: إعادة تشغيل خدمات داعمة، تعديل Caddy/DNS، حذف بيانات، تنظيف volumes، تغيير Admin، أو نقل الإنتاج.
 
 ممنوعة في التشغيل العادي: `git reset --hard`, حذف volumes، `prisma db push`، بناء npm على إنتاج بدون إنترنت، وطباعة الأسرار.
+
+## متى تتوقف
+
+توقف واطلب قراراً قبل أي خطوة قد تغيّر بيانات أو بنية تحتية: فشل migration، تكرار 5xx بعد إعادة إنشاء app، أخطاء اتصال قاعدة متكررة، فشل ClamAV/MinIO في مسار ملفات حرج، أو الحاجة لتعديل Caddy/DNS/Admin. خذ نسخة احتياطية قبل أي عملية استعادة أو تنظيف بيانات.

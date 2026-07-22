@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Architecture"
+  short_description: "Write ADRs for Tahili technical decisions."
+  default_prompt: "Use $tahili-architecture to draft an ADR for this Tahili decision."

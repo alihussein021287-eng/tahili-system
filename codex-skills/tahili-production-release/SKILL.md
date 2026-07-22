@@ -6,6 +6,7 @@ description: Release Tahili to the production VM only after an explicit producti
 # Tahili Production Release
 
 - Require an explicit production deployment request before any production action; never touch production for feature work, Git checks, quality checks, or development releases.
+- Before production actions, read `AGENTS.md`, `RUNBOOK.md`, `PRODUCTION_CHECKLIST.md`, and `OFFLINE_DEPLOYMENT.md`; use `scripts/health-check.sh` for read-only development checks when useful.
 - The user has a separate development VM and production VM. Confirm the development VM is already green before production.
 - Target production only when explicitly requested: `root@192.168.17.228`; project `/tahili-system`; internal domain `https://tah.elaqat.site`.
 - Do not install Codex skills on production or depend on them there.

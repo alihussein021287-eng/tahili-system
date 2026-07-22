@@ -36,3 +36,5 @@ Do not commit secrets, `.env` values, database dumps, or generated private artif
 ## Operational Memory
 
 Use the repository runbooks as the shared operating memory: `RUNBOOK.md`, `PRODUCTION_CHECKLIST.md`, `SYSTEM_MAP.md`, `ROLES_PERMISSIONS.md`, `ACCEPTANCE_MATRIX.md`, and `OFFLINE_DEPLOYMENT.md`. When a change affects operations, permissions, acceptance coverage, or production release flow, update only the relevant section. Keep these files concise and use `scripts/health-check.sh` or `scripts/cleanup-qa-data.ts` when their checks apply.
+
+Use Tahili workflow skills only when they fit the task: `tahili-write-spec` for large features before implementation, `tahili-system-design` for module design, `tahili-architecture` for ADRs, `tahili-code-review` for diff/code review, `tahili-testing-strategy` for test planning, and `tahili-dashboard` for monitoring, Grafana, or HTML dashboards. Do not use separate deploy/runbook skills when the same instructions already live in the runbooks unless they have been explicitly merged.

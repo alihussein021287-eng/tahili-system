@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Write Spec"
+  short_description: "Draft implementation-ready Tahili feature specs."
+  default_prompt: "Use $tahili-write-spec to write a concise implementation-ready spec for this Tahili change."

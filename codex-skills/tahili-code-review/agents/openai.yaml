@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Code Review"
+  short_description: "Review Tahili diffs for safety and correctness."
+  default_prompt: "Use $tahili-code-review to review these Tahili changes for safety and correctness."

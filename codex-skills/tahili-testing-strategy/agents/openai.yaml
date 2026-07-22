@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Testing Strategy"
+  short_description: "Plan targeted Tahili tests for changes."
+  default_prompt: "Use $tahili-testing-strategy to plan the right tests for this Tahili change."

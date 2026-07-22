@@ -6,6 +6,7 @@ description: Release a Tahili change to the development VM only. Use automatical
 # Tahili Development Release
 
 - Work only on the development VM at `/tahili-system`; never on production.
+- Before release actions, read `AGENTS.md`, `RUNBOOK.md`, `PRODUCTION_CHECKLIST.md`, and `OFFLINE_DEPLOYMENT.md`; use `scripts/health-check.sh` when a read-only service check is useful.
 - Confirm the requested commit exists in `origin/main` and the working tree has no relevant uncommitted tracked changes.
 - Fast-forward to the requested commit from `origin/main`; do not merge manually.
 - If new migrations exist, apply them only with `prisma migrate deploy`. On the development VM, `.env` may use Docker hostname `postgres`; host-side Prisma commands should use the localhost-published database URL without printing secrets.

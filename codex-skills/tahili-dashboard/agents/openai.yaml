@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Dashboard"
+  short_description: "Build Tahili monitoring and KPI dashboards."
+  default_prompt: "Use $tahili-dashboard to design or build this Tahili dashboard."

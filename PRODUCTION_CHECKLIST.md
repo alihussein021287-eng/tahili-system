@@ -8,12 +8,16 @@
 | --- | --- | --- |
 | `git status --short --branch` لا يحتوي تغييرات tracked |  |  |
 | `HEAD` يساوي `origin/main` أو أحدث بنفس سلسلة العمل |  |  |
+| لا توجد عملية نشر أخرى جارية |  |  |
 | `skills-lock.json` غير ملموس إذا كان untracked |  |  |
 | `npx tsc --noEmit` نجح |  |  |
 | `npm run build` نجح على VM التطوير |  |  |
 | الاختبارات المطلوبة نجحت |  |  |
 | `prisma migrate status` لا يظهر تعارضاً |  |  |
+| نسخة احتياطية موثقة إذا توجد migration أو تغيير بيانات |  |  |
 | صورة التطوير SHA موثقة |  |  |
+| أدوات runtime داخل image مؤكدة إذا تغيرت الملفات/preview/ClamAV/LibreOffice |  |  |
+| لا secrets أو كلمات مرور في diff أو logs |  |  |
 | logs التطوير بلا `500` أو Prisma أو `ERROR/FATAL` |  |  |
 
 ## نقل صورة بدون إنترنت
