@@ -23,3 +23,5 @@
 | التنبيهات | أي دور | إشعار مستهدف | فتح مركز التنبيهات والرابط | الروابط غير المسموحة لا تفتح | `notifications`, `/notifications` |
 | الإعدادات والمراكز/القاعات | Admin/مدير مركز | مركز وقاعات | تعديل إعدادات، إدارة قاعات وعضويات | النظام يمنع غير المخول | `center-halls`, `/settings`, `/permissions` |
 | الجاهزية والنسخ | Admin | بيانات تشغيلية | فتح readiness، فحص backup، status | مؤشرات واضحة بلا أسرار | `readiness-config`, `/readiness`, `/backup` |
+| UX والملاحة الشاملة | الأدوار الرئيسية | مراجع متنوع البيانات | فحص AppShell والصفحات الجامعة وملف المراجع والتبويبات والروابط العميقة على desktop/mobile RTL | لا overflow أو 500، التبويبات حسب الصلاحية، الرجوع والتحديث يعملان | `app-shell-navigation`, `patient-tabs-navigation`, `docs/UX_ROUTE_INVENTORY.md` |
+| جرد routes | آلي | لا يحتاج بيانات | مقارنة كل `page.tsx` و`route.ts` مع الجرد و`SYSTEM_MAP.md` | 92 صفحة و18 API، غير المفحوص صفر | `route-inventory.test.ts`, `docs/UX_ROUTE_INVENTORY.md` |
