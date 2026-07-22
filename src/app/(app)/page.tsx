@@ -30,6 +30,7 @@ const HUB_LINKS = {
   reportsPatients: "/reports-finance?tab=patients",
   reportsOfficial: "/reports-finance?tab=official",
   finance: "/reports-finance?tab=finance",
+  readiness: "/readiness",
 } as const;
 
 const DASHBOARD_LINK_REPLACEMENTS: Record<string, string> = {
@@ -70,6 +71,7 @@ export default async function Dashboard() {
     { href: HUB_LINKS.therapyMeds, label: "أدوية الراقدين", icon: "💊", perm: "meds.view" },
     { href: HUB_LINKS.finance, label: "المالية", icon: "💰", perm: "finance.view" },
     { href: "/analytics", label: "التحليلات", icon: "📊", perm: "analytics.view" },
+    { href: HUB_LINKS.readiness, label: "جاهزية النظام", icon: "✅", perm: "settings.view" },
     { href: HUB_LINKS.reportsOfficial, label: "التقرير الرسمي", icon: "📄", perm: "reports.official" },
     { href: HUB_LINKS.pharmacyStock, label: "المخزون", icon: "📦", perm: "inventory.view" },
     { href: HUB_LINKS.staffAttendance, label: "الحضور", icon: "🕒", perm: "attendance.view" },
@@ -249,6 +251,7 @@ export default async function Dashboard() {
         { label: "مراجعين نشطين", value: active, href: HUB_LINKS.reportsPatients, perm: "reports.view" },
         { label: "مستخدمون فعالون", value: activeUsers, href: "/users", perm: "users.view" },
         { label: "تدقيق اليوم", value: auditToday, href: "/audit", perm: "audit.view" },
+        { label: "جاهزية النظام", value: "فحص", href: HUB_LINKS.readiness, perm: "settings.view" },
         { label: "التقارير", value: "فتح", href: HUB_LINKS.reportsOfficial, perm: "reports.official" },
         { label: "المحطات", value: "فتح", href: "/station-kpis", perm: "reports.view" },
       ],
