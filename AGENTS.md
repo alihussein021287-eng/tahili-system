@@ -32,3 +32,7 @@ Recent history uses short imperative subjects, sometimes with Conventional Commi
 ## Security & Configuration Tips
 
 Do not commit secrets, `.env` values, database dumps, or generated private artifacts. Keep migrations explicit and review Prisma changes before deployment. Do not restart or modify production services unless the task explicitly asks for a production release.
+
+## Operational Memory
+
+Use the repository runbooks as the shared operating memory: `RUNBOOK.md`, `PRODUCTION_CHECKLIST.md`, `SYSTEM_MAP.md`, `ROLES_PERMISSIONS.md`, `ACCEPTANCE_MATRIX.md`, and `OFFLINE_DEPLOYMENT.md`. When a change affects operations, permissions, acceptance coverage, or production release flow, update only the relevant section. Keep these files concise and use `scripts/health-check.sh` or `scripts/cleanup-qa-data.ts` when their checks apply.

@@ -1,0 +1,64 @@
+# Runbook
+
+دليل تشغيل يومي لتطوير Tahili على VM التطوير. لا تستخدمه لتغيير الإنتاج إلا مع طلب إنتاج صريح.
+
+## فحص سريع
+
+```bash
+git status --short --branch
+git rev-parse HEAD
+git rev-parse origin/main
+docker compose ps
+docker inspect -f '{{.Image}}' tahili_app
+docker image inspect tahili-system-app:latest --format '{{.Id}} {{.Created}}'
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/login
+```
+
+اترك `skills-lock.json` إذا ظهر untracked ولا تضفه إلا بطلب واضح.
+
+## Logs والأخطاء
+
+```bash
+docker logs --tail 200 tahili_app
+docker logs --tail 300 tahili_app 2>&1 | grep -Ei '500|Prisma|ERROR|FATAL' || true
+```
+
+عند 500: افتح آخر logs، حدّد route، افحص Prisma error أو permission redirect. عند Prisma: افحص `DATABASE_URL` داخل app فقط ولا تطبعها، ثم شغّل `migrate status`. عند فشل login: افحص NextAuth URL، الكوكيز، حالة المستخدم، و`authVersion`. عند فشل preview/رفع ملفات التعاون: افحص app logs، MinIO، ClamAV، وحالة scan.
+
+## Migrations
+
+```bash
+docker compose exec -T app npx prisma migrate status
+docker compose exec -T app npx prisma migrate deploy
+```
+
+استخدم `migrate deploy` فقط للبيئات المشتركة. لا تستخدم `prisma db push`.
+
+## إعادة إنشاء app فقط
+
+```bash
+docker compose build app
+docker compose up -d --no-deps app
+```
+
+لا تعيد تشغيل PostgreSQL أو MinIO أو Caddy أو ClamAV إلا إذا كان العطل في الخدمة نفسها وبموافقة واضحة.
+
+## فحص الخدمات الداعمة
+
+```bash
+docker inspect -f '{{.State.Status}} {{.State.RestartCount}}' tahili_db tahili_storage tahili_clamav tahili_app
+docker logs --tail 80 tahili_db
+docker logs --tail 80 tahili_storage
+docker logs --tail 80 tahili_clamav
+systemctl status caddy --no-pager
+```
+
+إذا لم يكن Caddy على systemd، افحصه بـ `docker ps --filter name=caddy`.
+
+## أوامر آمنة وممنوعة
+
+آمنة للقراءة: `git status`, `git log`, `docker compose ps`, `docker logs`, `curl /login`, `prisma migrate status`, `df -h`, `free -h`.
+
+تحتاج موافقة أو طلب صريح: إعادة تشغيل خدمات داعمة، تعديل Caddy/DNS، حذف بيانات، تنظيف volumes، تغيير Admin، أو نقل الإنتاج.
+
+ممنوعة في التشغيل العادي: `git reset --hard`, حذف volumes، `prisma db push`، بناء npm على إنتاج بدون إنترنت، وطباعة الأسرار.
