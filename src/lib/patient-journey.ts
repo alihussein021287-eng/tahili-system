@@ -14,6 +14,7 @@ export type DerivedJourneyStage = {
 type JourneyInput = {
   id: string;
   registrationDate: Date;
+  careStages?: { station: string; status: string; responsibleRole?: string | null; confirmedAt?: Date | null; createdAt: Date; updatedAt: Date }[];
   visits?: { visitDate: Date }[];
   residentReviews?: { date: Date; referralNeeded?: boolean | null }[];
   diagnoses?: { date: Date; type?: string | null }[];
@@ -43,6 +44,10 @@ export function derivePatientJourney(patient: JourneyInput, now = new Date()): D
   const programs = patient.centerPrograms ?? [];
   const logs = patient.therapySessionLogs ?? [];
   const appointments = patient.appointments ?? [];
+  const careStages = patient.careStages ?? [];
+  const currentCareStage = careStages.find((item) => ["WAITING", "IN_PROGRESS"].includes(item.status));
+  const latestCareStage = newest(careStages.map((item) => item.confirmedAt ?? item.updatedAt ?? item.createdAt));
+  const careIsFor = (roles: string[]) => Boolean(currentCareStage?.responsibleRole && roles.includes(currentCareStage.responsibleRole));
 
   const latestVisit = newest(visits.map((item) => item.visitDate));
   const latestReview = newest(reviews.map((item) => item.date));
@@ -73,27 +78,27 @@ export function derivePatientJourney(patient: JourneyInput, now = new Date()): D
     }, patient.id),
     stage({
       key: "intake", label: "الاستقبال / المقيم",
-      status: latestReview ? "complete" : latestVisit ? "current" : "upcoming",
-      lastActionAt: latestReview ?? latestVisit,
+      status: latestReview ? "complete" : latestVisit || careIsFor(["RECEPTION", "RESIDENT"]) ? "current" : "upcoming",
+      lastActionAt: latestReview ?? (careIsFor(["RECEPTION", "RESIDENT"]) ? latestCareStage : latestVisit),
       responsibleRoles: ["RECEPTION", "RESIDENT"],
-      reason: latestVisit && !latestReview ? "توجد زيارة بلا مراجعة مقيم مسجلة." : !latestVisit ? "بانتظار زيارة أو حضور فعلي." : null,
+      reason: careIsFor(["RECEPTION", "RESIDENT"]) ? `محطة ${currentCareStage?.station} تنتظر ${currentCareStage?.responsibleRole}.` : latestVisit && !latestReview ? "توجد زيارة بلا مراجعة مقيم مسجلة." : !latestVisit ? "بانتظار زيارة أو حضور فعلي." : null,
       tab: latestReview ? "resident" : "overview",
       requiredPermissions: latestReview ? ["clinical.view", "clinical.wound", "clinical.metrics"] : ["visits.view", "patients.view"],
     }, patient.id),
     stage({
       key: "specialist", label: "الاختصاص",
-      status: latestDiagnosis || referrals.some((item) => ["REVIEWED", "ACCEPTED"].includes(item.status)) ? "complete" : hasClinical ? "current" : "not_required",
-      lastActionAt: newest([latestDiagnosis, latestReferral]),
+      status: latestDiagnosis || referrals.some((item) => ["REVIEWED", "ACCEPTED"].includes(item.status)) ? "complete" : hasClinical || careIsFor(["DOCTOR"]) ? "current" : "not_required",
+      lastActionAt: newest([latestDiagnosis, latestReferral, careIsFor(["DOCTOR"]) ? latestCareStage : null]),
       responsibleRoles: ["DOCTOR"],
-      reason: hasClinical && !latestDiagnosis ? "الحالة السريرية أو الإحالة موجودة بلا قرار اختصاص مكتمل." : !hasClinical ? "لا توجد بيانات تشير إلى حاجة حالية للاختصاص." : null,
+      reason: careIsFor(["DOCTOR"]) ? `محطة ${currentCareStage?.station} تنتظر طبيب الاختصاص.` : hasClinical && !latestDiagnosis ? "الحالة السريرية أو الإحالة موجودة بلا قرار اختصاص مكتمل." : !hasClinical ? "لا توجد بيانات تشير إلى حاجة حالية للاختصاص." : null,
       tab: "diag", requiredPermissions: ["clinical.view", "clinical.diagnosis", "clinical.report"],
     }, patient.id),
     stage({
       key: "referral", label: "الإحالة / العلاج",
-      status: referralAccepted || hasTreatment ? "complete" : referralOpen ? "current" : needsReferral ? "blocked" : "not_required",
-      lastActionAt: newest([latestReferral, latestPlan, latestProgram]),
+      status: referralAccepted || hasTreatment ? "complete" : referralOpen || careIsFor(["HEAD_THERAPIST", "THERAPIST"]) ? "current" : needsReferral ? "blocked" : "not_required",
+      lastActionAt: newest([latestReferral, latestPlan, latestProgram, careIsFor(["HEAD_THERAPIST", "THERAPIST"]) ? latestCareStage : null]),
       responsibleRoles: ["RESIDENT", "DOCTOR", "HEAD_THERAPIST"],
-      reason: referralOpen ? "الإحالة لم تصل بعد إلى قرارها التالي." : needsReferral && !referralAccepted && !hasTreatment ? "توجد حاجة إحالة بلا قبول أو خطة مرتبطة." : !needsReferral && !hasTreatment ? "لا توجد إحالة أو خطة علاج مطلوبة حالياً." : null,
+      reason: careIsFor(["HEAD_THERAPIST", "THERAPIST"]) ? `محطة ${currentCareStage?.station} تنتظر دور العلاج.` : referralOpen ? "الإحالة لم تصل بعد إلى قرارها التالي." : needsReferral && !referralAccepted && !hasTreatment ? "توجد حاجة إحالة بلا قبول أو خطة مرتبطة." : !needsReferral && !hasTreatment ? "لا توجد إحالة أو خطة علاج مطلوبة حالياً." : null,
       tab: referrals.length ? "referrals" : "therapyProgram",
       requiredPermissions: referrals.length ? ["referrals.view"] : ["therapy.view", "centers.view"],
     }, patient.id),

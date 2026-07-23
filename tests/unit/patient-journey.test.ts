@@ -35,4 +35,21 @@ describe("derived patient journey", () => {
     expect(nextPatientStep(stages, new Set(["visits.view"]))?.key).toBe("intake");
     expect(nextPatientStep(stages, new Set())).toBeNull();
   });
+
+  it("uses an existing CareStage as evidence without storing a new journey state", () => {
+    const stages = derivePatientJourney({
+      id: "p1",
+      registrationDate,
+      careStages: [{
+        station: "الطبيب الاختصاص",
+        status: "WAITING",
+        responsibleRole: "DOCTOR",
+        createdAt: new Date("2026-07-22T08:00:00.000Z"),
+        updatedAt: new Date("2026-07-22T09:00:00.000Z"),
+      }],
+    }, now);
+    const specialist = stages.find((stage) => stage.key === "specialist");
+    expect(specialist?.status).toBe("current");
+    expect(specialist?.reason).toContain("الطبيب الاختصاص");
+  });
 });
