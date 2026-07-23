@@ -24,7 +24,14 @@
 - كل health check أو smoke test أو Playwright بعد النشر يستخدم عنوان LAN فقط.
 - لا تستخدم `localhost` ما دام عنوان LAN متاحاً.
 - لا ترسل فحصاً حياً إلى الدومين، ولا تفحص DNS أو FRP أو Caddy إلا بطلب صريح.
+- عند وجود طلب صريح لتشخيص الدومين، يجوز فحص الدومين وDNS وFRP وCaddy الخاصة بالبيئة المطلوبة فقط؛ تبقى الفحوص الاعتيادية عبر IP.
 - فشل DNS أو الدومين ليس مانعاً لفحص التطبيق الاعتيادي.
+
+## مسار بروكسي التطوير
+
+- اتصال FRP من `192.168.17.20` إلى `62.171.173.4` يجب أن يبقى عبر routing table `main`.
+- يجب أن يحافظ بروكسي التطوير على `Host: tahili.elaqat.site` و`X-Forwarded-Host: tahili.elaqat.site` و`X-Forwarded-Proto: https`.
+- أي تغيير في Caddy أو FRP لتشخيص دومين التطوير يقتصر على site/proxy الخاص بـ`https://tahili.elaqat.site`.
 
 ## الفصل بين البيئتين
 

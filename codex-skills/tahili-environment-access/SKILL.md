@@ -11,8 +11,12 @@ description: Enforce Tahili development and production URL, authentication, cook
 - Production live checks use only `http://192.168.17.228:3000`.
 - Do not use `localhost` when the LAN IP is available.
 - Do not send live checks to `tahili.elaqat.site` or `tah.elaqat.site`; do not inspect DNS, FRP, or Caddy unless the user explicitly requests it.
+- When a user explicitly requests domain diagnosis, inspect only that environment's domain and proxy path; routine checks remain LAN-IP-only.
+- Development FRP traffic from `192.168.17.20` to `62.171.173.4` must remain on routing table `main`.
+- The development proxy must preserve `Host: tahili.elaqat.site`, `X-Forwarded-Host: tahili.elaqat.site`, and `X-Forwarded-Proto: https`.
 - Keep `NEXTAUTH_URL` on the environment HTTPS domain, `NEXTAUTH_URL_INTERNAL` on its LAN URL, `NEXTAUTH_ALLOW_HTTP_LOGIN=true`, and `AUTH_TRUST_HOST=true` only with the application allowlist enabled.
 - Domain sessions must use Secure host-only cookies. LAN sessions use non-Secure host-only cookies. Never set a shared Cookie Domain or accept an unknown Host/callback.
+- Never use `tcpdump` (or an equivalent packet capture) to collect HTTP payloads, cookies, or `Authorization` headers. Diagnose with redacted response/request headers or a temporary QA session whose credentials and session are removed immediately afterward.
 - Never copy `.env`, credentials, data, uploads, backups, volumes, or infrastructure configuration between environments.
 - Port 3000 is LAN/loopback only. Do not create public forwarding or modify MikroTik, DNS, FRP, or Caddy.
 - Do not print secrets, passwords, CSRF values, or session tokens.
