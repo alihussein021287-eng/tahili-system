@@ -12,7 +12,9 @@ export default async function WorkspacesPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="مساحاتي" subtitle="اختصارات العمل اليومية المتاحة حسب دورك وصلاحياتك" icon="◇" />
+      <PageHeader title="مساحاتي" subtitle="اختصارات العمل اليومية المتاحة حسب دورك وصلاحياتك" icon="◇">
+        <Link href="/my-work" className="btn-primary">فتح قائمة عملي</Link>
+      </PageHeader>
 
       {workspaces.length === 0 ? (
         <EmptyState title="لا توجد مساحات متاحة" description="لا توجد اختصارات مرتبطة بصلاحيات حسابك الحالية. راجع مسؤول النظام عند الحاجة." />

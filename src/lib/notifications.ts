@@ -1,4 +1,7 @@
+import { requiredPermissionsForHref } from "@/lib/work-registry";
+
 export type NotificationKind = "tasks" | "appointments" | "inventory" | "devices" | "referrals" | "collaboration" | "system";
+export type NotificationBucket = "urgent" | "action" | "info";
 
 export type NotificationTone = {
   kind: NotificationKind;
@@ -34,6 +37,48 @@ export function notificationTone(input: { title?: string | null; link?: string |
   return TONES[notificationKind(input)];
 }
 
+export function notificationBucket(input: { title?: string | null; body?: string | null; link?: string | null; read?: boolean }) {
+  const text = `${input.title ?? ""} ${input.body ?? ""}`;
+  if (/عاجل|متأخر|فشل|مرفوض|مقفل|منتهي|نفاد|خطر/.test(text)) return "urgent" as const;
+  if (!input.read || input.link || /ينتظر|مطلوب|اعتماد|مراجعة|تنفيذ|استلام|تجهيز/.test(text)) return "action" as const;
+  return "info" as const;
+}
+
+export function canonicalNotificationLink(link?: string | null) {
+  if (!link) return null;
+  const replacements: Record<string, string> = {
+    "/tasks": "/staff?tab=tasks",
+    "/appointments": "/patients-care?tab=appointments",
+    "/queue": "/patients-care?tab=queue",
+    "/visits": "/patients-care?tab=visits",
+    "/referrals": "/patients-care?tab=referrals",
+    "/pharmacy": "/pharmacy-inventory?tab=dispense",
+    "/inventory": "/pharmacy-inventory?tab=stock",
+    "/finance": "/reports-finance?tab=finance",
+    "/approvals": "/reports-finance?tab=approvals",
+  };
+  return replacements[link] ?? link;
+}
+
+export function groupNotifications<T extends { id: string; title: string; body?: string | null; link?: string | null; read: boolean; createdAt: Date }>(rows: T[]) {
+  const groups = new Map<string, T & { groupedCount: number; groupedIds: string[]; bucket: NotificationBucket; canonicalLink: string | null }>();
+  for (const row of rows) {
+    const canonicalLink = canonicalNotificationLink(row.link);
+    const bucket = notificationBucket({ ...row, link: canonicalLink });
+    const key = `${row.read ? "read" : "unread"}|${row.title}|${canonicalLink ?? ""}|${bucket}`;
+    const current = groups.get(key);
+    if (current) {
+      current.groupedCount += 1;
+      current.groupedIds.push(row.id);
+      if (row.createdAt > current.createdAt) Object.assign(current, row, { canonicalLink, bucket });
+    } else {
+      groups.set(key, { ...row, groupedCount: 1, groupedIds: [row.id], canonicalLink, bucket });
+    }
+  }
+  const rank: Record<NotificationBucket, number> = { urgent: 0, action: 1, info: 2 };
+  return [...groups.values()].sort((a, b) => rank[a.bucket] - rank[b.bucket] || b.createdAt.getTime() - a.createdAt.getTime());
+}
+
 function tabOf(link: string) {
   const query = link.split("?")[1] ?? "";
   if (!query) return "";
@@ -46,6 +91,8 @@ function tabOf(link: string) {
 
 export function permissionsForLink(link?: string | null) {
   if (!link) return null;
+  const registered = requiredPermissionsForHref(link);
+  if (registered) return registered;
   const tab = tabOf(link);
   if (link.startsWith("/staff")) {
     if (tab === "tasks") return ["tasks.view"];

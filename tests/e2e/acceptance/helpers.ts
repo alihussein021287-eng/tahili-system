@@ -6,6 +6,7 @@ export const ROOT = "/tahili-system/test-results/acceptance-20260713";
 export const STATES = path.join(ROOT, "storage-states");
 export const EVIDENCE = path.join(ROOT, "screenshots");
 export const RUN_ID = process.env.ACCEPTANCE_RUN_ID || `RUN-${Date.now()}`;
+export const BASE_URL = process.env.E2E_BASE_URL || "http://192.168.17.20:3000";
 
 export type Credential = { role: string; username: string; password: string };
 
@@ -33,7 +34,7 @@ export function expectedIdentityText(user: Credential) {
 
 export async function contextFor(browser: Browser, role: string, suffix?: string): Promise<BrowserContext> {
   const user = credential(role, suffix);
-  return browser.newContext({ storageState: statePath(user), baseURL: "http://localhost:3000" });
+  return browser.newContext({ storageState: statePath(user), baseURL: BASE_URL });
 }
 
 export async function pageFor(browser: Browser, role: string, suffix?: string) {

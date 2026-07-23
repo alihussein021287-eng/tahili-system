@@ -37,7 +37,7 @@ describe("UX route inventory", () => {
   it("lists every page.tsx exactly once", () => {
     const actual = findFiles("src/app", "page.tsx").map(pageRoute).sort();
     const documented = documentedRoutes(pagesSection);
-    expect(actual).toHaveLength(92);
+    expect(actual).toHaveLength(93);
     expect(documented).toEqual(actual);
   });
 
@@ -49,7 +49,7 @@ describe("UX route inventory", () => {
   });
 
   it("keeps the reviewed category totals explicit", () => {
-    expect(doc).toContain("| `VISUAL` | 72 |");
+    expect(doc).toContain("| `VISUAL` | 73 |");
     expect(doc).toContain("| `UNCHANGED` | 4 |");
     expect(doc).toContain("| `PRINT` | 13 |");
     expect(doc).toContain("| `LEGACY` | 3 |");

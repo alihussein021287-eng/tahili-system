@@ -1,13 +1,12 @@
 import fs from "node:fs";
 import { chromium, expect } from "@playwright/test";
-import { credentials, expectedIdentityText, statePath, STATES } from "./helpers";
+import { BASE_URL, credentials, expectedIdentityText, statePath, STATES } from "./helpers";
 
 export default async function globalSetup() {
   fs.mkdirSync(STATES, { recursive: true, mode: 0o700 });
-  if (credentials().every((user) => fs.existsSync(statePath(user)))) return;
   const browser = await chromium.launch({ headless: true });
   for (const user of credentials()) {
-    const context = await browser.newContext({ baseURL: "http://localhost:3000" });
+    const context = await browser.newContext({ baseURL: BASE_URL });
     const page = await context.newPage();
     await page.goto("/login");
     await page.locator("#u").fill(user.username);

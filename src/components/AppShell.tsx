@@ -12,6 +12,13 @@ import { PresencePing } from "./PresencePing";
 import { canOpenNotification, notificationTone } from "@/lib/notifications";
 import type { PresenceConfig } from "@/lib/presence";
 import { isThemePreference, resolveTheme, THEME_STORAGE_KEY, type ThemePreference } from "@/lib/theme";
+import {
+  ALL_ITEMS as REGISTRY_ITEMS,
+  MOBILE_QUICK_HREFS as REGISTRY_MOBILE_QUICK_HREFS,
+  NAV_GROUPS as REGISTRY_NAV_GROUPS,
+  ROLE_SIDEBAR_RULES as REGISTRY_ROLE_SIDEBAR_RULES,
+  STANDALONE as REGISTRY_STANDALONE,
+} from "@/lib/work-registry";
 
 type Item = { href: string; label: string; icon: string; navLabel?: string; perm?: string; perms?: string[] };
 type NavGroup = { key: string; title: string; icon: string; href: string; hrefs: string[] };
@@ -188,13 +195,13 @@ export function AppShell({
 
   const permSet = new Set(perms);
   const hasAccess = (it: Item) => (it.perm ? permSet.has(it.perm) : false) || (it.perms?.some((perm) => permSet.has(perm)) ?? false);
-  const allItems = ALL_ITEMS.filter(hasAccess);
-  const sidebarRule = role === "ADMIN" ? undefined : ROLE_SIDEBAR_RULES[String(role ?? "")];
+  const allItems = REGISTRY_ITEMS.filter(hasAccess);
+  const sidebarRule = role === "ADMIN" ? undefined : REGISTRY_ROLE_SIDEBAR_RULES[role as keyof typeof REGISTRY_ROLE_SIDEBAR_RULES];
   const roleAllowsStandalone = (href: string) => !sidebarRule || sidebarRule.standalone.includes(href);
   const roleAllowsGroup = (key: string) => !sidebarRule || sidebarRule.groups.includes(key);
   const roleAllowsHref = (href: string) => !sidebarRule?.hrefs || sidebarRule.hrefs.includes(href);
   const byHref: Record<string, Item> = {};
-  for (const it of ALL_ITEMS) byHref[it.href] = it;
+  for (const it of REGISTRY_ITEMS) byHref[it.href] = it;
   // ربط كل نوع إشعار بصفحته — تظهر كشارة على القائمة (نفس فكرة شارة الصيدلية)
   const a = alerts ?? { admOver: 0, devicesDue: 0, lowStock: 0, rxPending: 0, expiringSoon: 0, myTasks: 0, overdueTasks: 0, appointmentSoon: 0 };
   const ALERT_BY_HREF: Record<string, { count: number; title: string }> = {
@@ -229,7 +236,7 @@ export function AppShell({
     if (path !== hrefPath && !path.startsWith(`${hrefPath}/`)) return false;
     return hrefQuery ? path === hrefPath && queryMatches(hrefQuery) : true;
   };
-  const matches = ALL_ITEMS.filter(itemMatches);
+  const matches = REGISTRY_ITEMS.filter(itemMatches);
   const matchedHref = matches.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? "";
   const legacyActiveHref =
     path === "/patients-care" ? "/patients-care?tab=overview" :
@@ -259,12 +266,12 @@ export function AppShell({
     path === "/shifts" ? "/staff?tab=shifts" :
     "";
   const activeHref = matchedHref || legacyActiveHref;
-  const activeGroupKey = NAV_GROUPS.find((g) => g.hrefs.includes(activeHref))?.key ?? "";
+  const activeGroupKey = REGISTRY_NAV_GROUPS.find((g) => g.hrefs.includes(activeHref))?.key ?? "";
 
   // حالة الطي لكل مجموعة — تبدأ مفتوحة على المجموعة الفعّالة
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
-    for (const g of NAV_GROUPS) init[g.key] = g.key === activeGroupKey;
+    for (const g of REGISTRY_NAV_GROUPS) init[g.key] = g.key === activeGroupKey;
     return init;
   });
   useEffect(() => {
@@ -333,10 +340,10 @@ export function AppShell({
   const NavLinks = ({ compact = false }: { compact?: boolean }) => (
     <nav className="space-y-1 p-3">
       {/* عناصر مفردة (الرئيسية) */}
-      {STANDALONE.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsStandalone(it.href)).map((it) => renderItem(it, false, compact))}
+      {REGISTRY_STANDALONE.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsStandalone(it.href)).map((it) => renderItem(it, false, compact))}
 
       {/* المجموعات */}
-      {NAV_GROUPS.map((g) => {
+      {REGISTRY_NAV_GROUPS.map((g) => {
         if (!roleAllowsGroup(g.key)) return null;
         const groupItem = byHref[g.href];
         const groupLink = groupItem && hasAccess(groupItem) ? groupItem : undefined;
@@ -382,7 +389,7 @@ export function AppShell({
     </nav>
   );
   const MobileQuickNav = () => {
-    const items = MOBILE_QUICK_HREFS.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsHref(it.href));
+    const items = REGISTRY_MOBILE_QUICK_HREFS.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsHref(it.href));
     if (items.length === 0) return null;
     return (
       <nav className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
@@ -414,7 +421,7 @@ export function AppShell({
   );
 
   const activeItem = byHref[activeHref];
-  const activeGroup = NAV_GROUPS.find((group) => group.key === activeGroupKey);
+  const activeGroup = REGISTRY_NAV_GROUPS.find((group) => group.key === activeGroupKey);
   const breadcrumbLabel = activeItem?.navLabel ?? activeItem?.label;
 
   return (

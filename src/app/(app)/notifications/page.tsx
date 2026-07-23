@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { currentPerms, getSession } from "@/lib/access";
 import { markAllNotificationsRead, markNotificationRead } from "@/lib/notif-actions";
-import { canOpenNotification, NOTIFICATION_KINDS, notificationKind, notificationTone } from "@/lib/notifications";
+import { canOpenNotification, groupNotifications, NOTIFICATION_KINDS, notificationKind, notificationTone } from "@/lib/notifications";
 import { fmtDateTime } from "@/lib/labels";
 import { EmptyState, PageTabs } from "@/components/Ui";
 
@@ -35,6 +35,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const filtered = KIND_FILTERS.has(filter)
     ? visible.filter((n) => notificationKind(n) === filter)
     : visible;
+  const grouped = groupNotifications(filtered);
   const unreadCount = visible.filter((n) => !n.read).length;
 
   return (
@@ -52,17 +53,24 @@ export default async function NotificationsPage({ searchParams }: { searchParams
       <PageTabs active={filter} label="فلاتر التنبيهات" tabs={NOTIFICATION_KINDS.map((item) => ({ key: item.value, href: `/notifications?filter=${item.value}`, label: item.label }))} />
 
       <div className="card overflow-hidden">
-        {filtered.length === 0 ? (
+        {grouped.length === 0 ? (
           <EmptyState title="لا توجد تنبيهات مطابقة" description="جرّب فلتر الكل أو ستظهر التنبيهات الجديدة هنا عند وصولها." />
         ) : (
           <div className="divide-y divide-gray-100">
-            {filtered.map((n) => {
+            {grouped.map((n) => {
               const tone = notificationTone(n);
+              const bucket = n.bucket === "urgent"
+                ? { label: "عاجل", className: "bg-red-50 text-red-700" }
+                : n.bucket === "action"
+                  ? { label: "يحتاج إجراء", className: "bg-amber-50 text-amber-700" }
+                  : { label: "معلومات", className: "bg-slate-100 text-slate-600" };
               return (
                 <div key={n.id} className={`flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between ${n.read ? "bg-white" : "bg-brand-50/25"}`}>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full border px-2 py-0.5 text-[11px] ${tone.className}`}>{tone.icon} {tone.label}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${bucket.className}`}>{bucket.label}</span>
+                      {n.groupedCount > 1 ? <span className="badge-neutral">{n.groupedCount} متشابهة</span> : null}
                       {!n.read && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">غير مقروء</span>}
                       <span className="text-xs text-gray-400">{fmtDateTime(n.createdAt)}</span>
                     </div>
@@ -70,7 +78,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                     {n.body && <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-600">{n.body}</div>}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
-                    {n.link && <Link href={n.link} className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100">فتح الرابط</Link>}
+                    {n.canonicalLink && <Link href={n.canonicalLink} className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100">فتح الرابط</Link>}
                     {!n.read && <form action={markNotificationRead.bind(null, n.id)}><button className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50" type="submit">تعليم كمقروء</button></form>}
                   </div>
                 </div>

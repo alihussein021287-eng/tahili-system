@@ -3,11 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getDisplayDevice: vi.fn(),
   findMany: vi.fn(),
+  count: vi.fn(),
   update: vi.fn(),
 }));
 
 vi.mock("@/lib/display-auth", () => ({ getDisplayDevice: mocks.getDisplayDevice }));
-vi.mock("@/lib/db", () => ({ prisma: { queueEntry: { findMany: mocks.findMany }, displayDevice: { update: mocks.update } } }));
+vi.mock("@/lib/db", () => ({ prisma: { queueEntry: { findMany: mocks.findMany, count: mocks.count }, displayDevice: { update: mocks.update } } }));
 
 import { GET } from "@/app/api/display/feed/route";
 
@@ -20,6 +21,7 @@ describe("display-only queue feed", () => {
       id: "screen-1", name: "شاشة 1", centerId: 4, center: { name: "مركز الأطراف" }, halls: ["قاعة أ"],
       status: "ACTIVE", nameMode: "INITIALS", callDisplaySeconds: 45, lastSeenAt: null,
     });
+    mocks.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
   });
 
   it("rejects a missing or revoked display credential", async () => {

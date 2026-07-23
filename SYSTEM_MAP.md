@@ -18,10 +18,11 @@
 | النظام والإعدادات | `/settings`, `/users`, `/permissions`, `/audit`, `/login-log`, `/backup`, `/readiness`, `/maintenance` | `settings/**`, `users/**`, `permissions/page.tsx`, `audit/page.tsx`, `login-log/page.tsx`, `backup/page.tsx`, `readiness/page.tsx` | `admin-config.ts`, `backup.ts`, `readiness.ts`, `readiness-config.ts`, `admin-security.ts`, `permission-store.ts`, `session-validation.ts` | `settings.*`, `users.*`, `audit.view`, `maintenance/backup/readiness` عبر `settings.view` و`settings.backup` | إعدادات OrgSetting، صلاحيات RolePermission/UserPermission، سجلات AuditLog/LoginLog. |
 | التعاون والملفات | `/collaboration`, `/collaboration/files`, `/collaboration/admin`, API تحت `/api/collaboration/**` | `collaboration/**`, API routes ذات الصلة | `collaboration-service.ts`, `collaboration-storage.ts`, `collaboration-scan.ts`, `collaboration-preview.ts`, `collaboration-rules.ts` | `collaboration.*`, `chat.*`, `files.*` | يعتمد على MinIO وClamAV؛ CollaborationFile/FileVersion/FileShare مرتبطة بالمستخدمين والمراجع اختيارياً. |
 | التنبيهات | `/notifications` وروابط التنبيهات داخل السايدبار | `notifications/page.tsx`, layout app | `notifications.ts`, `notif-actions.ts`, `notify.ts`, `readiness.ts` | غالباً `dashboard.view` مع فلترة رابط الإشعار حسب `canOpenNotification` | Notification يرسل للمستخدم أو الدور؛ الروابط لا تظهر إذا لا يملك المستخدم صلاحية فتحها. |
+| العمل اليومي المشتق | `/`, `/workspaces`, `/my-work`, وبطاقة الرحلة في `/patients/[id]` | `page.tsx`, `workspaces/page.tsx`, `my-work/page.tsx`, `patients/[id]/page.tsx` | `work-registry.ts`, `my-work.ts`, `patient-journey.ts` | الصلاحية الفعلية لكل مصدر ورابط؛ `dashboard.view` لفتح قائمة العمل | View Model فقط: يجمع حالات موجودة باستعلامات محدودة، يزيل التكرار، ولا ينشئ Task أو Journey state جديداً. |
 
 ## روابط الملاحة الجامعة
 
-السايدبار يدار في `src/components/AppShell.tsx`. حافظ على بقاء routes القديمة عاملة، واستخدم الصفحات الجامعة مع tabs عند تنظيم الروابط الجديدة.
+تعريف routes والـhubs والتبويبات وصلاحيات الظهور وترتيب الأدوار موجود مركزياً في `src/lib/work-registry.ts` ويستهلكه `AppShell`. حافظ على بقاء routes القديمة عاملة، واستخدم الصفحات الجامعة مع tabs عند تنظيم الروابط الجديدة.
 
 ## جرد الواجهات
 
@@ -29,8 +30,8 @@
 
 | المؤشر | العدد |
 | --- | ---: |
-| صفحات واجهة مكتشفة | 92 |
-| صفحات تشغيل مطوّرة بصرياً | 72 |
+| صفحات واجهة مكتشفة | 93 |
+| صفحات تشغيل مطوّرة بصرياً | 73 |
 | شاشات متخصصة لا تحتاج تغييراً | 4 |
 | صفحات طباعة | 13 |
 | routes توافق قديمة مرتبطة بالصفحات الجامعة | 3 |

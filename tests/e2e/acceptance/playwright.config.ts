@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { defineConfig } from "@playwright/test";
+import { BASE_URL } from "./helpers";
 
 if (process.env.DATABASE_URL) process.env.DATABASE_URL = process.env.DATABASE_URL.replace("@postgres:", "@127.0.0.1:");
 
@@ -14,7 +15,7 @@ export default defineConfig({
   outputDir: "/tahili-system/test-results/acceptance-20260713/artifacts",
   reporter: [["list"], ["json", { outputFile: "/tahili-system/test-results/acceptance-20260713/acceptance-results.json" }]],
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: BASE_URL,
     launchOptions: { args: ["--disable-gpu", "--disable-software-rasterizer", "--mute-audio"] },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",

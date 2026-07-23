@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getDisplayDevice } from "@/lib/display-auth";
 import { baghdadDayRange, maskDisplayName } from "@/lib/display-utils";
+import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -14,17 +15,23 @@ export async function GET() {
     ...(device.centerId ? { centerId: device.centerId } : {}),
     ...(device.halls.length ? { hall: { in: device.halls } } : {}),
   };
-  const entries = await prisma.queueEntry.findMany({
-    where: {
-      ...scope,
-      OR: [
-        { status: "CALLED", calledAt: { gte: start, lt: end } },
-        { status: { in: ["WAITING", "IN_SESSION"] }, createdAt: { gte: start, lt: end } },
-      ],
-    },
-    include: { patient: { select: { fullName: true } } },
-    orderBy: { createdAt: "asc" },
-  });
+  const activeWhere: Prisma.QueueEntryWhereInput = {
+    ...scope,
+    OR: [
+      { status: "CALLED", calledAt: { gte: start, lt: end } },
+      { status: { in: ["WAITING", "IN_SESSION"] }, createdAt: { gte: start, lt: end } },
+    ],
+  };
+  const [entries, inSessionTotal, waitingTotal] = await Promise.all([
+    prisma.queueEntry.findMany({
+      where: activeWhere,
+      select: { id: true, status: true, hall: true, createdAt: true, calledAt: true, patient: { select: { fullName: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 120,
+    }),
+    prisma.queueEntry.count({ where: { ...scope, status: "IN_SESSION", createdAt: { gte: start, lt: end } } }),
+    prisma.queueEntry.count({ where: { ...scope, status: "WAITING", createdAt: { gte: start, lt: end } } }),
+  ]);
   const numbered = entries.map((entry, index) => ({ entry, queueNumber: index + 1 }));
   const item = ({ entry, queueNumber }: typeof numbered[number]) => ({
     id: entry.id,
@@ -44,6 +51,6 @@ export async function GET() {
   if (!device.lastSeenAt || now.getTime() - device.lastSeenAt.getTime() >= 30_000) await prisma.displayDevice.update({ where: { id: device.id }, data: { lastSeenAt: now } });
   return NextResponse.json({
     device: { id: device.id, name: device.name, centerName: device.center?.name ?? "المجمع التأهيلي الطبي", callDisplaySeconds: device.callDisplaySeconds },
-    called, inSession, waiting, inSessionTotal: inSessionEntries.length, waitingTotal: waitingEntries.length, updatedAt: now.toISOString(),
+    called, inSession, waiting, inSessionTotal, waitingTotal, updatedAt: now.toISOString(),
   }, { headers: { "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate" } });
 }

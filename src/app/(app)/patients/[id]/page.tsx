@@ -12,6 +12,7 @@ import { GENDER, MARITAL, PATIENT_STATUS, CASE_TYPE, ADMISSION, APPT_STATUS, THE
 import { ROLE_LABELS } from "@/lib/permissions";
 import { getAdminConfig } from "@/lib/admin-config";
 import { activeCenterHallOptions } from "@/lib/center-halls";
+import { derivePatientJourney, nextPatientStep, type DerivedJourneyStage } from "@/lib/patient-journey";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         therapySessions: { include: { center: true }, orderBy: { createdAt: "desc" } },
         treatmentPlans: { include: { therapist: true, specialistDoctor: true, createdBy: true, center: true, hall: true, sessions: { include: { appointments: { orderBy: { scheduledAt: "asc" } } } }, periodicEvaluations: { include: { evaluatedBy: true }, orderBy: { evaluatedAt: "asc" } }, referralRequest: true }, orderBy: { createdAt: "desc" } },
         centerPrograms: { include: { center: true, assignedTo: true }, orderBy: { createdAt: "desc" } },
-        referralRequests: { where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { treatmentPlan: true, destinationCenter: true }, orderBy: { acceptedAt: "desc" } },
+        referralRequests: { where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { treatmentPlan: true, destinationCenter: true }, orderBy: { acceptedAt: "desc" }, take: 100 },
         therapySessionLogs: { include: { session: true, appointment: true }, orderBy: { performedAt: "desc" }, take: 25 },
         prescriptions: { include: { medication: true }, orderBy: { prescribedAt: "desc" } },
         admissions: { include: { center: true, room: true, bed: true }, orderBy: { admissionDate: "desc" } },
@@ -84,6 +85,14 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
   const cClinical = perms.has("clinical.view");
   const cTherapy = perms.has("therapy.view") || perms.has("clinical.session");
   const cAdmission = perms.has("clinical.admission") || perms.has("beds.view");
+  const journeyReferrals = perms.has("journey.view") ? await prisma.referralRequest.findMany({
+    where: { patientId: id },
+    select: { status: true, createdAt: true, updatedAt: true, acceptedAt: true, reviewedAt: true },
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  }) : [];
+  const derivedJourney = derivePatientJourney({ ...patient, referralRequests: journeyReferrals });
+  const nextStep = nextPatientStep(derivedJourney, perms);
   const lastVisit = patient.visits?.[0];
   const lastAppointment = patient.appointments?.[0];
   const lastSession = patient.therapySessions?.[0];
@@ -208,6 +217,8 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         </div>
       </section>
 
+      {perms.has("journey.view") ? <PatientJourneySummary stages={derivedJourney} nextStep={nextStep} /> : null}
+
       {(cEdit || cClinical) && <details className="card p-5">
         <summary className="cursor-pointer list-none font-semibold text-gray-700">البيانات التفصيلية <span className="mr-1 text-xs font-normal text-gray-400">اضغط للعرض</span></summary>
         <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:grid-cols-4">
@@ -259,5 +270,51 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
           workStart: adminConfig.workStart,
         }} therapyStaff={visibleTherapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,centerIds:u.centerMemberships.map((membership: any) => membership.centerId),activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} expenseRows={JSON.parse(JSON.stringify(expenseRows))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
     </div>
+  );
+}
+
+function PatientJourneySummary({ stages, nextStep }: { stages: DerivedJourneyStage[]; nextStep: DerivedJourneyStage | null }) {
+  const status = {
+    complete: { label: "مكتملة", className: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-600" },
+    current: { label: "حالية", className: "bg-brand-50 text-brand-700", dot: "bg-brand-600" },
+    upcoming: { label: "قادمة", className: "bg-sky-50 text-sky-700", dot: "bg-sky-500" },
+    blocked: { label: "متوقفة", className: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
+    not_required: { label: "غير مطلوبة", className: "bg-gray-100 text-gray-500", dot: "bg-gray-300" },
+  } as const;
+  const roleNames = (roles: string[]) => roles.map((role) => ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role).join("، ");
+  return (
+    <section className="card space-y-4 p-5" aria-labelledby="patient-derived-journey">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="patient-derived-journey" className="font-semibold text-gray-900">رحلة المراجع</h2>
+          <p className="mt-1 text-sm text-gray-500">عرض مشتق من الزيارات والإحالات والخطط والجلسات والتقييمات؛ لا يخزن حالة جديدة.</p>
+        </div>
+        <Link href={`/patients/${stages[0]?.href.split("/patients/")[1]?.split("?")[0]}?tab=journey`} className="btn-ghost">فتح مسار المحطات</Link>
+      </div>
+      <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {stages.map((stage) => {
+          const meta = status[stage.status];
+          return (
+            <li key={stage.key} className="rounded-lg border border-gray-100 p-3">
+              <div className="flex items-center justify-between gap-2"><span className="font-medium text-gray-800">{stage.label}</span><span className={`rounded-full px-2 py-0.5 text-[11px] ${meta.className}`}>{meta.label}</span></div>
+              <div className="mt-2 text-xs text-gray-500">المسؤول: {roleNames(stage.responsibleRoles)}</div>
+              {stage.lastActionAt ? <div className="mt-1 text-xs text-gray-400">آخر إجراء: {fmtDate(stage.lastActionAt)}</div> : null}
+              {stage.reason ? <div className="mt-2 text-xs leading-5 text-amber-700">{stage.reason}</div> : null}
+            </li>
+          );
+        })}
+      </ol>
+      {nextStep ? (
+        <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4">
+          <div className="text-xs font-medium text-brand-700">الخطوة التالية</div>
+          <div className="mt-1 font-semibold text-gray-900">{nextStep.label}</div>
+          <div className="mt-1 text-sm text-gray-600">{nextStep.reason ?? "فتح المرحلة الحالية ومتابعة الإجراء من مكانه الأصلي."}</div>
+          <div className="mt-2 text-xs text-gray-500">يمكن تنفيذها بواسطة: {roleNames(nextStep.responsibleRoles)}</div>
+          <Link href={nextStep.href} className="btn-primary mt-3 inline-flex">الانتقال إلى التبويب</Link>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">لا توجد خطوة تالية متاحة ضمن صلاحيات حسابك الحالية.</div>
+      )}
+    </section>
   );
 }

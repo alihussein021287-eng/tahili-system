@@ -36,7 +36,7 @@ export default async function Readiness() {
     prisma.task.count({ where: { priority: "URGENT", status: { in: ["OPEN", "IN_PROGRESS"] } } }),
     prisma.admission.findMany({ where: { status: "ADMITTED" }, select: { admissionDate: true, durationDays: true } }),
     prisma.reportApproval.findUnique({ where: { kind_refKey: { kind: "official-monthly", refKey: monthKey } } }),
-    canSeeBackup ? prisma.orgSetting.findUnique({ where: { id: 1 }, select: { autoBackup: true, lastAutoBackupAt: true } }) : Promise.resolve(null),
+    canSeeBackup ? prisma.orgSetting.findUnique({ where: { id: 1 }, select: { name: true, address: true, phone: true, autoBackup: true, lastAutoBackupAt: true, officialHeader1: true, officialHeader2: true, officialHeader3: true, officialHeader4: true, officialAddress: true, officialPhone: true } }) : Promise.resolve(null),
     canSeeAudit ? prisma.loginLog.count({ where: { success: false, createdAt: { gte: last24h } } }) : Promise.resolve(0),
     canSeeAudit ? prisma.loginLog.count({ where: { success: true, createdAt: { gte: last24h } } }) : Promise.resolve(0),
     canSeeAudit ? prisma.auditLog.findMany({
@@ -54,6 +54,32 @@ export default async function Readiness() {
     const end = new Date(a.admissionDate); end.setDate(end.getDate() + a.durationDays);
     return end < now;
   }).length;
+  const setupData = role === "ADMIN" ? await Promise.all([
+    prisma.branch.count({ where: { isActive: true } }),
+    prisma.center.count({ where: { active: true } }),
+    prisma.therapyHall.count({ where: { active: true } }),
+    prisma.user.groupBy({ by: ["role"], where: { isActive: true, needsActivation: false }, _count: { _all: true } }),
+    prisma.rolePermission.count(),
+    prisma.medication.count(),
+    prisma.medicationBatch.count({ where: { quantity: { gt: 0 } } }),
+  ]) : null;
+  const systemCheckMap = new Map(systemChecks.map((check) => [check.key, check]));
+  const roleCounts = new Map((setupData?.[3] ?? []).map((item) => [item.role, item._count._all]));
+  const essentialRoles = ["RECEPTION", "RESIDENT", "DOCTOR", "HEAD_THERAPIST", "THERAPIST", "PHARMACIST", "ACCOUNTANT"] as const;
+  const missingEssentialRoles = essentialRoles.filter((item) => !roleCounts.get(item));
+  const setupChecklist = role === "ADMIN" && setupData ? [
+    { label: "الفروع", complete: setupData[0] > 0, detail: setupData[0] > 0 ? `${setupData[0]} فرع فعّال` : "لا يوجد فرع فعّال", href: "/settings?tab=branches" },
+    { label: "المراكز والقاعات", complete: setupData[1] > 0 && setupData[2] > 0, detail: `${setupData[1]} مركز · ${setupData[2]} قاعة فعالة`, href: "/settings?tab=centers" },
+    { label: "مستخدمو الأدوار الأساسية", complete: missingEssentialRoles.length === 0, detail: missingEssentialRoles.length ? `ينقص: ${missingEssentialRoles.join("، ")}` : "كل الأدوار التشغيلية الأساسية ممثلة بحساب فعّال", href: "/users" },
+    { label: "الصلاحيات الأساسية", complete: systemCheckMap.get("permissions")?.status === "ok", detail: setupData[4] > 0 ? `${setupData[4]} تخصيص دور مخزن، مع بقاء القوالب البرمجية مرجعاً` : "القوالب البرمجية فعالة ولا توجد تخصيصات دور مخزنة", href: "/permissions" },
+    { label: "كتالوج الأدوية", complete: setupData[5] > 0, detail: `${setupData[5]} مادة في الكتالوج`, href: "/pharmacy-inventory?tab=stock" },
+    { label: "المخزون الفعلي", complete: setupData[6] > 0, detail: setupData[6] > 0 ? `${setupData[6]} دفعة برصيد فعلي` : "صفر دفعات برصيد فعلي؛ وجود الكتالوج لا يعد مخزوناً", href: "/pharmacy-inventory?tab=batches" },
+    { label: "إعداد النسخ", complete: Boolean(org?.autoBackup && systemCheckMap.get("backup")?.status === "ok"), detail: org?.autoBackup ? (systemCheckMap.get("backup")?.detail ?? "النسخ مفعّل") : "النسخ التلقائي غير مفعّل", href: "/backup" },
+    { label: "ClamAV", complete: systemCheckMap.get("clamav")?.status === "ok", detail: systemCheckMap.get("clamav")?.detail ?? "غير مفحوص", href: "/readiness" },
+    { label: "LibreOffice", complete: systemCheckMap.get("libreoffice")?.status === "ok", detail: systemCheckMap.get("libreoffice")?.detail ?? "غير مفحوص", href: "/readiness" },
+    { label: "الهوية والطباعة", complete: Boolean(org?.name && (org.officialHeader1 || org.officialHeader2 || org.officialHeader3 || org.officialHeader4)), detail: org?.name ? "اسم المؤسسة موجود؛ راجع اكتمال ترويسة المطبوعات" : "اسم المؤسسة أو ترويسة المطبوعات ناقصة", href: "/settings?tab=identity" },
+    { label: "بيانات التواصل", complete: Boolean(org?.address && org?.phone), detail: org?.address && org?.phone ? "العنوان والهاتف موجودان" : "العنوان أو الهاتف الأساسي ناقص", href: "/settings?tab=identity" },
+  ] : [];
 
   const checks = [
     { label: "مراجعون ببيانات ناقصة (هاتف/محافظة/نوع إصابة)", count: incompletePatients, href: "/patients-care?tab=alerts", fix: "أكمل بياناتهم" },
@@ -153,6 +179,28 @@ export default async function Readiness() {
           </div>
         )}
       </div>
+
+      {role === "ADMIN" ? (
+        <section className="card overflow-hidden" aria-labelledby="system-setup-title">
+          <div className="border-b px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 id="system-setup-title" className="font-semibold text-gray-800">اكتمال إعداد النظام</h2>
+                <p className="mt-1 text-xs text-gray-500">قراءة مباشرة للبيانات والخدمات الحالية؛ لا ينشئ هذا الفحص أي بيانات تلقائياً.</p>
+              </div>
+              <span className="badge-brand">{setupChecklist.filter((item) => item.complete).length}/{setupChecklist.length} مكتمل</span>
+            </div>
+          </div>
+          <div className="grid gap-px bg-gray-100 sm:grid-cols-2">
+            {setupChecklist.map((item) => (
+              <Link key={item.label} href={item.href} className="flex items-start gap-3 bg-white p-4 transition hover:bg-gray-50">
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${item.complete ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{item.complete ? "✓" : "!"}</span>
+                <span><span className="block font-medium text-gray-800">{item.label}</span><span className="mt-1 block text-xs leading-5 text-gray-500">{item.detail}</span></span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="card overflow-hidden">
