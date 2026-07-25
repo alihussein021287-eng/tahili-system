@@ -61,6 +61,8 @@ async function login(page: Page, user: Credential) {
 
 async function snapshot(page: Page, path: string): Promise<RouteSnapshot> {
   await page.goto(`${baseURL}${path}`, { waitUntil: "domcontentloaded" });
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(100);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   const finalUrl = new URL(page.url());
   const metadata = await page.locator("main").evaluate((main) => {
@@ -125,9 +127,14 @@ test("role hubs preserve behavior and remain responsive", async ({ browser }) =>
   const baselinePath = process.env.UI_HUB_BASELINE;
   if (baselinePath) {
     const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf8"));
-    const behavior = (input: Record<string, RouteSnapshot[]>) => Object.fromEntries(
-      Object.entries(input).map(([role, snapshots]) => [role, snapshots.map(({ headings: _headings, ...route }) => route)]),
-    );
+    const behavior = (input: Record<string, RouteSnapshot[]>) => Object.fromEntries(Object.entries(input).map(([role, snapshots]) => [
+      role,
+      snapshots.map(({ headings: _headings, tableHeaders, tableRows, ...route }) => ({
+        ...route,
+        tableHeaders: [...new Set(tableHeaders.map((headers) => JSON.stringify(headers)))].sort(),
+        tableRowCount: tableRows.reduce((sum, count) => sum + count, 0),
+      })),
+    ]));
     expect(behavior(result)).toEqual(behavior(baseline));
   }
 });

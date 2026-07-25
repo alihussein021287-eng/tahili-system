@@ -366,6 +366,7 @@ export default async function Dashboard() {
           <p className="text-sm text-gray-500">روابط مختارة للعمل المتكرر، وليست نسخة من قائمة التنقل.</p>
         </div>
         <div className="flex gap-2">
+          <Link href="/my-work" className="btn-ghost">قائمة عملي</Link>
           <ShortcutsEditor candidates={CANDIDATES.map(({ href, label, icon }) => ({ href, label, icon }))} current={favs} />
           {perms.has("patients.create") && <Link href="/patients/new" className="btn-primary">+ مراجع جديد</Link>}
         </div>
