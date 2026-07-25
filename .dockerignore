@@ -11,6 +11,10 @@ coverage
 .env
 .env.*
 !.env.example
+test-results
+**/credentials.*
+**/*credentials*
+**/*secrets*
 *.pem
 *.key
 *.crt
