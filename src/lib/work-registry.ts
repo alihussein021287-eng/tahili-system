@@ -36,7 +36,7 @@ export type WorkRegistryEntry = {
 export const ALL_ITEMS: NavigationItem[] = [
   { href: "/", label: "الرئيسية", icon: "▤", perm: "dashboard.view" },
   { href: "/workspaces", label: "مساحاتي", icon: "◇", perm: "dashboard.view" },
-  { href: "/my-work", label: "قائمة عملي", icon: "☑", perm: "dashboard.view" },
+  { href: "/my-work", label: "عملي اليوم", icon: "☑", perm: "dashboard.view" },
   { href: "/notifications", label: "مركز التنبيهات", icon: "🔔", perm: "dashboard.view" },
   { href: "/collaboration", label: "مركز التعاون", icon: "💬", perm: "collaboration.view" },
   { href: "/patients-care?tab=overview", label: "المرضى والرعاية", navLabel: "نظرة عامة", icon: "🧑‍⚕️", perms: ["patients.view", "patients.create", "visits.view", "queue.view", "journey.view", "referrals.view", "appointments.view"] },
@@ -98,6 +98,10 @@ export const NAV_GROUPS: NavigationGroup[] = [
 ];
 
 export const MOBILE_QUICK_HREFS = ["/patients-care?tab=overview", "/therapy-centers?tab=overview", "/pharmacy-inventory?tab=overview", "/staff?tab=overview"];
+
+export function navigationGroupChildren(group: NavigationGroup) {
+  return group.hrefs.filter((href) => href !== group.href);
+}
 
 export type SidebarRule = { standalone: string[]; groups: string[]; hrefs?: string[] };
 

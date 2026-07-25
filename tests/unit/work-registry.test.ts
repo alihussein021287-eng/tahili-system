@@ -4,8 +4,10 @@ import {
   ALL_ITEMS,
   NAV_GROUPS,
   ROLE_SIDEBAR_RULES,
+  STANDALONE,
   WORK_REGISTRY,
   canOpenRegistryItem,
+  navigationGroupChildren,
   requiredPermissionsForHref,
 } from "@/lib/work-registry";
 
@@ -28,6 +30,16 @@ describe("work and navigation registry", () => {
         expect(visible.length, `${role}/${groupKey}`).toBeGreaterThan(0);
       }
     }
+  });
+
+  it("keeps journey order and excludes each hub from its own children", () => {
+    expect(STANDALONE).toEqual(["/", "/workspaces", "/my-work", "/notifications", "/collaboration"]);
+    expect(NAV_GROUPS.map((group) => group.key)).toEqual(["care", "therapy", "pharm", "reports", "staff", "system"]);
+    for (const group of NAV_GROUPS) {
+      expect(navigationGroupChildren(group)).not.toContain(group.href);
+      expect(new Set(group.hrefs).size).toBe(group.hrefs.length);
+    }
+    expect(ALL_ITEMS.find((item) => item.href === "/my-work")?.label).toBe("عملي اليوم");
   });
 
   it("keeps registry metadata unique and links work surfaces to openable routes", () => {

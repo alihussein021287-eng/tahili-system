@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { MouseEvent } from "react";
 import Link from "next/link";
 import { markAllNotificationsRead } from "@/lib/notif-actions";
@@ -18,10 +18,13 @@ import {
   NAV_GROUPS as REGISTRY_NAV_GROUPS,
   ROLE_SIDEBAR_RULES as REGISTRY_ROLE_SIDEBAR_RULES,
   STANDALONE as REGISTRY_STANDALONE,
+  navigationGroupChildren,
+  type NavigationGroup,
+  type NavigationItem,
 } from "@/lib/work-registry";
 
-type Item = { href: string; label: string; icon: string; navLabel?: string; perm?: string; perms?: string[] };
-type NavGroup = { key: string; title: string; icon: string; href: string; hrefs: string[] };
+type Item = NavigationItem;
+type NavGroup = NavigationGroup;
 type AlertCounts = {
   admOver: number;
   devicesDue: number;
@@ -34,141 +37,6 @@ type AlertCounts = {
   appointmentSoon?: number;
   backupStale?: number;
   backupStopped?: number;
-};
-
-const ALL_ITEMS: Item[] = [
-  { href: "/", label: "الرئيسية", icon: "▤", perm: "dashboard.view" },
-  { href: "/workspaces", label: "مساحاتي", icon: "◇", perm: "dashboard.view" },
-  { href: "/notifications", label: "مركز التنبيهات", icon: "🔔", perm: "dashboard.view" },
-  { href: "/collaboration", label: "مركز التعاون", icon: "💬", perm: "collaboration.view" },
-  { href: "/patients-care?tab=overview", label: "المرضى والرعاية", navLabel: "نظرة عامة", icon: "🧑‍⚕️", perms: ["patients.view", "patients.create", "visits.view", "queue.view", "journey.view", "referrals.view", "appointments.view"] },
-  { href: "/patients-care?tab=patients", label: "المراجعون", icon: "☺", perm: "patients.view" },
-  { href: "/patients-care?tab=queue", label: "الطابور", icon: "⏳", perm: "queue.view" },
-  { href: "/patients-care?tab=visits", label: "الزيارات", icon: "📋", perm: "visits.view" },
-  { href: "/patients-care?tab=appointments", label: "المواعيد", icon: "▦", perm: "appointments.view" },
-  { href: "/patients-care?tab=referrals", label: "الفحوص والإحالات", icon: "↗", perm: "referrals.view" },
-  { href: "/patients-care?tab=journey", label: "مسار الرعاية", icon: "🗺", perm: "journey.view" },
-
-  { href: "/therapy-centers?tab=overview", label: "المسار العلاجي والمراكز", navLabel: "نظرة عامة", icon: "🏥", perms: ["therapy.view", "therapy.session.record", "centers.view", "beds.view", "meds.view", "centers.sessions.record"] },
-  { href: "/therapy-centers?tab=plans", label: "الخطط العلاجية", icon: "▤", perms: ["therapy.view", "clinical.plan", "therapy.plan.manage"] },
-  { href: "/therapy-centers?tab=sessions", label: "الجلسات العلاجية", icon: "▦", perms: ["therapy.view", "clinical.session", "therapy.session.record"] },
-  { href: "/therapy-centers?tab=today", label: "جلساتي اليوم", icon: "🗓", perm: "therapy.session.record" },
-  { href: "/therapy-centers?tab=centers", label: "المراكز والبرامج", icon: "🏥", perm: "centers.view" },
-  { href: "/therapy-centers?tab=beds", label: "الرقود والفندقة", icon: "🛏", perm: "beds.view" },
-  { href: "/therapy-centers?tab=meds", label: "أدوية الراقدين", icon: "💊", perm: "meds.view" },
-  { href: "/workload", label: "المعالجون", icon: "👷", perm: "workload.view" },
-  { href: "/devices", label: "الأجهزة", icon: "🔧", perm: "devices.view" },
-
-  { href: "/reports-finance?tab=overview", label: "التقارير والمالية", navLabel: "نظرة عامة", icon: "📊", perms: ["reports.view", "reports.official", "finance.view", "finance.report", "expenses.view", "expenses.reports", "approvals.view", "officialdocs.view", "analytics.view", "patients.export"] },
-  { href: "/reports-finance?tab=official", label: "التقارير الرسمية", icon: "▤", perms: ["reports.view", "reports.official", "officialdocs.view"] },
-  { href: "/reports-finance?tab=patients", label: "التقارير الطبية", icon: "📋", perms: ["reports.view", "patients.print", "clinical.report"] },
-  { href: "/reports-finance?tab=finance", label: "المالية", icon: "₪", perms: ["finance.view", "finance.report"] },
-  { href: "/reports-finance?tab=wounded", label: "صرفيات الجرحى", icon: "💳", perms: ["expenses.view", "expenses.reports", "expenses.approve", "expenses.pay"] },
-  { href: "/reports-finance?tab=approvals", label: "الموافقات", icon: "✅", perms: ["approvals.view", "expenses.approve", "expenses.pay", "reports.approve"] },
-  { href: "/reports-finance?tab=exports", label: "الصادرات", icon: "↧", perms: ["patients.export", "expenses.reports", "officialdocs.view", "audit.view"] },
-  { href: "/analytics", label: "التحليلات", icon: "📈", perm: "analytics.view" },
-
-  { href: "/pharmacy-inventory?tab=overview", label: "الصيدلية والمخزون", navLabel: "نظرة عامة", icon: "💊", perms: ["pharmacy.view", "pharmacy.dispense", "pharmacy.batch", "inventory.view", "inventory.manage", "pharmacy.purchase.view", "pharmacy.purchase.create", "pharmacy.purchase.receive"] },
-  { href: "/pharmacy-inventory?tab=dispense", label: "صرف الوصفات", icon: "⚕️", perm: "pharmacy.view" },
-  { href: "/pharmacy-inventory?tab=stock", label: "الأدوية والمخزون", icon: "▣", perm: "inventory.view" },
-  { href: "/pharmacy-inventory?tab=batches", label: "الدفعات والصلاحية", icon: "📦", perms: ["pharmacy.view", "inventory.view"] },
-  { href: "/pharmacy-inventory?tab=purchases", label: "أوامر الشراء", icon: "🧾", perm: "pharmacy.purchase.view" },
-  { href: "/pharmacy-inventory?tab=receipts", label: "الاستلام", icon: "✓", perm: "pharmacy.purchase.view" },
-  { href: "/pharmacy-inventory?tab=reports", label: "تقارير الصيدلية", icon: "📊", perms: ["pharmacy.view", "inventory.view", "pharmacy.purchase.view"] },
-
-  { href: "/staff?tab=overview", label: "الموظفون والمهام", navLabel: "نظرة عامة", icon: "🗂", perms: ["users.view", "attendance.view", "shifts.view", "tasks.view"] },
-  { href: "/staff?tab=employees", label: "الموظفون", icon: "⚙", perm: "users.view" },
-  { href: "/staff?tab=tasks", label: "المهام", icon: "📌", perm: "tasks.view" },
-  { href: "/staff?tab=attendance", label: "الحضور", icon: "🕒", perm: "attendance.view" },
-  { href: "/staff?tab=shifts", label: "الدوام والشفتات", icon: "🗓", perm: "shifts.view" },
-  { href: "/staff?tab=leaves", label: "الإجازات", icon: "☑", perm: "shifts.view" },
-  { href: "/staff?tab=reports", label: "تقارير مختصرة", icon: "▦", perms: ["users.view", "attendance.view", "shifts.view", "tasks.view"] },
-
-  { href: "/settings", label: "الإعدادات", icon: "▥", perm: "settings.view" },
-  { href: "/users", label: "المستخدمون", icon: "⚙", perm: "users.view" },
-  { href: "/permissions", label: "الصلاحيات", icon: "🔐", perm: "users.permissions" },
-  { href: "/audit", label: "سجل التدقيق", icon: "▣", perm: "audit.view" },
-  { href: "/login-log", label: "سجل الدخول", icon: "🔐", perm: "settings.view" },
-  { href: "/backup", label: "النسخ الاحتياطي", icon: "💾", perm: "settings.backup" },
-  { href: "/readiness", label: "جاهزية النظام", icon: "✅", perm: "settings.view" },
-];
-
-// مجموعات التنقل: تبويب رئيسي (مجموعة) ← تبويبات فرعية (روابط)
-const STANDALONE = ["/", "/workspaces", "/notifications", "/collaboration"]; // روابط عامة تبقى مفردة فوق
-const NAV_GROUPS: NavGroup[] = [
-  { key: "care", title: "المرضى والرعاية", icon: "🧑‍⚕️", href: "/patients-care?tab=overview", hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=visits", "/patients-care?tab=appointments", "/patients-care?tab=referrals"] },
-  { key: "therapy", title: "المسار العلاجي والمراكز", icon: "🏥", href: "/therapy-centers?tab=overview", hrefs: ["/therapy-centers?tab=overview", "/therapy-centers?tab=plans", "/therapy-centers?tab=sessions", "/therapy-centers?tab=today", "/therapy-centers?tab=centers", "/therapy-centers?tab=beds", "/therapy-centers?tab=meds"] },
-  { key: "pharm", title: "الصيدلية والمخزون", icon: "💊", href: "/pharmacy-inventory?tab=overview", hrefs: ["/pharmacy-inventory?tab=overview", "/pharmacy-inventory?tab=dispense", "/pharmacy-inventory?tab=stock", "/pharmacy-inventory?tab=batches", "/pharmacy-inventory?tab=purchases", "/pharmacy-inventory?tab=reports"] },
-  { key: "reports", title: "التقارير والمالية", icon: "📊", href: "/reports-finance?tab=overview", hrefs: ["/reports-finance?tab=overview", "/reports-finance?tab=official", "/reports-finance?tab=patients", "/reports-finance?tab=finance", "/reports-finance?tab=wounded", "/reports-finance?tab=approvals"] },
-  { key: "staff", title: "الموظفون والمهام", icon: "🗂", href: "/staff?tab=overview", hrefs: ["/staff?tab=overview", "/staff?tab=employees", "/staff?tab=tasks", "/staff?tab=attendance", "/staff?tab=shifts", "/staff?tab=leaves"] },
-  { key: "system", title: "النظام", icon: "⚙", href: "/settings", hrefs: ["/settings", "/users", "/permissions", "/audit", "/login-log", "/backup", "/readiness"] },
-];
-const MOBILE_QUICK_HREFS = ["/patients-care?tab=overview", "/therapy-centers?tab=overview", "/pharmacy-inventory?tab=overview", "/staff?tab=overview"];
-
-type SidebarRule = { standalone: string[]; groups: string[]; hrefs?: string[] };
-const ROLE_SIDEBAR_RULES: Partial<Record<string, SidebarRule>> = {
-  RECEPTION: {
-    standalone: STANDALONE,
-    groups: ["care"],
-    hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=visits", "/patients-care?tab=appointments"],
-  },
-  HEAD_THERAPIST: {
-    standalone: STANDALONE,
-    groups: ["care", "therapy"],
-    hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=visits", "/patients-care?tab=appointments", "/patients-care?tab=referrals", "/therapy-centers?tab=overview", "/therapy-centers?tab=plans", "/therapy-centers?tab=sessions", "/therapy-centers?tab=today", "/therapy-centers?tab=centers", "/therapy-centers?tab=meds"],
-  },
-  THERAPIST: {
-    standalone: STANDALONE,
-    groups: ["therapy", "staff"],
-    hrefs: ["/therapy-centers?tab=overview", "/therapy-centers?tab=plans", "/therapy-centers?tab=sessions", "/therapy-centers?tab=today", "/therapy-centers?tab=centers", "/therapy-centers?tab=meds", "/staff?tab=overview", "/staff?tab=tasks"],
-  },
-  PHARMACIST: {
-    standalone: STANDALONE,
-    groups: ["pharm"],
-  },
-  ACCOUNTANT: {
-    standalone: STANDALONE,
-    groups: ["reports"],
-    hrefs: ["/reports-finance?tab=overview", "/reports-finance?tab=official", "/reports-finance?tab=patients", "/reports-finance?tab=finance", "/reports-finance?tab=wounded", "/reports-finance?tab=approvals"],
-  },
-  DOCTOR: {
-    standalone: STANDALONE,
-    groups: ["care", "therapy", "reports"],
-  },
-  RESIDENT: {
-    standalone: STANDALONE,
-    groups: ["care", "therapy", "reports"],
-  },
-  DATA_ENTRY: {
-    standalone: STANDALONE,
-    groups: ["care"],
-  },
-  LAB: {
-    standalone: STANDALONE,
-    groups: ["care"],
-  },
-  RADIOLOGY: {
-    standalone: STANDALONE,
-    groups: ["care"],
-  },
-  DRESSING: {
-    standalone: STANDALONE,
-    groups: ["care", "therapy"],
-    hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=visits", "/patients-care?tab=appointments", "/therapy-centers?tab=overview", "/therapy-centers?tab=today"],
-  },
-  PROSTHETICS: {
-    standalone: STANDALONE,
-    groups: ["care", "therapy", "staff"],
-    hrefs: ["/patients-care?tab=overview", "/patients-care?tab=patients", "/patients-care?tab=queue", "/patients-care?tab=visits", "/patients-care?tab=appointments", "/staff?tab=overview", "/staff?tab=tasks"],
-  },
-  MANAGER: {
-    standalone: STANDALONE,
-    groups: ["care", "therapy", "reports", "pharm", "staff"],
-  },
-  VIEWER: {
-    standalone: STANDALONE,
-    groups: ["care", "reports"],
-  },
 };
 
 export function AppShell({
@@ -190,6 +58,7 @@ export function AppShell({
 }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const path = usePathname();
   const searchParams = useSearchParams();
 
@@ -292,9 +161,18 @@ export function AppShell({
 
   useEffect(() => {
     if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      mobileMenuButtonRef.current?.focus();
+    };
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
   const toggleCollapsed = () => {
@@ -315,6 +193,7 @@ export function AppShell({
       <Link key={it.href} href={it.href} onClick={() => setOpen(false)}
         title={compact ? label : undefined}
         aria-label={compact ? label : undefined}
+        aria-current={active ? "page" : undefined}
         className={`flex items-center gap-3 rounded-lg py-2 text-sm transition ${compact ? "justify-center px-2" : "px-3"}
           ${active ? "bg-white/15 font-medium" : "text-brand-100/80 hover:bg-white/10"}`}>
         <span className="shrink-0 text-base">{it.icon}</span>
@@ -329,6 +208,7 @@ export function AppShell({
     const label = it.navLabel === "نظرة عامة" ? group.title : it.label;
     return (
       <Link key={group.key} href={it.href} onClick={() => setOpen(false)} title={compact ? label : undefined} aria-label={compact ? label : undefined}
+        aria-current={active ? "page" : undefined}
         className={`flex items-center gap-3 rounded-lg py-2 text-sm transition ${compact ? "justify-center px-2" : "px-3"} ${active ? "bg-white/15 font-medium" : "text-brand-100/80 hover:bg-white/10"}`}>
         <span className="shrink-0 text-base">{group.icon}</span>
         {!compact && <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>}
@@ -347,20 +227,20 @@ export function AppShell({
         if (!roleAllowsGroup(g.key)) return null;
         const groupItem = byHref[g.href];
         const groupLink = groupItem && hasAccess(groupItem) ? groupItem : undefined;
-        const items = g.hrefs.map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsHref(it.href));
+        const items = navigationGroupChildren(g).map((h) => byHref[h]).filter((it) => it && hasAccess(it) && roleAllowsHref(it.href));
         if (items.length === 0) return groupLink ? renderGroupLink(g, groupLink, compact) : null;
-        if (items.length === 1) return renderGroupLink(g, items[0], compact);
         const isOpen = !compact && !!openGroups[g.key];
-        const hasActive = items.some((it) => it.href === activeHref);
+        const hasActive = groupLink?.href === activeHref || items.some((it) => it.href === activeHref);
         const groupBadge = items.reduce((n, it) => n + badgeFor(it).count, 0);
         const headerLink = groupLink ?? items[0];
-        const headerActive = headerLink.href === activeHref || (hasActive && !isOpen);
+        const headerActive = hasActive;
         return (
           <div key={g.key}>
             <div className="flex items-center gap-1">
               <Link href={headerLink.href} onClick={() => setOpen(false)}
                 title={compact ? g.title : undefined}
                 aria-label={compact ? g.title : undefined}
+                aria-current={headerLink.href === activeHref ? "page" : undefined}
                 className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg py-2 text-sm transition ${compact ? "justify-center px-2" : "px-3"}
                   ${headerActive ? "bg-white/15 font-medium text-white" : "text-brand-100/90 hover:bg-white/10"}`}>
                 <span className="shrink-0 text-base">{g.icon}</span>
@@ -399,6 +279,7 @@ export function AppShell({
             const badge = badgeFor(it);
             return (
               <Link key={it.href} href={it.href}
+                aria-current={active ? "page" : undefined}
                 className={`relative flex min-h-14 flex-col items-center justify-center rounded-xl px-1 text-[11px] font-medium ${active ? "bg-brand-50 text-brand-700" : "text-gray-600"}`}>
                 <span className="text-lg leading-none">{it.icon}</span>
                 <span className="mt-1 max-w-full truncate">{it.label}</span>
@@ -441,7 +322,10 @@ export function AppShell({
 
       {/* درج القائمة — للموبايل */}
       {open && (
-        <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setOpen(false)} />
+        <button type="button" className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => {
+          setOpen(false);
+          mobileMenuButtonRef.current?.focus();
+        }} aria-label="إغلاق القائمة الرئيسية" />
       )}
       <aside id="mobile-sidebar" aria-label="القائمة الرئيسية" aria-hidden={!open} inert={!open ? true : undefined} className={`no-print fixed inset-y-0 right-0 z-50 w-72 max-w-[86vw] overflow-y-auto overscroll-contain bg-brand-900 text-white transform transition-transform duration-200 md:hidden
         ${open ? "translate-x-0" : "translate-x-full"}`}>
@@ -454,7 +338,7 @@ export function AppShell({
         <header className="no-print sticky top-0 z-30 border-b border-gray-200 bg-white/95 px-3 py-2 backdrop-blur md:px-6 md:py-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
-              <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-700 md:hidden" onClick={() => setOpen(true)} aria-label="فتح القائمة الرئيسية" aria-expanded={open} aria-controls="mobile-sidebar">☰</button>
+              <button ref={mobileMenuButtonRef} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-xl leading-none text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 md:hidden" onClick={() => setOpen(true)} aria-label="فتح القائمة الرئيسية" aria-expanded={open} aria-controls="mobile-sidebar">☰</button>
               <div className="min-w-0 text-sm text-gray-500">
                 أهلاً، <span className="font-medium text-gray-800">{name}</span>
                 <span className="badge-brand mr-2 hidden sm:inline">{ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? ""}</span>
