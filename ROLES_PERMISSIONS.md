@@ -47,3 +47,10 @@
 ## قواعد عملية
 
 افحص الصلاحية في Server Actions أو server components، وليس في الواجهة فقط. إذا أضفت route جديداً، اربطه بصلاحية واضحة، واختبر أن الأدوار غير المخولة لا ترى الرابط ولا تفتح الصفحة مباشرة.
+
+## UI Change Rule
+
+- عدد الأدوار المصدرية الحالي 15 وعدد مفاتيح الصلاحية 139؛ استخرجهما بـ`node scripts/audit-project.mjs`.
+- إخفاء أو نقل رابط لا يسحب الصلاحية، وإظهار زر لا يمنحها. القرار النهائي يبقى في `src/lib/perms.ts` و`permission-store.ts` وServer Actions وعضوية المركز.
+- لا توسع صلاحية دور ولا تغير override أثناء دفعة UI. طابق `/`, `/workspaces`, `/my-work`, AppShell، direct URL وروابط التنبيه قبل/بعد.
+- اقرأ `docs/MEDICAL_WORKFLOW_BOUNDARIES.md` لأي شاشة طبية/علاجية/مالية، واحتفظ بالـlegacy deep links المسجلة في `docs/UI_DUPLICATION_REGISTER.md`.

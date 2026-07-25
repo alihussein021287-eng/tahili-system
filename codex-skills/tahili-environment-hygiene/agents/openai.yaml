@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Environment Hygiene"
+  short_description: "Audit and safely clean Tahili VMs"
+  default_prompt: "Inspect Tahili VM resources with a dry run, protect persistent data and active images, then clean only verified safe artifacts."

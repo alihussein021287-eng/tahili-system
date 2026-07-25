@@ -38,3 +38,10 @@
 لا تنسخ بين التطوير والإنتاج: `.env`، الأسرار، كلمات المرور، ملفات الاعتماد، قواعد البيانات، uploads، backups، volumes، إعدادات DNS/FRP/Caddy، أو عنوان `NEXTAUTH_URL_INTERNAL` و`TAHILI_LAN_IP`.
 
 المنفذ `3000` مخصص للـLAN وloopback فقط. يربط compose هذين العنوانين صراحة ولا ينشئ forwarding عاماً.
+
+## Resource Audit And Hygiene
+
+- baseline التطوير غير السري في `docs/ENVIRONMENT_BASELINE.md`.
+- أي تنظيف يبدأ بجرد read-only للمسارات والأحجام وDocker usage، ثم قائمة حذف صريحة.
+- لا تنظف VM أخرى بالاستنتاج أو بنفس الجلسة. الإنتاج يحتاج موافقة صريحة وbaseline جديداً عبر IP الإنتاج فقط.
+- احمِ دائماً volumes وDB وMinIO وuploads وbackups وcredentials وQA data والصورة العاملة. لا تستخدم `docker system prune -a` بصورة عمياء.

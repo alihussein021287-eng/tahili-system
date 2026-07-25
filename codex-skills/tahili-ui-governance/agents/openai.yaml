@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili UI Governance"
+  short_description: "Guard Tahili UI and navigation changes"
+  default_prompt: "Govern this Tahili UI or navigation change against medical workflow, permission, route, and compatibility boundaries."

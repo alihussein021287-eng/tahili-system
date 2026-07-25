@@ -38,3 +38,13 @@ Do not commit secrets, `.env` values, database dumps, or generated private artif
 Use the repository runbooks as the shared operating memory: `ENVIRONMENTS.md`, `RUNBOOK.md`, `PRODUCTION_CHECKLIST.md`, `SYSTEM_MAP.md`, `ROLES_PERMISSIONS.md`, `ACCEPTANCE_MATRIX.md`, and `OFFLINE_DEPLOYMENT.md`. `ENVIRONMENTS.md` is authoritative for environment URLs: health checks, smoke tests, and Playwright use the environment LAN IP only; do not check domains, DNS, FRP, or Caddy unless explicitly requested. When a change affects operations, permissions, acceptance coverage, or production release flow, update only the relevant section. Keep these files concise and use `scripts/health-check.sh` or `scripts/cleanup-qa-data.ts` when their checks apply.
 
 Use Tahili workflow skills only when they fit the task: `tahili-write-spec` for large features before implementation, `tahili-system-design` for module design, `tahili-architecture` for ADRs, `tahili-code-review` for diff/code review, `tahili-testing-strategy` for test planning, and `tahili-dashboard` for monitoring, Grafana, or HTML dashboards. Do not use separate deploy/runbook skills when the same instructions already live in the runbooks unless they have been explicitly merged.
+
+## UI Governance Boundary
+
+For every UI/UX, navigation, responsive, RTL, dark-mode, or duplication task, read `docs/MEDICAL_WORKFLOW_BOUNDARIES.md`, `docs/UI_INFORMATION_ARCHITECTURE.md`, and `docs/UI_DUPLICATION_REGISTER.md` first and use `tahili-ui-governance`.
+
+Allowed work is presentation-only: layout, navigation organization, shared UI components, forms, tables, empty states, accessibility, RTL, mobile, and theme behavior. Never change medical data or field meaning, treatment logic, state machines, role transitions, permissions, Prisma schema, Server Action behavior, or delete routes/functions as part of a UI improvement. A workflow change must be a separately specified and tested functional change. Preserve legacy routes and deep links when reorganizing navigation.
+
+Run `node scripts/audit-project.mjs` after adding or removing routes, actions, components, roles, permissions, models, or migrations. The inventory must report zero unclassified pages before commit.
+
+For VM cleanup or resource checks, use `tahili-environment-hygiene`: dry-run first, protect all volumes/databases/uploads/backups/credentials and active images, and keep development and production completely separate.

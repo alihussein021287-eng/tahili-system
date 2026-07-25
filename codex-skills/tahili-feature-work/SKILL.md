@@ -12,6 +12,7 @@ description: Coordinate token-efficient Tahili feature, fix, UI cleanup, and mod
 - Start by checking `git status --short --branch`, `git rev-parse HEAD`, `git rev-parse origin/main`, and recent commits. Fast-forward from `origin/main` before editing when needed.
 - Identify only the requested page or function.
 - Read `AGENTS.md` when present and directly related files only.
+- For UI/UX or navigation work, invoke `tahili-ui-governance` and read the linked boundary documents before planning edits.
 - Do not scan the repository or read old reports or migrations unless needed.
 - Inspect the current implementation before adding anything.
 
@@ -35,6 +36,7 @@ Never invoke a skill merely because it is installed.
 ## Implement
 
 - Change the fewest files; reuse existing components, functions, Next.js, Server Actions, Prisma, RTL, and Arabic patterns.
+- Treat workflow, permissions, routes, deep links, form payloads, and Server Action behavior as immutable during UI-only work.
 - Avoid general layers or abstractions for small work.
 - Enforce permissions on the server, not only in the UI.
 - For admin UI cleanup, prefer the `/settings` pattern: URL tabs, one active section, compact summary card, independent save/status messages, and no duplicate controls.

@@ -13,6 +13,7 @@ Use this skill to choose the smallest test set that gives credible confidence fo
 - Read `AGENTS.md` and the relevant rows in `ACCEPTANCE_MATRIX.md`.
 - Inspect existing tests under `tests/unit`, `tests/integration`, and `tests/e2e` before adding new ones.
 - For permissions/navigation changes, read `ROLES_PERMISSIONS.md` and the related app shell or route guards.
+- For UI work, map tests to `docs/MEDICAL_WORKFLOW_BOUNDARIES.md` and require behavior-before/after, legacy deep links, role matrix, RTL/mobile/dark, and zero unclassified audit pages.
 - Do not touch production, do not use `prisma db push`, do not print secrets, and do not stage `skills-lock.json`.
 
 ## Test Selection

@@ -73,3 +73,21 @@ docker logs --tail 80 tahili_clamav
 ## متى تتوقف
 
 توقف واطلب قراراً قبل أي خطوة قد تغيّر بيانات أو بنية تحتية: فشل migration، تكرار 5xx بعد إعادة إنشاء app، أخطاء اتصال قاعدة متكررة، فشل ClamAV/MinIO في مسار ملفات حرج، أو الحاجة لتعديل Caddy/DNS/Admin. خذ نسخة احتياطية قبل أي عملية استعادة أو تنظيف بيانات.
+
+## جرد المشروع ونظافة VM
+
+```bash
+node scripts/audit-project.mjs
+docker system df
+docker image ls --no-trunc
+docker ps -a
+```
+
+استخدم `tahili-project-audit` عند تحديث خريطة النظام، و`tahili-environment-hygiene` عند فحص الموارد أو التنظيف. نفذ dry-run أولاً وسجل:
+
+- المسارات المطلقة والأعمار والأحجام.
+- image IDs المستخدمة بالحاويات والصور المستقرة التي ستبقى.
+- Docker volumes وbackup freshness دون قراءة المحتوى.
+- المساحة قبل وبعد والخدمات و`/login` وmigrations والlogs.
+
+الحذف الآمن المحتمل يقتصر على عناصر مثبتة غير مستخدمة: dangling images، build cache، stopped containers غير اللازمة، archives مؤقتة مؤكدة، وtest/preview temp القديم. لا تحذف volumes أو DB/MinIO/uploads/backups/credentials/QA data أو logs نشطة. لا تحذف tagged app image قبل إثبات أنها ليست عاملة ولا الصورة المستقرة المطلوب إبقاؤها.

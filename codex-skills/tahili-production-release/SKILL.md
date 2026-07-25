@@ -7,6 +7,7 @@ description: Release Tahili to the production VM only after an explicit producti
 
 - Require an explicit production deployment request before any production action; never touch production for feature work, Git checks, quality checks, or development releases.
 - Before production actions, read `AGENTS.md`, `RUNBOOK.md`, `PRODUCTION_CHECKLIST.md`, and `OFFLINE_DEPLOYMENT.md`; use `scripts/health-check.sh` for read-only development checks when useful.
+- If the release contains UI/navigation work, require evidence that `tahili-ui-governance` passed and no medical workflow, permission, Action contract, route, or deep link changed unintentionally.
 - The user has a separate development VM and production VM. Confirm the development VM is already green before production.
 - Target production only when explicitly requested: `root@192.168.17.228`; project `/tahili-system`; internal domain `https://tah.elaqat.site`.
 - Read `ENVIRONMENTS.md`. All production health checks, smoke tests, and Playwright use only `http://192.168.17.228:3000`; do not use localhost or the production domain.

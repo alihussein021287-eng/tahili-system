@@ -9,6 +9,7 @@ description: Test and inspect Tahili changes on the development VM. Use automati
 - Read `ENVIRONMENTS.md`. All live HTTP and Playwright checks use only `http://192.168.17.20:3000`; do not use localhost or either domain.
 - Do not inspect DNS, FRP, or Caddy unless explicitly requested. Their failure is not an ordinary application-check blocker.
 - Confirm `HEAD` matches the intended commit and note any untracked files before testing.
+- For UI/navigation changes, read `docs/MEDICAL_WORKFLOW_BOUNDARIES.md`, verify no workflow/permission/Action contract changed, and run the deterministic route audit.
 - Run TypeScript checks and related tests first; run the full suite for shared or high-risk changes.
 - Inspect Server Actions, server-side permissions, and center isolation.
 - Visually inspect only changed pages, on desktop and mobile, for RTL and horizontal clipping.

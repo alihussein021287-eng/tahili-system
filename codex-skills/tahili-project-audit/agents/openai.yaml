@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Project Audit"
+  short_description: "Inventory Tahili code and operational memory"
+  default_prompt: "Audit the Tahili project deterministically and reconcile its system maps without changing application behavior."

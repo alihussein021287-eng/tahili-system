@@ -38,4 +38,15 @@
 | Route Handlers / API | 18 |
 | صفحات غير مفحوصة | 0 |
 
+## Deterministic Inventory And Boundaries
+
+- شغّل `node scripts/audit-project.mjs` للجرد JSON، أو `node scripts/audit-project.mjs --markdown` لتوليد جدول الصفحات.
+- الجرد الحالي: 93 صفحة، 18 API route، 36 ملف Actions و256 Server Action مصدرة، 44 ملف component، 58 ملف `src/lib`، 87 Prisma model، 61 enum، 139 permission، 15 role، و16 migration.
+- التصنيف التفصيلي لكل صفحة موجود في `docs/UI_INFORMATION_ARCHITECTURE.md`; غير المصنف = 0.
+- حدود الدورات الطبية والعلاجية والمالية في `docs/MEDICAL_WORKFLOW_BOUNDARIES.md`.
+- سجل التكرار وقرار الإبقاء/التوحيد في `docs/UI_DUPLICATION_REGISTER.md`.
+- خطة الدفعات المستقبلية في `docs/FUTURE_UI_ROADMAP.md`.
+
+تحسين UX لا يغير workflow. إذا احتاجت الواجهة تعديل Action أو transition أو permission أو schema، توقف وافصل الطلب كتغيير وظيفي.
+
 الروابط القديمة `/attendance`, `/shifts`, و`/tasks` تحول إلى تبويبات `/staff` وتحافظ على المعلمات. المسارات التشغيلية الأخرى القديمة تبقى فعالة ويحدد `AppShell` مجموعتها الجامعة النشطة.

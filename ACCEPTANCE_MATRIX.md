@@ -1,5 +1,19 @@
 # Acceptance Matrix
 
+## UI Governance Gate
+
+كل دفعة UI يجب أن تثبت أن العرض فقط تغير:
+
+| Gate | Acceptance |
+| --- | --- |
+| Inventory | `node scripts/audit-project.mjs` ينجح و`unclassifiedPages=0`. |
+| Scope | لا diff في Prisma أو migrations أو permissions أو Server Actions أو workflow files إلا ضمن طلب وظيفي منفصل. |
+| Behavior | نفس form names/payload، Actions، الحالات، الانتقالات، DB effects والـAuditLog قبل/بعد. |
+| Roles | allowed route والـnegative direct URL والـsidebar/workspace/my-work لكل دور متأثر. |
+| Compatibility | تبقى routes القديمة والquery parameters والـdeep links والتنبيهات عاملة. |
+| Presentation | desktop/mobile، RTL، light/dark، loading/empty/error، وعدم overflow. |
+| Sensitive workflows | اتبع الاختبارات المحددة في `docs/MEDICAL_WORKFLOW_BOUNDARIES.md`. |
+
 ## Theme and approved reference data
 
 | Area | Acceptance |

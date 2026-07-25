@@ -12,6 +12,7 @@ Take a code-review stance. Findings come first, ordered by severity, with file a
 - Work from `/tahili-system`.
 - Read `AGENTS.md`.
 - For domain context, read the relevant rows of `SYSTEM_MAP.md`, `ROLES_PERMISSIONS.md`, and `ACCEPTANCE_MATRIX.md`.
+- For UI/navigation diffs, also read `docs/MEDICAL_WORKFLOW_BOUNDARIES.md` and `docs/UI_DUPLICATION_REGISTER.md`; flag presentation changes that alter workflow, Actions, permissions, routes, or deep links.
 - If no diff is provided, inspect `git status --short`, `git diff`, and targeted files only.
 - Do not touch production, do not use `prisma db push`, do not print secrets, and do not stage `skills-lock.json`.
 
