@@ -318,13 +318,16 @@ export default async function ReportsFinancePage({
         </div>
       </AdminIntro>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <StatCard label="تقارير ووثائق هذا الشهر" value={canReports || canOfficialDocs ? reportsCount : "—"} />
-        <StatCard label="تقارير تحتاج اعتماد" value={canReports || canOfficialReports ? reportsPendingApproval : "—"} tone="text-amber-700" />
-        <StatCard label="صرفيات قيد الاعتماد" value={canExpenses || canExpenseApprove ? submittedExpenses : "—"} tone="text-amber-700" />
-        <StatCard label="جاهزة للصرف" value={canExpenses || canExpensePay ? readyExpenses : "—"} tone="text-brand-700" />
-        <StatCard label="المصروف/المعلق" value={canExpenseAmounts && (canExpenses || canExpenseReports) ? moneyFromDecimal(expenseTotal) : "مخفي"} description={!canExpenseAmounts && (canExpenses || canExpenseReports) ? "يتطلب صلاحية عرض المبالغ" : `${expenseCount} سجل ضمن الفلتر`} />
-        <StatCard label="صادرات حديثة" value={canAudit ? exportLogs.length : "—"} description={canAudit ? "من سجل التدقيق المتاح" : undefined} />
+      <section className="space-y-3" aria-labelledby="reports-summary-title">
+        <h2 id="reports-summary-title" className="font-semibold text-gray-900">ملخص التقارير والمالية</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {canReports || canOfficialDocs ? <StatCard label="تقارير ووثائق هذا الشهر" value={reportsCount} /> : null}
+          {canReports || canOfficialReports ? <StatCard label="تقارير تحتاج اعتماد" value={reportsPendingApproval} tone="text-amber-700" /> : null}
+          {canExpenses || canExpenseApprove ? <StatCard label="صرفيات قيد الاعتماد" value={submittedExpenses} tone="text-amber-700" /> : null}
+          {canExpenses || canExpensePay ? <StatCard label="جاهزة للصرف" value={readyExpenses} tone="text-brand-700" /> : null}
+          {canExpenses || canExpenseReports ? <StatCard label="المصروف/المعلق" value={canExpenseAmounts ? moneyFromDecimal(expenseTotal) : "مخفي"} description={canExpenseAmounts ? `${expenseCount} سجل ضمن الفلتر` : "يتطلب صلاحية عرض المبالغ"} /> : null}
+          {canAudit ? <StatCard label="صادرات حديثة" value={exportLogs.length} description="من سجل التدقيق المتاح" /> : null}
+        </div>
       </section>
 
       {activeTab === "overview" ? (

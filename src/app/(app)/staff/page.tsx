@@ -248,13 +248,16 @@ export default async function StaffPage({
       </AdminIntro>
       {savedMessage(sp.saved)}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <StatCard label="إجمالي الموظفين" value={canUsers ? totalUsers : employeeRoster.length || "—"} />
-        <StatCard label="حسابات فعالة" value={canUsers ? activeUsers : "—"} tone="text-emerald-700" />
-        <StatCard label="حضور اليوم" value={canAttendance ? todayAttendance.length : "—"} tone="text-emerald-700" description={canAttendance ? `${presentNow} حاضر الآن` : undefined} />
-        <StatCard label="غياب من القائمة" value={canAttendance && employeeRoster.length ? absentRoster.length : "—"} tone="text-amber-700" description={employeeRoster.length ? "حسب قائمة الحضور" : "لا توجد قائمة موظفين"} />
-        <StatCard label="مهام مفتوحة" value={canTasks ? openTasks : "—"} tone="text-sky-700" />
-        <StatCard label="مهام عاجلة" value={canTasks ? urgentTasks : "—"} tone="text-red-700" description={canTasks ? `${overdueTasks} متأخرة` : undefined} />
+      <section className="space-y-3" aria-labelledby="staff-summary-title">
+        <h2 id="staff-summary-title" className="font-semibold text-gray-900">ملخص الموظفين والعمل اليومي</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {canUsers || employeeRoster.length ? <StatCard label="إجمالي الموظفين" value={canUsers ? totalUsers : employeeRoster.length} /> : null}
+          {canUsers ? <StatCard label="حسابات فعالة" value={activeUsers} tone="text-emerald-700" /> : null}
+          {canAttendance ? <StatCard label="حضور اليوم" value={todayAttendance.length} tone="text-emerald-700" description={`${presentNow} حاضر الآن`} /> : null}
+          {canAttendance ? <StatCard label="غياب من القائمة" value={employeeRoster.length ? absentRoster.length : "—"} tone="text-amber-700" description={employeeRoster.length ? "حسب قائمة الحضور" : "لا توجد قائمة موظفين"} /> : null}
+          {canTasks ? <StatCard label="مهام مفتوحة" value={openTasks} tone="text-sky-700" /> : null}
+          {canTasks ? <StatCard label="مهام عاجلة" value={urgentTasks} tone="text-red-700" description={`${overdueTasks} متأخرة`} /> : null}
+        </div>
       </section>
 
       {activeTab === "overview" ? (

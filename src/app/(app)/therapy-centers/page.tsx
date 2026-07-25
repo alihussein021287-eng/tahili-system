@@ -415,9 +415,14 @@ export default async function TherapyCentersPage({
         </div>
       </AdminIntro>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {statCards.map((card) => <StatCard key={card.label} {...card} />)}
-      </div>
+      {statCards.length > 0 ? (
+        <section className="space-y-3" aria-labelledby="therapy-summary-title">
+          <h2 id="therapy-summary-title" className="font-semibold text-gray-900">ملخص العلاج والمراكز</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {statCards.map((card) => <StatCard key={card.label} {...card} />)}
+          </div>
+        </section>
+      ) : null}
 
       {activeTab === "overview" && (
         <div className="grid gap-4 xl:grid-cols-2">

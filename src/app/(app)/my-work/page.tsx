@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { EmptyState } from "@/components/Ui";
+import { EmptyState, ResultCount } from "@/components/Ui";
 import { currentPerms, requirePerm, requireSession } from "@/lib/access";
 import { currentUserBranch } from "@/lib/branch-context";
 import { accessibleCenterIds } from "@/lib/center-access";
@@ -271,6 +271,8 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
     query.set("page", String(number));
     return `/my-work?${query}`;
   };
+  const attentionItems = page.items.filter((item) => item.priority === "urgent" || item.priority === "high");
+  const remainingItems = page.items.filter((item) => item.priority !== "urgent" && item.priority !== "high");
 
   return (
     <div className="min-w-0 space-y-5">
@@ -287,25 +289,18 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
         <div className="flex items-end gap-2"><button className="btn-primary" type="submit">تطبيق</button><Link href="/my-work" className="btn-ghost">مسح</Link></div>
       </form>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-500">
-        <span>{page.total} عنصر مطابق · صفحة {page.page} من {page.pageCount}</span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <ResultCount count={page.total} label={`عنصر مطابق · صفحة ${page.page} من ${page.pageCount}`} />
         <span>{branchId && userBranch?.branch ? `النطاق الافتراضي: ${userBranch.branch.name}` : "النطاق حسب صلاحيات الحساب وعضويات المراكز"}</span>
       </div>
 
       {page.items.length === 0 ? (
         <EmptyState title="لا توجد حالات تنتظر دورك" description="لا توجد عناصر مطابقة للصلاحيات والفلاتر الحالية. جرّب مسح الفلاتر أو افتح مساحتك اليومية." />
       ) : (
-        <>
-          <div className="hidden overflow-hidden rounded-xl border border-gray-200 bg-white md:block">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-gray-50"><tr><th className="th">الأولوية</th><th className="th">العمل</th><th className="th">المراجع</th><th className="th">الحالة</th><th className="th">المسؤول</th><th className="th">الانتظار/الاستحقاق</th><th className="th">النطاق</th><th className="th">التالي</th></tr></thead>
-              <tbody>{page.items.map((item) => <WorkRow key={item.key} item={item} now={now} />)}</tbody>
-            </table>
-          </div>
-          <div className="grid gap-3 md:hidden">
-            {page.items.map((item) => <WorkCard key={item.key} item={item} now={now} />)}
-          </div>
-        </>
+        <div className="space-y-6">
+          {attentionItems.length > 0 ? <WorkItemsSection title="يحتاج انتباه" description="عناصر مصنفة حالياً بعاجل أو مرتفع وفق أولوية قائمة العمل الحالية." items={attentionItems} now={now} /> : null}
+          {remainingItems.length > 0 ? <WorkItemsSection title={attentionItems.length > 0 ? "بقية العمل" : "عمل اليوم"} description="العناصر المطابقة للفلاتر الحالية وبنفس ترتيب قائمة العمل." items={remainingItems} now={now} /> : null}
+        </div>
       )}
 
       {page.pageCount > 1 ? (
@@ -316,6 +311,29 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
         </nav>
       ) : null}
     </div>
+  );
+}
+
+function WorkItemsSection({ title, description, items, now }: { title: string; description: string; items: WorkItem[]; now: Date }) {
+  return (
+    <section className="min-w-0 space-y-3" aria-labelledby={`work-section-${title}`}>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 id={`work-section-${title}`} className="font-semibold text-gray-900">{title}</h2>
+          <p className="mt-1 text-sm text-gray-500">{description}</p>
+        </div>
+        <ResultCount count={items.length} label="عنصر في هذا القسم" />
+      </div>
+      <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block" tabIndex={0} aria-label={title}>
+        <table className="min-w-[960px] w-full text-sm">
+          <thead className="sticky top-0 z-10 bg-gray-50"><tr><th className="th">الأولوية</th><th className="th">العمل</th><th className="th">المراجع</th><th className="th">الحالة</th><th className="th">المسؤول</th><th className="th">الانتظار/الاستحقاق</th><th className="th">النطاق</th><th className="th">التالي</th></tr></thead>
+          <tbody>{items.map((item) => <WorkRow key={item.key} item={item} now={now} />)}</tbody>
+        </table>
+      </div>
+      <div className="grid gap-3 md:hidden">
+        {items.map((item) => <WorkCard key={item.key} item={item} now={now} />)}
+      </div>
+    </section>
   );
 }
 

@@ -412,18 +412,21 @@ export default async function PharmacyInventoryPage({
       <AdminSectionTabs tabs={navTabs} active={activeTab} label="تبويبات الصيدلية والمخزون" />
       <AdminIntro title={activeInfo.title} description={activeInfo.description}>
         <div className="flex flex-wrap gap-2">
-          {quickLinks.map((link) => <Link key={link.href} href={link.href} className="btn-ghost btn-sm">{link.label}</Link>)}
+          {quickLinks.filter((link) => link.href !== tabHref(activeTab)).map((link) => <Link key={link.href} href={link.href} className="btn-ghost btn-sm">{link.label}</Link>)}
         </div>
       </AdminIntro>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
-        <StatCard label="وصفات بانتظار الصرف" value={canPharmacy ? pendingRxCount : "—"} tone="text-amber-700" />
-        <StatCard label="وصفات مصروفة اليوم" value={canPharmacy ? dispensedTodayCount : "—"} tone="text-emerald-700" />
-        <StatCard label="أدوية ناقصة" value={canStock ? lowMedications.length : "—"} tone="text-red-700" />
-        <StatCard label="دفعات قريبة الانتهاء" value={canStock ? expiringBatchCount : "—"} description={canStock ? `خلال ${CLOSE_EXPIRY_DAYS} يوم` : undefined} tone="text-orange-700" />
-        <StatCard label="دفعات منتهية" value={canStock ? expiredBatchCount : "—"} tone="text-red-700" />
-        <StatCard label="أوامر شراء مفتوحة" value={canPurchase ? openPurchaseCount : "—"} tone="text-brand-700" />
-        <StatCard label="استلامات هذا الشهر" value={canPurchase ? receiptCountThisMonth : "—"} description={canPurchase ? `${partialPurchaseCount} استلام جزئي` : undefined} />
+      <section className="space-y-3" aria-labelledby="pharmacy-summary-title">
+        <h2 id="pharmacy-summary-title" className="font-semibold text-gray-900">ملخص الصيدلية والمخزون</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {canPharmacy ? <StatCard label="وصفات بانتظار الصرف" value={pendingRxCount} tone="text-amber-700" /> : null}
+          {canPharmacy ? <StatCard label="وصفات مصروفة اليوم" value={dispensedTodayCount} tone="text-emerald-700" /> : null}
+          {canStock ? <StatCard label="أدوية ناقصة" value={lowMedications.length} tone="text-red-700" /> : null}
+          {canStock ? <StatCard label="دفعات قريبة الانتهاء" value={expiringBatchCount} description={`خلال ${CLOSE_EXPIRY_DAYS} يوم`} tone="text-orange-700" /> : null}
+          {canStock ? <StatCard label="دفعات منتهية" value={expiredBatchCount} tone="text-red-700" /> : null}
+          {canPurchase ? <StatCard label="أوامر شراء مفتوحة" value={openPurchaseCount} tone="text-brand-700" /> : null}
+          {canPurchase ? <StatCard label="استلامات هذا الشهر" value={receiptCountThisMonth} description={`${partialPurchaseCount} استلام جزئي`} /> : null}
+        </div>
       </section>
 
       {activeTab === "overview" ? (

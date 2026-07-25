@@ -342,29 +342,46 @@ export default async function Dashboard() {
     ...section,
     cards: section.cards.filter((card) => perms.has(card.perm)),
   })).filter((section) => section.cards.length > 0);
+  const primaryStart = roleCards[0]?.cards[0] ?? myShortcuts[0] ?? CANDIDATES[0];
+  const secondaryShortcuts = myShortcuts.filter((shortcut) => shortcut.href !== primaryStart?.href);
 
   return (
     <div className="space-y-6">
-      <PageHeader title={`أهلاً، ${name}`} subtitle={dateLine} icon="🏠" />
+      <PageHeader title={`أهلاً، ${name}`} subtitle={`${dateLine} · ${myStation?.name ?? myRole ?? "مساحة العمل"}`} icon="🏠" />
+
+      {primaryStart ? (
+        <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-brand-200 bg-brand-50/50 p-4" aria-labelledby="start-here-title">
+          <div>
+            <div className="text-xs font-semibold text-brand-700">ابدأ من هنا</div>
+            <h2 id="start-here-title" className="mt-1 text-lg font-bold text-gray-900">{primaryStart.label}</h2>
+            <p className="mt-1 text-sm text-gray-600">المدخل الأقرب إلى عمل دورك الحالي وفق صلاحيات حسابك.</p>
+          </div>
+          <Link href={primaryStart.href} className="btn-primary">فتح {primaryStart.label}</Link>
+        </section>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-semibold text-gray-500">لوحة المتابعة</div>
+        <div>
+          <h2 className="font-semibold text-gray-900">اختصاراتي</h2>
+          <p className="text-sm text-gray-500">روابط مختارة للعمل المتكرر، وليست نسخة من قائمة التنقل.</p>
+        </div>
         <div className="flex gap-2">
-          <Link href="/my-work" className="btn-ghost">قائمة عملي</Link>
           <ShortcutsEditor candidates={CANDIDATES.map(({ href, label, icon }) => ({ href, label, icon }))} current={favs} />
           {perms.has("patients.create") && <Link href="/patients/new" className="btn-primary">+ مراجع جديد</Link>}
         </div>
       </div>
 
-      {myShortcuts.length > 0 && (
+      {secondaryShortcuts.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {myShortcuts.map((c) => (
+          {secondaryShortcuts.map((c) => (
             <Link key={c.href} href={c.href} className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-brand-300 hover:text-brand-700">
               <span>{c.icon}</span><span>{c.label}</span>
             </Link>
           ))}
         </div>
       )}
+
+      {(stats.length > 0 || roleCards.length > 0) && <h2 className="font-semibold text-gray-900">ملخص اليوم</h2>}
 
       {roleCards.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -400,7 +417,10 @@ export default async function Dashboard() {
 
       {focus.length > 0 && (
         <div>
-          <div className="mb-2 text-sm font-semibold text-gray-500">ركّز على عملك</div>
+          <div className="mb-2">
+            <h2 className="font-semibold text-gray-900">يحتاج انتباهك</h2>
+            <p className="text-sm text-gray-500">عناصر المتابعة الموجودة حالياً ضمن صلاحياتك.</p>
+          </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {focus.map((f) => (
               <Link key={f.label} href={f.href} className="card flex items-center gap-3 p-4 transition hover:shadow-md hover:ring-1 hover:ring-brand-200">
