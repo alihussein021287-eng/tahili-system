@@ -29,4 +29,11 @@ describe("patient file tabs navigation", () => {
     expect(source).not.toContain('system: "النشاط"');
     expect(source).not.toContain('label: "النشاط"');
   });
+
+  it("exposes every permitted tab as a direct mobile control", () => {
+    expect(source).toContain('className="patient-tabs-mobile md:hidden"');
+    expect(source).toContain('aria-label="أقسام ملف المراجع"');
+    expect(source).toContain('aria-current={tab === item.key ? "page" : undefined}');
+    expect(source).toContain('onClick={() => openTab(item.key)}');
+  });
 });

@@ -137,12 +137,25 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
   const reload = (key: string) => () => loadTab(key);
 
   return (
-    <div className="card flex min-w-0 flex-col overflow-hidden md:flex-row">
+    <div className="patient-file card flex min-w-0 flex-col overflow-hidden md:flex-row">
       <div className="border-b border-gray-200 bg-gray-50/50 p-3 md:w-64 md:shrink-0 md:border-b-0 md:border-l">
-        <label className="label md:hidden" htmlFor="patient-tab-select">قسم ملف المراجع</label>
-        <select id="patient-tab-select" className="input md:hidden" value={tab} onChange={(event) => openTab(event.target.value)}>
+        <select id="patient-tab-select" hidden aria-hidden="true" tabIndex={-1} value={tab} onChange={(event) => openTab(event.target.value)}>
           {visibleTabs.map((item) => <option key={item.key} value={item.key}>{TAB_GROUPS[item.group]} - {item.label}</option>)}
         </select>
+        <nav className="patient-tabs-mobile md:hidden" aria-label="أقسام ملف المراجع">
+          {visibleTabs.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => openTab(item.key)}
+              aria-current={tab === item.key ? "page" : undefined}
+              className={`page-tab ${tab === item.key ? "page-tab-active" : ""}`}
+            >
+              <span aria-hidden="true">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
         <div className="hidden space-y-2 md:block">
           {Object.keys(TAB_GROUPS).map((group) => {
             const items = visibleTabs.filter((item) => item.group === group);
@@ -161,7 +174,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
           })}
         </div>
       </div>
-      <div className="min-w-0 flex-1 p-4 sm:p-5">
+      <div className="patient-file-content min-w-0 flex-1 p-4 sm:p-5">
         {activeTab ? <div className="mb-5 border-b border-gray-100 pb-4"><h2 className="text-lg font-bold text-gray-900">{activeTab.label}</h2><p className="mt-1 text-sm text-gray-500">{TAB_DESCRIPTIONS[activeTab.key]}</p></div> : null}
         {tab === "overview" && <PatientOverview patient={patient} can={can} role={role} openTab={openTab} />}
         {tab === "timeline" && <Timeline patient={patient} can={can} openTab={openTab} />}

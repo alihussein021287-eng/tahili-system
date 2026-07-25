@@ -238,6 +238,7 @@ button, summary { touch-action: manipulation; }
   .action-menu-content { @apply absolute left-0 top-full z-30 mt-1 min-w-44 space-y-1 rounded-lg border border-gray-200 bg-white p-1 shadow-lg; }
   .action-menu-content > a, .action-menu-content > button, .action-menu-content form > button { @apply flex min-h-9 w-full items-center rounded-md px-3 py-2 text-right text-sm text-gray-700 hover:bg-gray-50; }
   .confirm-dialog-panel { @apply fixed left-1/2 top-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-gray-200 bg-white p-5 shadow-xl; }
+  .patient-tabs-mobile { @apply flex max-w-full gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-white p-1; scrollbar-width: thin; }
 }
 
 
@@ -263,6 +264,18 @@ button, summary { touch-action: manipulation; }
     min-height: 2.5rem;
     white-space: normal;
   }
+  .patient-file-content :is(input, select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .patient-file-content :is(a, p, span, td, th, dd) {
+    overflow-wrap: anywhere;
+  }
+  .patient-file-content :is([role="dialog"], .fixed.inset-x-3) {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
   .no-print.rounded-2xl.bg-gradient-to-l,
   .rounded-2xl.bg-gradient-to-l {
     border-radius: 0.9rem !important;
@@ -275,11 +288,15 @@ button, summary { touch-action: manipulation; }
   body { background: #fff !important; color: #111827 !important; font-size: 12px; }
   @page { size: A4; margin: 14mm; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  html, body { width: auto !important; min-width: 0 !important; overflow: visible !important; }
   main { padding: 0 !important; overflow: visible !important; }
   #report, #card, #receipt, .card { border: none !important; box-shadow: none !important; background: #fff !important; overflow: visible !important; }
   #report { padding: 0 !important; }
   .rounded-xl, .rounded-2xl, .rounded-lg { border-radius: 0 !important; }
   a { color: inherit !important; text-decoration: none !important; }
+  img, svg, canvas { max-width: 100% !important; }
+  p, td, th, dd { overflow-wrap: anywhere; }
+  .overflow-x-auto, .table-wrap, .data-table-wrap { overflow: visible !important; }
   table { page-break-inside: auto; width: 100% !important; min-width: 0 !important; }
   th, td { color: #111827 !important; border-color: #d1d5db !important; }
   thead { display: table-header-group; }
