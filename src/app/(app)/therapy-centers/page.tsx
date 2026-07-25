@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
 import { PageHeader } from "@/components/PageHeader";
+import { TableEmptyRow } from "@/components/Ui";
 import { currentPerms, requireSession } from "@/lib/access";
 import { accessibleCenterIds } from "@/lib/center-access";
 import { activeCenterHallOptions } from "@/lib/center-halls";
@@ -149,7 +150,7 @@ function quickLink(href: string, label: string) {
 }
 
 function emptyRow(colSpan: number, text = "لا توجد نتائج مطابقة.") {
-  return <tr><td className="td text-center text-gray-400" colSpan={colSpan}>{text}</td></tr>;
+  return <TableEmptyRow colSpan={colSpan} title={text} description="غيّر الفلاتر أو ستظهر السجلات هنا عند توفرها ضمن صلاحياتك." />;
 }
 
 export default async function TherapyCentersPage({

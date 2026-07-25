@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { UserRole } from "@prisma/client";
 import { Combobox } from "@/components/Combobox";
 import { PageHeader } from "@/components/PageHeader";
+import { DataTable, EmptyState, ResultCount, TableEmptyRow } from "@/components/Ui";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
 import { currentPerms, requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
@@ -293,9 +294,10 @@ export default async function StaffPage({
               <button className="btn-primary" type="submit">تصفية</button>
               <Link href="/staff?tab=employees" className="btn-ghost">مسح</Link>
               {canUserAdmin ? <Link href="/users?tab=create" className="btn-ghost">إضافة موظف</Link> : null}
+              <ResultCount count={users.length} label="موظف معروض" />
             </div>
           </form>
-          <div className="-mx-5 -mb-5 overflow-x-auto">
+          <DataTable label="قائمة الموظفين" className="-mx-5 -mb-5 rounded-none border-x-0 border-b-0">
             <table className="w-full text-sm">
               <thead><tr><th className="th">المستخدم</th><th className="th">الاسم</th><th className="th">الدور</th><th className="th">القسم/الفرع</th><th className="th">الحالة</th><th className="th">آخر نشاط</th><th className="th">إجراءات</th></tr></thead>
               <tbody>
@@ -310,10 +312,10 @@ export default async function StaffPage({
                     <td className="td"><Link href={`/users/${user.id}`} className="rounded bg-brand-50 px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100">إدارة</Link></td>
                   </tr>
                 ))}
-                {users.length === 0 ? <tr><td className="td text-center text-gray-400" colSpan={7}>لا توجد نتائج مطابقة.</td></tr> : null}
+                {users.length === 0 ? <TableEmptyRow colSpan={7} title="لا توجد نتائج مطابقة" description="امسح بعض الفلاتر أو استخدم بحثاً أوسع." /> : null}
               </tbody>
             </table>
-          </div>
+          </DataTable>
         </AdminSection>
       ) : null}
 
@@ -506,7 +508,7 @@ export default async function StaffPage({
 }
 
 function TaskRows({ rows, canComplete, canDelete }: { rows: any[]; canComplete: boolean; canDelete: boolean }) {
-  if (!rows.length) return <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-6 text-center text-sm text-gray-400">لا توجد مهام مطابقة.</div>;
+  if (!rows.length) return <EmptyState compact title="لا توجد مهام مطابقة" description="غيّر الفلاتر أو ستظهر المهام هنا عند إسنادها ضمن صلاحياتك." />;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">

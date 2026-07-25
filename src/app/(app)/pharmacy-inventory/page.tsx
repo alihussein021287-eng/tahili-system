@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
+import { TableEmptyRow } from "@/components/Ui";
 import { PageHeader } from "@/components/PageHeader";
 import { currentPerms, requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
@@ -94,7 +95,7 @@ function moneyValue(value: unknown) {
 }
 
 function emptyRow(colSpan: number, text = "لا توجد نتائج مطابقة.") {
-  return <tr><td className="td text-center text-gray-400" colSpan={colSpan}>{text}</td></tr>;
+  return <TableEmptyRow colSpan={colSpan} title={text} description="غيّر الفلاتر أو ستظهر السجلات هنا عند توفرها ضمن صلاحياتك." />;
 }
 
 function badge(label: string, cls = "bg-gray-100 text-gray-600") {

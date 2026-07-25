@@ -152,12 +152,34 @@ export function FilterBar({ children, results, activeFilters }: { children: Reac
   );
 }
 
-export function DataTable({ children, label }: { children: ReactNode; label?: string }) {
+export function DataTable({ children, label, className = "" }: { children: ReactNode; label?: string; className?: string }) {
   return (
-    <div className="data-table-wrap" role="region" aria-label={label} tabIndex={0}>
+    <div className={`data-table-wrap ${className}`} role="region" aria-label={label} tabIndex={0}>
       {children}
     </div>
   );
+}
+
+export function TableEmptyRow({
+  colSpan,
+  title = "لا توجد نتائج مطابقة",
+  description = "عدّل الفلاتر أو ستظهر العناصر هنا عند توفرها.",
+}: {
+  colSpan: number;
+  title?: string;
+  description?: string;
+}) {
+  return (
+    <tr>
+      <td className="td" colSpan={colSpan}>
+        <EmptyState compact title={title} description={description} />
+      </td>
+    </tr>
+  );
+}
+
+export function ResultCount({ count, label = "نتيجة" }: { count: number; label?: string }) {
+  return <span className="filter-bar-summary" aria-live="polite">{count} {label}</span>;
 }
 
 export function MobileList({ children, className = "" }: { children: ReactNode; className?: string }) {

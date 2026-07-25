@@ -3,6 +3,7 @@ import { Combobox } from "@/components/Combobox";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { DataTable, ResultCount, TableEmptyRow } from "@/components/Ui";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
 import { canManageUsers, ROLE_LABELS } from "@/lib/permissions";
 import { createUser } from "./actions";
@@ -192,13 +193,13 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
               <div className="flex flex-wrap items-end gap-2 md:col-span-6">
                 <button className="btn-primary" type="submit">تصفية</button>
                 <Link href="/users?tab=list" className="btn-ghost">مسح</Link>
-                <span className="self-center text-sm text-gray-400">المعروض: {users.length}</span>
+                <ResultCount count={users.length} label="حساب معروض" />
               </div>
             </form>
           </AdminSection>
 
           <AdminSection id="users-list" title="الحسابات" description="كل نتيجة تفتح صفحة إدارة مفصلة للبيانات، الأمان، والصلاحيات الخاصة بالمستخدم." className="overflow-hidden">
-            <div className="-mx-5 -mb-5 overflow-x-auto">
+            <DataTable label="قائمة حسابات المستخدمين" className="-mx-5 -mb-5 rounded-none border-x-0 border-b-0">
               <table className="w-full">
                 <thead>
                   <tr>
@@ -245,10 +246,10 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
                       </tr>
                     );
                   })}
-                  {users.length === 0 ? <tr><td className="td text-center text-gray-400" colSpan={8}>لا توجد نتائج مطابقة.</td></tr> : null}
+                  {users.length === 0 ? <TableEmptyRow colSpan={8} title="لا توجد حسابات مطابقة" description="امسح بعض الفلاتر أو استخدم بحثاً أوسع." /> : null}
                 </tbody>
               </table>
-            </div>
+            </DataTable>
           </AdminSection>
         </>
       ) : null}

@@ -6,6 +6,7 @@ import { canManageUsers } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { AUDIT_TABLE, AUDIT_ACTION, fmtDateTime } from "@/lib/labels";
+import { DataTable, StatusBadge, TableEmptyRow } from "@/components/Ui";
 
 export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
@@ -44,10 +45,6 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   const firstItem = logs.length === 0 ? 0 : (p - 1) * PAGE_SIZE + 1;
   const lastItem = logs.length === 0 ? 0 : Math.min(total, (p - 1) * PAGE_SIZE + logs.length);
 
-  const actionColor: Record<string, string> = {
-    CREATE: "bg-emerald-50 text-emerald-700", UPDATE: "bg-amber-50 text-amber-700", DELETE: "bg-red-50 text-red-700",
-  };
-
   return (
     <div className="min-w-0 space-y-6">
       <PageHeader title="سجل التدقيق" subtitle="عمليات الإضافة والتعديل والحذف — للمساءلة والمراجعة" icon="🗂" />
@@ -66,7 +63,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
       {activeTab === "logs" ? (
         <>
           <AdminSection id="logs" title="السجلات" description="كل صف يوضح الفاعل، نوع العملية، القسم المتأثر، ومعرّف السجل أو رابط فتحه." className="overflow-hidden">
-            <div className="-mx-5 -mb-5 overflow-x-auto">
+            <DataTable label="سجل عمليات التدقيق" className="-mx-5 -mb-5 rounded-none border-x-0 border-b-0">
               <table className="w-full">
                 <thead>
                   <tr>
@@ -81,7 +78,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
                   {logs.map((l) => (
                     <tr key={l.id} className="hover:bg-gray-50">
                       <td className="td">{l.user?.fullName ?? "—"}</td>
-                      <td className="td"><span className={`badge ${actionColor[l.action] ?? "bg-gray-100 text-gray-600"}`}>{AUDIT_ACTION[l.action] ?? l.action}</span></td>
+                      <td className="td"><StatusBadge tone={l.action === "CREATE" ? "success" : l.action === "UPDATE" ? "warning" : l.action === "DELETE" ? "danger" : "neutral"}>{AUDIT_ACTION[l.action] ?? l.action}</StatusBadge></td>
                       <td className="td">{AUDIT_TABLE[l.tableName] ?? l.tableName}</td>
                       <td className="td">
                         {l.tableName === "patients"
@@ -91,10 +88,10 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
                       <td className="td">{fmtDateTime(l.createdAt)}</td>
                     </tr>
                   ))}
-                  {logs.length === 0 ? <tr><td className="td text-center text-gray-400" colSpan={5}>لا توجد سجلات بعد.</td></tr> : null}
+                  {logs.length === 0 ? <TableEmptyRow colSpan={5} title="لا توجد سجلات بعد" description="ستظهر عمليات الإضافة والتعديل والحذف هنا عند تسجيلها." /> : null}
                 </tbody>
               </table>
-            </div>
+            </DataTable>
           </AdminSection>
 
           {pages > 1 ? (

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { loadPerms } from "@/lib/access";
 import { PermMatrix } from "@/components/PermMatrix";
 import { WORK_REGISTRY } from "@/lib/work-registry";
+import { DataTable, EmptyState, StatusBadge } from "@/components/Ui";
 
 export const dynamic = "force-dynamic";
 type PermissionsTab = "matrix" | "changes";
@@ -66,7 +67,7 @@ export default async function PermissionsPage({ searchParams }: { searchParams: 
               <SourceCard title="تخصيص الدور" detail="RolePermission يغيّر القيمة الفعلية للدور دون تغيير القالب البرمجي." count={roleOverrides.length} />
               <SourceCard title="تخصيص المستخدم" detail="UserPermission هو الاستثناء النهائي للحساب المحدد." count={overrides.length} />
             </div>
-            <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200">
+            <DataTable label="مرجع الصفحات والصلاحيات" className="mt-4">
               <table className="w-full text-sm">
                 <thead><tr><th className="th">القسم/الصفحة</th><th className="th">الرابط المعتمد</th><th className="th">الصلاحيات التي تفتحها</th><th className="th">الحساسية</th></tr></thead>
                 <tbody>{WORK_REGISTRY.filter((entry) => entry.route !== "/" && entry.requiredPermissions.length > 0).map((entry) => (
@@ -74,11 +75,11 @@ export default async function PermissionsPage({ searchParams }: { searchParams: 
                     <td className="td">{entry.section} · {entry.label}</td>
                     <td className="td font-mono text-xs">{entry.deepLink}</td>
                     <td className="td"><div className="flex flex-wrap gap-1">{entry.requiredPermissions.map((permission) => <span key={permission} className="badge-neutral font-mono">{permission}</span>)}</div></td>
-                    <td className="td">{entry.sensitive ? <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">حساسة</span> : <span className="text-xs text-gray-400">اعتيادية</span>}</td>
+                    <td className="td"><StatusBadge tone={entry.sensitive ? "danger" : "neutral"}>{entry.sensitive ? "حساسة" : "اعتيادية"}</StatusBadge></td>
                   </tr>
                 ))}</tbody>
               </table>
-            </div>
+            </DataTable>
           </AdminSection>
           <div className="flex justify-end">
             <a href="/api/permissions/export" className="btn-ghost">تصدير CSV</a>
@@ -96,7 +97,7 @@ export default async function PermissionsPage({ searchParams }: { searchParams: 
                 <time className="text-gray-500">{x.createdAt.toLocaleString("ar-IQ")}</time>
               </div>
             ))}
-            {changes.length === 0 ? <div className="p-3 text-center text-sm text-gray-400">لا توجد تغييرات مسجلة بعد.</div> : null}
+            {changes.length === 0 ? <EmptyState compact title="لا توجد تغييرات مسجلة" description="ستظهر تعديلات الأدوار واستثناءات المستخدمين هنا عند تسجيلها." /> : null}
           </div>
         </AdminSection>
       ) : null}

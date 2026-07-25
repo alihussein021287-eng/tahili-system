@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Combobox } from "@/components/Combobox";
 import { PageHeader } from "@/components/PageHeader";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
+import { TableEmptyRow } from "@/components/Ui";
 import { currentPerms, requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { APPROVAL_STATUS, APPROVAL_TYPE, DOC_DIRECTION, DOC_TYPE, INVOICE_STATUS, fmtDate, fmtDateTime, fmtMoney } from "@/lib/labels";
@@ -108,7 +109,7 @@ function badge(text: string, cls: string) {
 }
 
 function emptyRow(colSpan: number, text = "لا توجد نتائج مطابقة.") {
-  return <tr><td className="td text-center text-gray-400" colSpan={colSpan}>{text}</td></tr>;
+  return <TableEmptyRow colSpan={colSpan} title={text} description="غيّر الفلاتر أو ستظهر السجلات هنا عند توفرها ضمن صلاحياتك." />;
 }
 
 export default async function ReportsFinancePage({

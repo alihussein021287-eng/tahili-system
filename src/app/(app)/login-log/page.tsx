@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireSession } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { fmtDateTime } from "@/lib/labels";
+import { DataTable, StatusBadge, TableEmptyRow } from "@/components/Ui";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export default async function LoginLog({ searchParams }: { searchParams: Promise
         <Tab k="fail" label={`فاشل (${failCount})`} />
       </div>
 
-      <div className="card overflow-x-auto p-0">
+      <DataTable label="سجل الدخول والجلسات">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500">
             <tr>
@@ -45,12 +46,12 @@ export default async function LoginLog({ searchParams }: { searchParams: Promise
             </tr>
           </thead>
           <tbody>
-            {logs.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-gray-400">لا توجد سجلات.</td></tr>}
+            {logs.length === 0 && <TableEmptyRow colSpan={6} title="لا توجد سجلات دخول" description="ستظهر محاولات الدخول هنا عند تسجيلها." />}
             {logs.map((l) => (
               <tr key={l.id} className="border-t align-top">
                 <td className="whitespace-nowrap p-2 text-gray-600">{fmtDateTime(l.createdAt)}</td>
                 <td className="p-2"><div className="font-medium text-gray-800">{l.name ?? l.username}</div><div className="text-xs text-gray-400">{l.username}</div></td>
-                <td className="p-2">{l.success ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">ناجح</span> : <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">فاشل</span>}</td>
+                <td className="p-2"><StatusBadge tone={l.success ? "success" : "danger"}>{l.success ? "ناجح" : "فاشل"}</StatusBadge></td>
                 <td className="p-2 text-xs text-gray-500">{l.reason ?? "—"}</td>
                 <td className="p-2 font-mono text-xs text-gray-600">{l.ip ?? "—"}</td>
                 <td className="max-w-[220px] truncate p-2 text-xs text-gray-400" title={l.userAgent ?? ""}>{l.userAgent ?? "—"}</td>
@@ -58,7 +59,7 @@ export default async function LoginLog({ searchParams }: { searchParams: Promise
             ))}
           </tbody>
         </table>
-      </div>
+      </DataTable>
     </div>
   );
 }
