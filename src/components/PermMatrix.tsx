@@ -41,12 +41,12 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
   return (
     <div className="space-y-4">
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setTab("roles")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "roles" ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"}`}>صلاحيات الأدوار</button>
-          <button type="button" onClick={() => setTab("users")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "users" ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"}`}>استثناءات المستخدمين</button>
-          {pending ? <span className="self-center text-xs text-gray-400">يحفظ...</span> : null}
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="مصدر الصلاحيات">
+          <button type="button" role="tab" aria-selected={tab === "roles"} onClick={() => setTab("roles")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "roles" ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"}`}>صلاحيات الأدوار</button>
+          <button type="button" role="tab" aria-selected={tab === "users"} onClick={() => setTab("users")} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === "users" ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"}`}>استثناءات المستخدمين</button>
+          <span className="self-center text-xs text-gray-400" aria-live="polite">{pending ? "جارٍ حفظ التغيير..." : "الحفظ تلقائي عند تغيير أي صلاحية"}</span>
         </div>
-        <input className="input max-w-lg" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="بحث في المجموعات والصلاحيات والمفاتيح" />
+        <label className="label max-w-lg">بحث في الصلاحيات<input className="input mt-1" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="المجموعة أو الصلاحية أو المفتاح" /></label>
       </div>
 
       {tab === "roles" && (
@@ -76,8 +76,9 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
 
       {tab === "users" && (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-[240px]">
+          <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 p-4">
+            <label className="label min-w-[240px] flex-1">
+              المستخدم
               <Combobox
                 name="_userPick"
                 allowFree={false}
@@ -85,14 +86,14 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
                 onValueChange={setUserId}
                 options={users.map((u: any) => ({ value: String(u.id), label: `${u.fullName} — ${ROLE_LABELS[u.role as keyof typeof ROLE_LABELS]}` }))}
               />
-            </div>
+            </label>
             <button type="button" onClick={() => { if (confirm("حذف كل استثناءات هذا المستخدم والعودة لافتراضي دوره؟")) resetUser(); }} className="btn-ghost text-sm">إرجاع لافتراضي الدور</button>
-            <span className="text-xs text-gray-400">العلامة الزرقاء = استثناء خاص بهذا المستخدم</span>
+            <span className="w-full text-xs text-gray-500">القيمة الفعلية تبدأ من الدور، ثم يطبق الاستثناء الخاص. العلامة الزرقاء تعني وجود قرار مباشر لهذا المستخدم.</span>
           </div>
-          <form action={(fd) => start(async () => { await copyUserPerms(userId, fd); router.refresh(); })} className="card grid gap-2 p-3 md:grid-cols-3">
-            <Combobox name="sourceUserId" allowFree={false} placeholder="نسخ من مستخدم" options={users.filter((u) => u.id !== userId).map((u) => ({ value: u.id, label: u.fullName }))} />
-            <input name="confirm" className="input" placeholder="اكتب: نسخ الصلاحيات" />
-            <button className="btn-primary">نسخ بعد التأكيد</button>
+          <form action={(fd) => start(async () => { await copyUserPerms(userId, fd); router.refresh(); })} className="card grid gap-4 p-4 md:grid-cols-3">
+            <label className="label">المستخدم المصدر<Combobox name="sourceUserId" allowFree={false} placeholder="نسخ من مستخدم" options={users.filter((u) => u.id !== userId).map((u) => ({ value: u.id, label: u.fullName }))} /></label>
+            <label className="label">عبارة التأكيد<input name="confirm" className="input mt-1" placeholder="اكتب: نسخ الصلاحيات" /></label>
+            <div className="flex items-end"><button type="submit" className="btn-primary w-full">نسخ بعد التأكيد</button></div>
           </form>
           {selUser && (
             <div className="grid gap-3 sm:grid-cols-3">
@@ -119,9 +120,10 @@ function Groups({ checkedOf, onToggle, overriddenOf, baselineOf, query = "" }: {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {groups.map((g) => (
-        <div key={g.section} className="card p-4">
+        <fieldset key={g.section} className="card min-w-0 p-4">
+          <legend className="sr-only">{g.title}</legend>
           <div className="mb-2 flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
-            <div className="font-semibold text-gray-700">{g.title}</div>
+            <div className="font-semibold text-gray-700" aria-hidden="true">{g.title}</div>
             <div className="text-xs text-gray-400">{g.items.filter((it) => checkedOf(it.key)).length}/{g.items.length}</div>
           </div>
           <div className="space-y-1.5">
@@ -139,7 +141,7 @@ function Groups({ checkedOf, onToggle, overriddenOf, baselineOf, query = "" }: {
               </label>
             ))}
           </div>
-        </div>
+        </fieldset>
       ))}
     </div>
   );

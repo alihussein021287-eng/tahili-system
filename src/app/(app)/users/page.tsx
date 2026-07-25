@@ -3,7 +3,7 @@ import { Combobox } from "@/components/Combobox";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { DataTable, ResultCount, TableEmptyRow } from "@/components/Ui";
+import { DataTable, FormField, ResultCount, TableEmptyRow } from "@/components/Ui";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
 import { canManageUsers, ROLE_LABELS } from "@/lib/permissions";
 import { createUser } from "./actions";
@@ -122,50 +122,53 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
 
       {activeTab === "create" ? (
         <AdminSection id="create-user" title="بيانات الحساب" description="كل الحقول هنا تخص الحساب الجديد فقط، والحفظ يتم بشكل مستقل عن قائمة المستخدمين.">
-          <form action={createUser} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <label className="label">اسم المستخدم</label>
+          <form action={createUser} className="space-y-5">
+            <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <legend className="mb-3 text-sm font-semibold text-gray-800">بيانات الدخول والتعريف</legend>
+              <FormField label="اسم المستخدم" required>
               <input className="input" name="username" required autoComplete="off" />
-            </div>
-            <div>
-              <label className="label">الاسم الكامل</label>
+              </FormField>
+              <FormField label="الاسم الكامل" required>
               <input className="input" name="fullName" required autoComplete="off" />
-            </div>
-            <div>
-              <label className="label">كلمة المرور المؤقتة</label>
+              </FormField>
+              <FormField label="كلمة المرور المؤقتة" required hint="تُسلّم للمستخدم خارج النظام، ويمكن إبقاء الحساب بانتظار التفعيل.">
               <input className="input" name="password" type="password" required placeholder="يسلمها المدير للمستخدم خارج النظام" autoComplete="new-password" />
-            </div>
-            <div>
-              <label className="label">الدور</label>
+              </FormField>
+              <FormField label="الدور" required>
               <Combobox name="role" allowFree={false} options={ROLE_OPTIONS} />
-            </div>
-            <div>
-              <label className="label">الفرع</label>
+              </FormField>
+            </fieldset>
+
+            <fieldset className="grid min-w-0 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+              <legend className="mb-3 text-sm font-semibold text-gray-800">الارتباط الوظيفي</legend>
+              <FormField label="الفرع" hint="اختياري؛ يحدد نطاق الفرع عندما تطبقه صلاحيات الدور.">
               <Combobox name="branchId" allowFree={false} placeholder="بدون" options={branches.map((b: any) => ({ value: String(b.id), label: b.name }))} />
-            </div>
-            <div>
-              <label className="label">المسمّى الوظيفي</label>
+              </FormField>
+              <FormField label="المسمّى الوظيفي">
               <input className="input" name="jobTitle" autoComplete="off" />
-            </div>
-            <div>
-              <label className="label">القسم/الشعبة</label>
+              </FormField>
+              <FormField label="القسم/الشعبة">
               <input className="input" name="department" autoComplete="off" />
-            </div>
-            <div>
-              <label className="label">البريد (اختياري)</label>
+              </FormField>
+              <FormField label="البريد الإلكتروني" hint="اختياري">
               <input className="input" name="email" autoComplete="off" />
-            </div>
-            <label className="flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50/50 p-3 text-sm text-gray-600 lg:col-span-2">
+              </FormField>
+            </fieldset>
+
+            <fieldset className="grid min-w-0 gap-4 border-t border-gray-100 pt-4 lg:grid-cols-2">
+              <legend className="mb-3 text-sm font-semibold text-gray-800">التفعيل والتأكيد الإداري</legend>
+              <label className="flex min-h-20 items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-sm text-gray-700">
               <input type="checkbox" name="activateImmediately" value="1" className="mt-1" />
-              <span>تفعيل الحساب مباشرة بهذه الكلمة (خيار إداري صريح)</span>
-            </label>
-            <div>
-              <label className="label">تأكيد مدير إضافي فقط</label>
+              <span><span className="block font-medium">تفعيل الحساب مباشرة بهذه الكلمة</span><span className="mt-1 block text-xs text-gray-500">خيار إداري صريح؛ اتركه غير محدد لمسار التفعيل المعتاد.</span></span>
+              </label>
+              <FormField label="تأكيد مدير إضافي فقط" hint="يُترك فارغاً لجميع الأدوار الأخرى.">
               <input className="input" name="confirmAdditionalAdmin" placeholder="إنشاء مدير إضافي" autoComplete="off" />
-              <p className="mt-1 text-xs text-gray-400">يُترك فارغاً لجميع الأدوار الأخرى.</p>
-            </div>
-            <div className="flex items-end">
-              <button className="btn-primary w-full" type="submit">إضافة مستخدم</button>
+              </FormField>
+            </fieldset>
+
+            <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4">
+              <Link href="/users?tab=list" className="btn-ghost">العودة إلى الحسابات</Link>
+              <button className="btn-primary" type="submit">إضافة مستخدم</button>
             </div>
           </form>
         </AdminSection>

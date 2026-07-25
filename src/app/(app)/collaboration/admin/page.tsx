@@ -4,6 +4,7 @@ import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/componen
 import { prisma } from "@/lib/db";
 import { adminStats, collaborationActor, collaborationSettings, listFiles } from "@/lib/collaboration-service";
 import { createChannelAction, rescanFileAction, saveCollaborationSettingsAction, transferOwnerAction } from "../actions";
+import { DataTable, FormField, TableEmptyRow } from "@/components/Ui";
 
 export const dynamic = "force-dynamic";
 type CollaborationAdminTab = "overview" | "settings" | "channels" | "quarantine" | "audit";
@@ -71,45 +72,53 @@ export default async function CollaborationAdminPage({ searchParams }: { searchP
 
       {activeTab === "settings" ? (
         <AdminSection id="settings" title="السياسات والحصص" description="احفظ إعدادات التعاون بشكل مستقل عن القنوات والملفات المعزولة.">
-          <form action={saveCollaborationSettingsAction} className="grid gap-3 md:grid-cols-3">
-            <label className="flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50/50 p-3 text-sm text-gray-700 md:col-span-3">
+          <form action={saveCollaborationSettingsAction} className="space-y-5">
+            <fieldset className="grid min-w-0 gap-4 md:grid-cols-3">
+              <legend className="mb-3 text-sm font-semibold text-gray-800">حالة الخدمة وحدود الاستخدام</legend>
+            <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-sm text-gray-700 md:col-span-3">
               <input type="checkbox" name="servicePaused" defaultChecked={settings.servicePaused} className="mt-1" />
               <span>
                 <span className="font-medium">إيقاف الخدمة مؤقتاً</span>
-                <span className="block text-xs text-gray-500">تبقى القراءة متاحة للأدمن أثناء الإيقاف.</span>
+                <span className="mt-1 block text-xs text-gray-500">إجراء تشغيلي مؤثر؛ تبقى القراءة متاحة للأدمن أثناء الإيقاف.</span>
               </span>
             </label>
-            <label className="label">أقصى حجم ملف MB<input name="maxUploadMb" type="number" min="1" max="500" className="input mt-1" defaultValue={settings.maxUploadMb} /></label>
-            <label className="label">مدة تعديل الرسالة بالدقائق<input name="editWindowMinutes" type="number" min="1" max="1440" className="input mt-1" defaultValue={settings.editWindowMinutes} /></label>
-            <label className="label">احتفاظ الرسائل بالأيام<input name="messageRetentionDays" type="number" min="1" className="input mt-1" defaultValue={settings.messageRetentionDays} /></label>
-            <label className="label">احتفاظ السلة بالأيام<input name="trashRetentionDays" type="number" min="1" className="input mt-1" defaultValue={settings.trashRetentionDays} /></label>
-            <label className="label">حصة المستخدم MB<input name="userQuotaMb" type="number" min="1" className="input mt-1" defaultValue={settings.userQuotaMb} /></label>
-            <label className="label">حصة القسم MB<input name="departmentQuotaMb" type="number" min="1" className="input mt-1" defaultValue={settings.departmentQuotaMb} /></label>
-            <label className="label">حصة المركز MB<input name="centerQuotaMb" type="number" min="1" className="input mt-1" defaultValue={settings.centerQuotaMb} /></label>
-            <label className="label md:col-span-3">الأنواع المسموحة<input name="allowedTypes" className="input mt-1" defaultValue={settings.allowedTypes.join(",")} /></label>
-            <label className="label md:col-span-3">الأنواع الممنوعة<input name="blockedTypes" className="input mt-1" defaultValue={settings.blockedTypes.join(",")} /></label>
-            <div className="md:col-span-3"><button className="btn-primary" type="submit">حفظ إعدادات التعاون</button></div>
+              <NumericField label="أقصى حجم ملف" unit="MB" name="maxUploadMb" min="1" max="500" defaultValue={settings.maxUploadMb} />
+              <NumericField label="مدة تعديل الرسالة" unit="دقيقة" name="editWindowMinutes" min="1" max="1440" defaultValue={settings.editWindowMinutes} />
+              <NumericField label="احتفاظ الرسائل" unit="يوم" name="messageRetentionDays" min="1" defaultValue={settings.messageRetentionDays} />
+              <NumericField label="احتفاظ السلة" unit="يوم" name="trashRetentionDays" min="1" defaultValue={settings.trashRetentionDays} />
+              <NumericField label="حصة المستخدم" unit="MB" name="userQuotaMb" min="1" defaultValue={settings.userQuotaMb} />
+              <NumericField label="حصة القسم" unit="MB" name="departmentQuotaMb" min="1" defaultValue={settings.departmentQuotaMb} />
+              <NumericField label="حصة المركز" unit="MB" name="centerQuotaMb" min="1" defaultValue={settings.centerQuotaMb} />
+            </fieldset>
+            <fieldset className="grid min-w-0 gap-4 border-t border-gray-100 pt-4">
+              <legend className="mb-3 text-sm font-semibold text-gray-800">سياسة أنواع الملفات</legend>
+              <FormField label="الأنواع المسموحة" hint="امتدادات مفصولة بفواصل كما هي في السياسة الحالية."><input name="allowedTypes" className="input" defaultValue={settings.allowedTypes.join(",")} /></FormField>
+              <FormField label="الأنواع الممنوعة" hint="المنع الأمني الخادمي يبقى مطبقاً إضافة إلى هذه القائمة."><input name="blockedTypes" className="input" defaultValue={settings.blockedTypes.join(",")} /></FormField>
+            </fieldset>
+            <div className="flex justify-end border-t border-gray-100 pt-4"><button className="btn-primary" type="submit">حفظ إعدادات التعاون</button></div>
           </form>
         </AdminSection>
       ) : null}
 
       {activeTab === "channels" ? (
         <AdminSection id="channels" title="بيانات القناة" description="حدد اسم القناة والقسم أو المركز المرتبط بها.">
-          <form action={createChannelAction} className="grid gap-3 md:grid-cols-4">
-            <input name="title" className="input" placeholder="اسم القناة" required />
-            <input name="department" className="input" placeholder="القسم" />
+          <form action={createChannelAction} className="grid gap-4 md:grid-cols-3">
+            <FormField label="اسم القناة" required><input name="title" className="input" placeholder="اسم القناة" required /></FormField>
+            <FormField label="القسم" hint="اختياري"><input name="department" className="input" placeholder="القسم" /></FormField>
+            <FormField label="المركز" hint="اختياري">
             <select name="centerId" className="input">
               <option value="">بلا مركز محدد</option>
               {centers.map((center) => <option key={center.id} value={center.id}>{center.name}</option>)}
             </select>
-            <button className="btn-primary" type="submit">إنشاء قناة</button>
+            </FormField>
+            <div className="flex justify-end border-t border-gray-100 pt-4 md:col-span-3"><button className="btn-primary" type="submit">إنشاء قناة</button></div>
           </form>
         </AdminSection>
       ) : null}
 
       {activeTab === "quarantine" ? (
         <AdminSection id="quarantine" title="قائمة الفحص والعزل" description="أعد فحص الملفات أو انقل الملكية عند الحاجة." className="overflow-hidden">
-          <div className="-mx-5 -mb-5 overflow-x-auto">
+          <DataTable label="الملفات قيد الفحص والعزل" className="-mx-5 -mb-5 rounded-none border-x-0 border-b-0">
             <table className="w-full text-sm">
               <thead><tr><th className="th">الملف</th><th className="th">الحالة</th><th className="th">المالك</th><th className="th">الإصدار</th><th className="th">إجراءات</th></tr></thead>
               <tbody>
@@ -133,10 +142,10 @@ export default async function CollaborationAdminPage({ searchParams }: { searchP
                     </td>
                   </tr>
                 ))}
-                {quarantine.length === 0 ? <tr><td className="td text-center text-gray-500" colSpan={5}>لا توجد ملفات معزولة حالياً.</td></tr> : null}
+                {quarantine.length === 0 ? <TableEmptyRow colSpan={5} title="لا توجد ملفات معزولة حالياً" description="ستظهر الملفات هنا فقط عندما تحتاج فحصاً أو مراجعة إدارية." /> : null}
               </tbody>
             </table>
-          </div>
+          </DataTable>
         </AdminSection>
       ) : null}
 
@@ -162,5 +171,16 @@ export default async function CollaborationAdminPage({ searchParams }: { searchP
         </AdminSection>
       ) : null}
     </div>
+  );
+}
+
+function NumericField({ label, unit, name, min, max, defaultValue }: { label: string; unit: string; name: string; min: string; max?: string; defaultValue: number }) {
+  return (
+    <FormField label={label}>
+      <span className="flex min-w-0 items-center gap-2">
+        <input name={name} type="number" min={min} max={max} className="input min-w-0 flex-1" defaultValue={defaultValue} />
+        <span className="shrink-0 rounded-md bg-gray-100 px-2 py-2 text-xs text-gray-600">{unit}</span>
+      </span>
+    </FormField>
   );
 }

@@ -73,7 +73,7 @@ export function UserTabs({ user, isAdmin, effective, overrides, activity, logins
             <span>{t.label}</span>
           </button>
         ))}
-        {pending && <span className="hidden px-2 pt-2 text-xs text-gray-400 md:block">يحفظ…</span>}
+        <span className="hidden px-2 pt-2 text-xs text-gray-400 md:block" aria-live="polite">{pending ? "جارٍ الحفظ…" : ""}</span>
       </div>
 
       <div className="flex-1 space-y-4 p-5">
@@ -194,7 +194,9 @@ function Overview({ user, effectiveCount, overridesCount, logins }: { user: User
 function EditForm({ user, branches, pending, start, onSaved }: any) {
   const save = (fd: FormData) => start(async () => { await updateUser(user.id, fd); onSaved(); });
   return (
-    <form action={save} className="grid gap-3 sm:grid-cols-2">
+    <form action={save} className="space-y-5">
+      <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2">
+      <legend className="mb-3 text-sm font-semibold text-gray-800">البيانات الوظيفية</legend>
       <div><label className="label">الاسم الكامل</label><input name="fullName" defaultValue={user.fullName} className="input" /></div>
       <div><label className="label">الدور</label>
 <Combobox name="role" allowFree={false} defaultValue={user.role} options={Object.entries(ROLE_LABELS).map(([value,label]:any)=>({value,label}))} />
@@ -207,7 +209,8 @@ function EditForm({ user, branches, pending, start, onSaved }: any) {
       <div><label className="label">البريد الإلكتروني</label><input name="email" defaultValue={user.email ?? ""} className="input" /></div>
       <div><label className="label">الهاتف</label><input name="phone" defaultValue={user.phone ?? ""} className="input" /></div>
       <div className="sm:col-span-2"><label className="label">ملاحظات</label><textarea name="note" defaultValue={user.note ?? ""} className="input" rows={2} /></div>
-      <div className="sm:col-span-2"><button className="btn-primary" disabled={pending} type="submit">حفظ التعديلات</button></div>
+      </fieldset>
+      <div className="flex justify-end border-t border-gray-100 pt-4"><button className="btn-primary" disabled={pending} type="submit">حفظ التعديلات</button></div>
     </form>
   );
 }
@@ -231,13 +234,13 @@ function Security({ user, pending, start, onChanged, deletionBlockers, isCurrent
   const doToggle = () => start(async () => { await toggleUser(user.id, !user.isActive); onChanged(); });
   const doDelete = (fd: FormData) => start(async () => { await deleteUnusedUser(user.id, fd); window.location.href = "/users"; });
   return (
-    <div className="max-w-md space-y-4">
+    <div className="max-w-2xl space-y-5">
       <form action={doPw} className="space-y-2 rounded-lg border border-gray-200 p-4">
-        <div className="font-semibold text-gray-700">تغيير كلمة السر</div>
-        <input name="password" type="text" placeholder="كلمة سر جديدة (6 أحرف فأكثر)" className="input w-full" />
+        <div><div className="font-semibold text-gray-700">تغيير كلمة السر</div><p className="mt-1 text-sm text-gray-500">إجراء أمان مستقل؛ لا يغيّر بيانات الحساب أو صلاحياته.</p></div>
+        <label className="label">كلمة السر الجديدة<input name="password" type="text" placeholder="6 أحرف فأكثر" className="input mt-1 w-full" /></label>
         <button className="btn-primary" disabled={pending} type="submit">تحديث كلمة السر</button>
       </form>
-      <div className="space-y-2 rounded-lg border border-gray-200 p-4">
+      <div className="space-y-3 rounded-lg border border-gray-200 p-4">
         <div className="font-semibold text-gray-700">حالة الحساب</div>
         <p className="text-sm text-gray-500">{user.isActive ? "الحساب فعّال ويستطيع الدخول." : "الحساب معطّل ولا يستطيع الدخول."}</p>
         <button onClick={doToggle} disabled={pending}
@@ -245,7 +248,7 @@ function Security({ user, pending, start, onChanged, deletionBlockers, isCurrent
           {user.isActive ? "تعطيل الحساب" : "تفعيل الحساب"}
         </button>
       </div>
-      <div className="space-y-3 rounded-lg border border-red-200 p-4">
+      <div className="space-y-3 rounded-lg border border-red-200 bg-red-50/20 p-4">
         <div className="font-semibold text-red-700">الحذف النهائي للحساب غير المستخدم</div>
         {isCurrentUser ? <p className="text-sm text-red-700">لا يمكن حذف حسابك الحالي.</p> : deletionBlockers.length > 0 ? (
           <div className="text-sm text-gray-600">
@@ -255,7 +258,7 @@ function Security({ user, pending, start, onChanged, deletionBlockers, isCurrent
         ) : (
           <form action={doDelete} className="space-y-2">
             <p className="text-sm text-gray-600">هذا الحساب غير مرتبط بأي سجل. التعطيل يبقى الخيار المفضل.</p>
-            <input name="confirm" className="input" placeholder="اكتب: حذف الحساب" autoComplete="off" />
+            <label className="label">عبارة تأكيد الحذف<input name="confirm" className="input mt-1" placeholder="اكتب: حذف الحساب" autoComplete="off" /></label>
             <button type="submit" disabled={pending || user.role === "ADMIN"} className="btn-danger">حذف الحساب نهائياً</button>
           </form>
         )}

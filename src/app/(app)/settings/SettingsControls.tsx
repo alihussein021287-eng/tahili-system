@@ -27,6 +27,7 @@ export function SettingsActionForm({
             state.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
           }`}
           role={state.ok ? "status" : "alert"}
+          aria-live="polite"
         >
           {state.message}
         </div>
