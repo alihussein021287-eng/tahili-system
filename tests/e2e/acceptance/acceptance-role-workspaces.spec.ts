@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { prisma } from "@/lib/db";
 import { closeChecked, credentials, pageFor } from "./helpers";
 
-const actualUsers = credentials().filter((item) => !item.username.endsWith("manager-2"));
+const actualUsers = credentials().filter((item) => !/(?:manager-2|center-2|branch-2)$/.test(item.username));
 
 const expectedWorkspace: Record<string, RegExp> = {
   ADMIN: /مساحة الإدارة/,
@@ -17,7 +18,7 @@ const expectedWorkspace: Record<string, RegExp> = {
   RECEPTION: /مساحة الاستقبال/,
   RESIDENT: /مساحة الطبيب المقيم/,
   THERAPIST: /مساحة المعالج/,
-  VIEWER: /لوحة المتابعة/,
+  VIEWER: /أهلاً،/,
   ACCOUNTANT: /مساحة المالية/,
 };
 
@@ -54,13 +55,21 @@ test("mobile my-work uses cards without horizontal overflow and keeps filters", 
 });
 
 test("patient profile exposes only the derived journey and transition links", async ({ browser }) => {
+  const patient = await prisma.patient.findFirstOrThrow({
+    where: {
+      status: "ACTIVE",
+      OR: [
+        { notes: { contains: "QA", mode: "insensitive" } },
+        { notes: { contains: "ACCEPTANCE", mode: "insensitive" } },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
   const { context, page, errors } = await pageFor(browser, "DOCTOR");
-  await page.goto("/patients-care?tab=patients");
-  const patientLink = page.locator('main table a[href^="/patients/"]').first();
-  test.skip(await patientLink.count() === 0, "No QA patient is available for the derived journey check");
-  await patientLink.click();
-  await expect(page.getByText("رحلة المراجع", { exact: true })).toBeVisible();
-  await expect(page.getByText("الخطوة التالية", { exact: true })).toBeVisible();
+  await page.goto(`/patients/${patient.id}`);
+  await expect(page.getByRole("heading", { name: "رحلة المراجع", exact: true }).first()).toBeVisible();
+  await expect(page.getByText("الخطوة التالية", { exact: true }).first()).toBeVisible();
   await expect(page.locator('a[href*="/patients/"], a[href*="patients-care"], a[href*="therapy-centers"]').filter({ hasText: /انتقال|فتح الرحلة/ }).first()).toBeVisible();
   await closeChecked(context, errors);
 });

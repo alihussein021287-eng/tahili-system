@@ -15,7 +15,11 @@ next-env.d.ts
 
 # Test and tooling output
 playwright-report/
+blob-report/
 test-results/
+.playwright/
+/credentials.*
+/tests/**/credentials.*
 .nyc_output/
 *.log
 npm-debug.log*

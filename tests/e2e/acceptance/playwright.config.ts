@@ -12,8 +12,8 @@ export default defineConfig({
   fullyParallel: false,
   timeout: 180_000,
   expect: { timeout: 10_000 },
-  outputDir: "/tahili-system/test-results/acceptance-20260713/artifacts",
-  reporter: [["list"], ["json", { outputFile: "/tahili-system/test-results/acceptance-20260713/acceptance-results.json" }]],
+  outputDir: "/tahili-system/test-results/role-workflow-acceptance/artifacts",
+  reporter: [["list"], ["json", { outputFile: "/tahili-system/test-results/role-workflow-acceptance/acceptance-results.json" }]],
   use: {
     baseURL: BASE_URL,
     launchOptions: { args: ["--disable-gpu", "--disable-software-rasterizer", "--mute-audio"] },

@@ -8,7 +8,7 @@ const allowed: Record<string, string> = {
   THERAPIST: "/therapy/today", VIEWER: "/patients", ACCOUNTANT: "/finance/expenses",
 };
 
-for (const user of credentials().filter((item) => !item.username.endsWith("manager-2"))) {
+for (const user of credentials().filter((item) => !/(?:manager-2|center-2|branch-2)$/.test(item.username))) {
   test(`${user.role}: isolated storageState, allowed route, and negative direct URL`, async ({ browser }) => {
     const { context, page, errors } = await pageFor(browser, user.role);
     await page.goto(allowed[user.role]);

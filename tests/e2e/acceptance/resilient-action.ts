@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
-import { ROOT } from "./helpers";
+import { BASE_URL, ROOT } from "./helpers";
 
 export type ActionResult = {
   name: string;
@@ -92,7 +92,7 @@ export async function submitServerAction(input: Input) {
     return result;
   }
 
-  const recoveryContext = await input.browser.newContext({ storageState: input.roleState, baseURL: "http://localhost:3000" });
+  const recoveryContext = await input.browser.newContext({ storageState: input.roleState, baseURL: BASE_URL });
   const recoveryPage = await recoveryContext.newPage();
   await recoveryPage.goto(input.recoveryUrl, { waitUntil: "domcontentloaded", timeout: 10_000 });
   const uiConfirmed = await poll(() => input.confirmation(recoveryPage).catch(() => false), 5_000);
