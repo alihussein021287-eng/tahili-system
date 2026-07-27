@@ -2,12 +2,27 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync("src/components/PatientTabs.tsx", "utf8");
+const patientPageSource = readFileSync("src/app/(app)/patients/[id]/page.tsx", "utf8");
 
 describe("patient file tabs navigation", () => {
   it("stores the selected tab in the URL for deep links and browser history", () => {
     expect(source).toContain('const requestedTab = searchParams.get("tab")');
     expect(source).toContain('next.set("tab", key)');
     expect(source).toContain('router.push(`${pathname}?${next.toString()}`, { scroll: false })');
+  });
+
+  it("exposes the resident review form only in the resident tab and focuses its section after navigation", () => {
+    expect(source).toContain('{ key: "resident", label: "الطبيب المقيم"');
+    expect(source).toContain('tab === "resident"');
+    expect(source).toContain('action={w(addResidentReview.bind(null, patientId))}');
+    expect(source).toContain('sectionHeadingRef.current?.focus()');
+    expect(source).toContain('tabIndex={-1}');
+  });
+
+  it("does not render an intake tab link for a user missing the resident-review action permission", () => {
+    expect(patientPageSource).toContain('canExecuteResidentReview={perms.has("clinical.metrics")}');
+    expect(patientPageSource).toContain('nextStep.key === "intake" && !canExecuteResidentReview');
+    expect(patientPageSource).toContain("لا يملك حسابك هذا الإجراء");
   });
 
   it("filters tabs by effective permissions and omits empty groups", () => {

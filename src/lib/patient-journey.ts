@@ -82,7 +82,7 @@ export function derivePatientJourney(patient: JourneyInput, now = new Date()): D
       lastActionAt: latestReview ?? (careIsFor(["RECEPTION", "RESIDENT"]) ? latestCareStage : latestVisit),
       responsibleRoles: ["RECEPTION", "RESIDENT"],
       reason: careIsFor(["RECEPTION", "RESIDENT"]) ? `محطة ${currentCareStage?.station} تنتظر ${currentCareStage?.responsibleRole}.` : latestVisit && !latestReview ? "توجد زيارة بلا مراجعة مقيم مسجلة." : !latestVisit ? "بانتظار زيارة أو حضور فعلي." : null,
-      tab: latestReview ? "resident" : "overview",
+      tab: "resident",
       requiredPermissions: latestReview ? ["clinical.view", "clinical.wound", "clinical.metrics"] : ["visits.view", "patients.view"],
     }, patient.id),
     stage({

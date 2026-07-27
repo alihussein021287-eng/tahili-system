@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   addDiagnosis, addReport, setReportStatus, addSession, addPrescription, addAdmission,
@@ -99,6 +99,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
   const canSchedule = role === "HEAD_THERAPIST" || role === "ADMIN";
   const [lazy, setLazy] = useState<Record<string, any>>({});
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ followup: true });
+  const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -132,6 +133,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
   useEffect(() => {
     if (activeTab) setOpenGroups((current) => ({ ...current, [activeTab.group]: true }));
     if (LAZY_TABS.includes(tab) && lazy[tab] === undefined) loadTab(tab);
+    sectionHeadingRef.current?.focus();
   }, [tab]);
   // تُستدعى بعد أي إضافة/حذف داخل تبويب مؤجّل لإعادة جلب بياناته
   const reload = (key: string) => () => loadTab(key);
@@ -175,7 +177,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         </div>
       </div>
       <div className="patient-file-content min-w-0 flex-1 p-4 sm:p-5">
-        {activeTab ? <div className="mb-5 border-b border-gray-100 pb-4"><h2 className="text-lg font-bold text-gray-900">{activeTab.label}</h2><p className="mt-1 text-sm text-gray-500">{TAB_DESCRIPTIONS[activeTab.key]}</p></div> : null}
+        {activeTab ? <div className="mb-5 border-b border-gray-100 pb-4"><h2 ref={sectionHeadingRef} tabIndex={-1} className="text-lg font-bold text-gray-900 outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">{activeTab.label}</h2><p className="mt-1 text-sm text-gray-500">{TAB_DESCRIPTIONS[activeTab.key]}</p></div> : null}
         {tab === "overview" && <PatientOverview patient={patient} can={can} role={role} openTab={openTab} />}
         {tab === "timeline" && <Timeline patient={patient} can={can} openTab={openTab} />}
         {tab === "journey" && <Journey patient={patient} can={can} id={id} role={role} />}

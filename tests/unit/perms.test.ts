@@ -41,4 +41,14 @@ describe("roleDefaultSet", () => {
     expect(dataEntry.has("referrals.recordResult")).toBe(true);
     expect(dataEntry.has("referrals.reviewResult")).toBe(false);
   });
+
+  it("يبقي تسجيل مراجعة المقيم خلف clinical.metrics دون توسيع صلاحية الاستقبال", () => {
+    const reception = roleDefaultSet("RECEPTION" as any);
+    const resident = roleDefaultSet("RESIDENT" as any);
+    const viewer = roleDefaultSet("VIEWER" as any);
+    expect(reception.has("clinical.view")).toBe(true);
+    expect(reception.has("clinical.metrics")).toBe(false);
+    expect(resident.has("clinical.metrics")).toBe(true);
+    expect(viewer.has("clinical.metrics")).toBe(false);
+  });
 });

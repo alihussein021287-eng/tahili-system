@@ -36,6 +36,18 @@ describe("derived patient journey", () => {
     expect(nextPatientStep(stages, new Set())).toBeNull();
   });
 
+  it("targets the resident tab, not overview, when a visit has no resident review", () => {
+    const stages = derivePatientJourney({
+      id: "p1",
+      registrationDate,
+      visits: [{ visitDate: new Date("2026-07-21T08:00:00.000Z") }],
+    }, now);
+    const intake = stages.find((stage) => stage.key === "intake");
+    expect(intake?.reason).toBe("توجد زيارة بلا مراجعة مقيم مسجلة.");
+    expect(intake?.href).toBe("/patients/p1?tab=resident");
+    expect(intake?.href).not.toContain("tab=overview");
+  });
+
   it("uses an existing CareStage as evidence without storing a new journey state", () => {
     const stages = derivePatientJourney({
       id: "p1",

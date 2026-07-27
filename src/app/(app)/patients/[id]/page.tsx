@@ -217,7 +217,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
         </div>
       </section>
 
-      {perms.has("journey.view") ? <PatientJourneySummary stages={derivedJourney} nextStep={nextStep} /> : null}
+      {perms.has("journey.view") ? <PatientJourneySummary stages={derivedJourney} nextStep={nextStep} canExecuteResidentReview={perms.has("clinical.metrics")} /> : null}
 
       {(cEdit || cClinical) && <details className="card p-5">
         <summary className="cursor-pointer list-none font-semibold text-gray-700">البيانات التفصيلية <span className="mr-1 text-xs font-normal text-gray-400">اضغط للعرض</span></summary>
@@ -273,7 +273,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
   );
 }
 
-function PatientJourneySummary({ stages, nextStep }: { stages: DerivedJourneyStage[]; nextStep: DerivedJourneyStage | null }) {
+function PatientJourneySummary({ stages, nextStep, canExecuteResidentReview }: { stages: DerivedJourneyStage[]; nextStep: DerivedJourneyStage | null; canExecuteResidentReview: boolean }) {
   const status = {
     complete: { label: "مكتملة", className: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-600" },
     current: { label: "حالية", className: "bg-brand-50 text-brand-700", dot: "bg-brand-600" },
@@ -310,7 +310,11 @@ function PatientJourneySummary({ stages, nextStep }: { stages: DerivedJourneySta
           <div className="mt-1 font-semibold text-gray-900">{nextStep.label}</div>
           <div className="mt-1 text-sm text-gray-600">{nextStep.reason ?? "فتح المرحلة الحالية ومتابعة الإجراء من مكانه الأصلي."}</div>
           <div className="mt-2 text-xs text-gray-500">يمكن تنفيذها بواسطة: {roleNames(nextStep.responsibleRoles)}</div>
-          <Link href={nextStep.href} className="btn-primary mt-3 inline-flex">الانتقال إلى التبويب</Link>
+          {nextStep.key === "intake" && !canExecuteResidentReview ? (
+            <p className="mt-3 text-sm text-amber-800">يتطلب تسجيل مراجعة الطبيب المقيم صلاحية الطبيب المقيم أو الصلاحية الفعلية `clinical.metrics`؛ لا يملك حسابك هذا الإجراء.</p>
+          ) : (
+            <Link href={nextStep.href} className="btn-primary mt-3 inline-flex">الانتقال إلى التبويب</Link>
+          )}
         </div>
       ) : (
         <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">لا توجد خطوة تالية متاحة ضمن صلاحيات حسابك الحالية.</div>
