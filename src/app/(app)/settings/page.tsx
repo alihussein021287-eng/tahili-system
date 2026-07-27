@@ -140,6 +140,7 @@ export default async function Settings({
             <Link
               key={tab.key}
               href={tab.href}
+              aria-current={activeTab === tab.key ? "page" : undefined}
               className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${
                 activeTab === tab.key ? "bg-brand-700 text-white" : "text-gray-700 hover:bg-gray-100"
               }`}
