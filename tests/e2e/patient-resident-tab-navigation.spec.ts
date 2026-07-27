@@ -34,6 +34,8 @@ test("role access keeps the resident action behind clinical.metrics", async ({ b
   await reception.page.goto(`/patients/${patientId}?tab=resident`);
   await expect(reception.page.getByRole("heading", { name: "الطبيب المقيم", exact: true })).toBeVisible();
   await expect(reception.page.getByRole("button", { name: "حفظ تقييم الطبيب المقيم" })).toHaveCount(0);
+  await reception.page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => reception.page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
   await closeChecked(reception.context, reception.errors);
 
   const resident = await pageFor(browser, "RESIDENT");
