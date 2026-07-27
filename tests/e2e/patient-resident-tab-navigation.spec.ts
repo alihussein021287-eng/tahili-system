@@ -12,8 +12,8 @@ test("resident-review next step opens the resident tab without mutating the pati
   const { context, page, errors } = await pageFor(browser, "ADMIN");
 
   await page.goto(`/patients/${patientId}?tab=overview`);
-  await expect(page.getByText("توجد زيارة بلا مراجعة مقيم مسجلة.", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "الانتقال إلى التبويب" }).click();
+  await expect(page.getByText("توجد زيارة بلا مراجعة مقيم مسجلة.", { exact: true }).first()).toBeVisible();
+  await page.getByRole("link", { name: "الانتقال إلى التبويب" }).first().click();
   await expect(page).toHaveURL(new RegExp(`/patients/${patientId}\\?tab=resident$`));
   await expect(page.getByRole("heading", { name: "الطبيب المقيم", exact: true })).toBeFocused();
   await expect(page.getByRole("button", { name: "حفظ تقييم الطبيب المقيم" })).toBeVisible();
@@ -29,7 +29,7 @@ test("role access keeps the resident action behind clinical.metrics", async ({ b
 
   const reception = await pageFor(browser, "RECEPTION");
   await reception.page.goto(`/patients/${patientId}?tab=overview`);
-  await expect(reception.page.getByText("لا يملك حسابك هذا الإجراء", { exact: false })).toBeVisible();
+  await expect(reception.page.getByText("لا يملك حسابك هذا الإجراء", { exact: false }).first()).toBeVisible();
   await expect(reception.page.getByRole("link", { name: "الانتقال إلى التبويب" })).toHaveCount(0);
   await reception.page.goto(`/patients/${patientId}?tab=resident`);
   await expect(reception.page.getByRole("heading", { name: "الطبيب المقيم", exact: true })).toBeVisible();
