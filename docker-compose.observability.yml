@@ -30,8 +30,8 @@ services:
     container_name: tahili_node_exporter
     profiles: [observability]
     restart: unless-stopped
-    command: ["--path.rootfs=/host"]
-    volumes: ["/:/host:ro,rslave"]
+    command: ["--path.rootfs=/host", "--collector.textfile.directory=/textfile"]
+    volumes: ["/:/host:ro,rslave", "/var/lib/tahili-smoke/metrics:/textfile:ro"]
     deploy: { resources: { limits: { cpus: '0.15', memory: 128M } } }
     healthcheck: { test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9100/metrics"], interval: 30s, timeout: 5s, retries: 3 }
 

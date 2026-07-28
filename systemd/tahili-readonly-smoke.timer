@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Tahili read-only smoke every 30 minutes (development)
+
+[Timer]
+OnCalendar=*-*-* *:00/30:00
+Persistent=false
+Unit=tahili-readonly-smoke.service
+
+[Install]
+WantedBy=timers.target
