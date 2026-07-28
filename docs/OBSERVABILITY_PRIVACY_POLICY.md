@@ -31,11 +31,15 @@ Development logs, metrics, alerts, and telemetry retain at most seven days by de
 
 Alloy accepts telemetry only on the Docker network and forwards only to local Loki. It has no Cloud endpoint or host-published receiver port. SDK and same-origin adapter controls in Stage 6B provide the second allowlist/redaction boundary; 6A does not claim semantic browser-event coverage.
 
+Stage 7A keeps OTLP gRPC/HTTP inside Docker only: Alloy forwards traces only to the local Tempo volume-backed store. Tempo has no host/LAN receiver, cloud endpoint, object storage, metrics generator, or service map. No browser traces, Next.js instrumentation, Prisma instrumentation, SQL statements, request URLs, query strings, patient/user names, or credentials are enabled in this stage. The one deployment validation trace is randomly identified and contains only a fixed synthetic service, environment, scope, and span name.
+
 Stage 6B is controlled only by the server runtime variable `FARO_ENABLED` (default `false`). The browser receives only an enabled boolean, never Alloy addressing or server configuration. The adapter accepts bounded event/log/measurement envelopes only and drops exceptions, traces, identity metadata, and empty envelopes. It extracts a pathname before normalizing it, so URL origins, query strings, hashes, and dynamic identifiers never reach Loki.
 
 Privacy regression tests block forbidden values in structured logs and debug bundles. Any new telemetry field requires review against this policy before release.
 
 Faro adapter metrics are server in-memory aggregates only. They use fixed names and bounded labels for rejection reason, signal kind, forwarding failure reason, and log level. They never include routes, URLs, query values, identifiers, user/session data, payload values, or environment values. Counters reset on an app restart; process-start and last-accepted/forwarded timestamps make this visible to monitoring.
+
+Debug bundles may include only Tempo container state and aggregate receiver/storage counters. They must never contain trace IDs, spans, span attributes, OTLP payloads, or raw Tempo query output.
 
 ## Identifier semantics
 

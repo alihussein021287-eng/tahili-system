@@ -23,6 +23,8 @@ docker inspect -f '{{.Image}}' tahili_app
 
 Stage 6A uses `grafana/alloy:v1.16.2@sha256:32913cbfac652d15fa84d256a74e5ee3f71575961bb19d34796ce3838bfba693`. For an approved offline transfer only: `docker save grafana/alloy:v1.16.2 -o /tmp/grafana-alloy-v1.16.2.tar`, checksum it, transfer by an approved channel, then `docker load`. Alloy uses only Docker-internal `alloy:12347` and local `http://loki:3100/loki/api/v1/push`; runtime has no external endpoint.
 
+Stage 7A uses `grafana/tempo:2.9.4@sha256:3ecdaa1af90b3068e77e4fb4b11d9f26201c3a57d5740d34965a323173a4f1aa`. For an approved offline transfer only: `docker save grafana/tempo:2.9.4 -o /tmp/grafana-tempo-2.9.4.tar`, checksum it, transfer by an approved channel, then `docker load`. Tempo stores traces only in the local `tempodata` volume with 72-hour retention; OTLP and the Tempo API remain Docker-internal, with no host-published port or cloud/object-storage endpoint.
+
 Stage 6B pins `@grafana/faro-web-sdk@2.8.2` in `package-lock.json`; obtain it through the approved development dependency cache before an offline build. Browser telemetry uses the app's same-origin adapter and has no external runtime endpoint.
 
 The provisioned frontend dashboard is `monitoring/grafana/provisioning/dashboards/json/frontend-observability.json` (UID `tahili-frontend-observability`). It uses only the existing local Grafana, Loki, Prometheus, and Alloy images; no additional image or external endpoint is required offline.

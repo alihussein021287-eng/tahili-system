@@ -37,6 +37,12 @@ Grafana dashboard UID `tahili-frontend-observability` shows receiver health, san
 
 The adapter now exports aggregate `tahili_faro_*` metrics to Prometheus only through the Docker network. Confirm `tahili_faro_enabled` first; telemetry absence is meaningful only after the 15-minute warm-up from `tahili_faro_process_start_time_seconds`. Counters reset after app restart. Diagnose error-rate, LCP, rejection, and forwarding alerts from aggregate counters only; never attempt to reconstruct payloads or user activity.
 
+## Tempo traces (development, Stage 7A)
+
+Tempo is Docker-internal only and uses local `tempodata` storage with 72-hour retention. Grafana datasource UID is `Tempo` and uses `http://tempo:3200`; OTLP reaches Alloy only as `alloy:4317` (gRPC) or `alloy:4318` (HTTP) on the Docker network. Do not publish either receiver or Tempo port, and do not enable browser, Next.js, Prisma, or SQL instrumentation in this stage.
+
+For a safe status check, inspect only container health and aggregate metrics: `docker inspect -f '{{.State.Status}} {{.State.Health.Status}}' tahili_tempo tahili_alloy`. Grafana datasource reachability can be verified through its authenticated local proxy to `Tempo /ready`; never copy credentials into shell history or logs. Debug bundles include generic Tempo state/counters only, never trace payloads or raw spans.
+
 ## Debug Bundle منقح
 
 استخدم `scripts/collect-debug-bundle.sh` على VM التطوير فقط. الوضع الافتراضي dry-run؛ لا ينشئ archive حتى تضيف `--create`:

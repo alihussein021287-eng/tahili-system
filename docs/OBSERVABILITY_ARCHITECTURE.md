@@ -25,6 +25,11 @@ browser telemetry (sampled, redacted, optional)
   -> Alloy Faro receiver (`alloy:12347`, Docker internal only) -> Loki
   -> Grafana
 
+internal OTLP traces (Stage 7A infrastructure only)
+  -> Alloy OTLP receiver (`alloy:4317` gRPC, `alloy:4318` HTTP; Docker internal only)
+  -> Tempo (`tempo:4317` OTLP, `tempo:3200` query; local named volume only)
+  -> Grafana Tempo datasource UID `Tempo`
+
 Tahili /observability
   -> authenticated, allowlisted, read-only monitor adapter
   -> status summaries, redacted errors, alerts, test results
@@ -42,6 +47,7 @@ No application container receives a Docker socket. Only the dedicated collector 
 | Alertmanager | Docker internal | 7 days | Local notification grouping/silencing only |
 | Exporters | Docker internal | none | No public ports |
 | Alloy Faro receiver | Docker internal; no host port | 7 days in Loki | `grafana/alloy:v1.16.2@sha256:32913cbfac652d15fa84d256a74e5ee3f71575961bb19d34796ce3838bfba693` |
+| Tempo | Docker internal; no host port | 72 hours in `tempodata` | `grafana/tempo:2.9.4@sha256:3ecdaa1af90b3068e77e4fb4b11d9f26201c3a57d5740d34965a323173a4f1aa`; local filesystem backend only |
 | Debug bundles | `/tmp` or `test-results` | 7 days maximum | Redacted archive, preview first |
 | Smoke results | `test-results` | 14 days maximum | Aggregate status only |
 
@@ -65,9 +71,16 @@ Stage 6C.1 adds a Docker-internal Prometheus scrape of the adapter's aggregate-o
 
 `pg_stat_statements` is not enabled in this work because it requires a PostgreSQL configuration change and restart. PostgreSQL restart is outside this project. Database metrics initially use exporter-safe counters only.
 
+## Traces (Stage 7A)
+
+Tempo is a development-only, single-binary local trace store. It has a 72-hour retention period, a read-only configuration mount, a writable dedicated named volume, a 32 MiB temporary filesystem, and limits of 0.30 CPU / 384 MiB RAM. It publishes no host or LAN port and has no cloud endpoint, object storage, metrics generator, or service map.
+
+Alloy accepts OTLP gRPC and HTTP only on the Docker network and forwards traces only to `tempo:4317`. Faro continues to send logs only to Loki; browser traces and Next.js instrumentation are intentionally deferred to Stage 7B. Grafana datasource `Tempo` uses `http://tempo:3200`; its traces-to-logs mapping uses only `service.name -> service` and `deployment.environment -> environment`.
+
 ## Acceptance gates
 
 - No public administrative port or cloud dependency.
 - No data-bearing log fields or arbitrary query/shell interfaces.
 - PostgreSQL, MinIO, and Caddy are never restarted for observability work.
+- Stage 7A does not add application, Prisma, SQL, browser, or workflow instrumentation.
 - Each runtime phase has an isolated commit, push, dev-only release, health check, and checkpoint.

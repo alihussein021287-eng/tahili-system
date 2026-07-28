@@ -10,6 +10,24 @@ loki.write "local" {
   external_labels = { service = "tahili-frontend", environment = "development" }
 }
 
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}
+
+otelcol.receiver.otlp "internal" {
+  grpc {}
+  http {}
+
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
 faro.receiver "local" {
   server {
     listen_address = "0.0.0.0"
