@@ -30,3 +30,7 @@ Development logs, metrics, alerts, and telemetry retain at most seven days by de
 ## Review
 
 Privacy regression tests block forbidden values in structured logs and debug bundles. Any new telemetry field requires review against this policy before release.
+
+## Identifier semantics
+
+Request ID identifies one HTTP request. Error ID identifies the incident shown to the user. Report Request ID identifies only the browser-error reporting POST. The guaranteed lookup chain is `Error ID → Report Request ID → Loki`; client render errors are not claimed to correlate reliably to the original page request. Future OpenTelemetry/Faro work may add a privacy-reviewed correlation mechanism.

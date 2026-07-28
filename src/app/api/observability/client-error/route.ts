@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { CLIENT_ERROR_CODES, logEvent, normalizeRoute, requestId } from "@/lib/observability";
+import { CLIENT_ERROR_CODES, logEvent, normalizeRoute } from "@/lib/observability";
 import { resolveEnvironmentAccess } from "@/lib/environment-access";
 
 const report = z.object({ errorId: z.string().uuid(), route: z.string().max(512), errorCode: z.enum(CLIENT_ERROR_CODES), fingerprint: z.string().regex(/^[a-zA-Z0-9:_-]{1,128}$/) }).strict();
@@ -17,9 +17,7 @@ export async function POST(request: NextRequest) {
   const now = Date.now(); const key = `${request.headers.get("x-forwarded-for") || "local"}:${parsed.data.errorId}`;
   if ((seen.get(key) || 0) + 60_000 > now) return new NextResponse(null, { status: 429, headers: { "Cache-Control": "no-store" } });
   seen.set(key, now);
-  const trusted = request.headers.get("x-tahili-request-id-source") === "proxy" ? request.headers.get("x-tahili-request-id") : null;
-  const reportRequestId = requestId(trusted);
-  const source = trusted && reportRequestId === trusted ? "proxy" : "route-generated";
-  logEvent({ eventType: "client_error_report", level: "error", errorId: parsed.data.errorId, requestId: reportRequestId, requestIdSource: source, route: normalizeRoute(parsed.data.route), errorCode: parsed.data.errorCode, fingerprint: parsed.data.fingerprint, release: process.env.npm_package_version || "unknown" });
-  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store", "X-Request-ID": reportRequestId } });
+  const reportRequestId = crypto.randomUUID();
+  logEvent({ eventType: "client_error_report", level: "error", errorId: parsed.data.errorId, reportRequestId, route: normalizeRoute(parsed.data.route), errorCode: parsed.data.errorCode, fingerprint: parsed.data.fingerprint, release: process.env.npm_package_version || "unknown" });
+  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
 }
