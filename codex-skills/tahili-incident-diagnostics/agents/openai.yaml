@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Incident Diagnostics"
+  short_description: "Safe local incident summaries for Tahili development."
+  default_prompt: "Use $tahili-incident-diagnostics to investigate this Tahili development incident read-only."

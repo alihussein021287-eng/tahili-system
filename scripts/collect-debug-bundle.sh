@@ -47,6 +47,31 @@ mkdir -p "$DIAGNOSTICS"
 WORK="$(mktemp -d /tmp/tahili-debug-bundle.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 redact() { sed -E -e 's/((password|cookie|authorization|token|secret|api[_-]?key)[[:space:]]*[:=][[:space:]]*)[^,[:space:]]+/\1[REDACTED]/Ig' -e 's/(postgres(ql)?:\/\/)[^[:space:]]+/\1[REDACTED]/Ig' -e 's/(AKIA[0-9A-Z]{16})/[REDACTED]/g'; }
+bridge_url() {
+  local container="$1" port="$2" ip
+  ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container" 2>/dev/null || true)"
+  [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
+  printf 'http://%s:%s' "$ip" "$port"
+}
+bridge_json() {
+  local url
+  url="$(bridge_url "$1" "$2")" || return 1
+  curl --connect-timeout 2 --max-time 4 -fsS "${url}${3}"
+}
+bridge_metrics() {
+  local url
+  url="$(bridge_url "$1" "$2")" || return 1
+  shift 2
+  node "$ROOT/scripts/lib/prometheus-metrics.mjs" "$url/metrics" "$@"
+}
+bridge_metrics_path() {
+  local url
+  url="$(bridge_url "$1" "$2")" || return 1
+  shift 2
+  local endpoint="$1"
+  shift
+  node "$ROOT/scripts/lib/prometheus-metrics.mjs" "$url$endpoint" "$@"
+}
 allowed='["timestamp","level","environment","service","release","route","method","status","durationMs","requestId","traceId","role","actionCategory","errorCode","eventType","errorId","reportRequestId","fingerprint"]'
 filter='.'
 if [[ -n "$REQUEST_ID" || -n "$ERROR_ID" ]]; then filter="select((\"$REQUEST_ID\" == \"\" or .requestId == \"$REQUEST_ID\" or .reportRequestId == \"$REQUEST_ID\") and (\"$ERROR_ID\" == \"\" or .errorId == \"$ERROR_ID\"))"; fi
@@ -57,13 +82,13 @@ docker image inspect tahili-system-app:latest --format 'id={{.Id}} revision={{in
 docker compose -C "$ROOT" ps --format json 2>/dev/null | redact > "$WORK/services.txt" || true
 docker inspect --format '{{.Name}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{end}} restarts={{.RestartCount}} image={{.Image}}' tahili_app tahili_db tahili_storage tahili_clamav 2>/dev/null | redact >> "$WORK/services.txt" || true
 { uptime; free -h; df -h "$ROOT"; df -i "$ROOT"; } | redact > "$WORK/resources.txt"
-(cd "$ROOT" && docker compose exec -T app npx prisma migrate status 2>&1 || true) | redact > "$WORK/migrations.txt"
+printf '%s\n' 'status=unavailable reason=bridge-only diagnostics exclude in-container migration inspection' > "$WORK/migrations.txt"
 { printf 'login='; curl -fsS -o /dev/null -w '%{http_code}\n' http://192.168.17.20:3000/login || true; printf 'readiness='; curl -sS -o /dev/null -w '%{http_code}\n' http://192.168.17.20:3000/readiness || true; } > "$WORK/probes.txt"
-docker exec tahili_alertmanager wget -qO- http://localhost:9093/api/v2/alerts 2>/dev/null | jq '[.[] | {status:.status.state,labels:{alertname:.labels.alertname,severity:.labels.severity,service:.labels.service,environment:.labels.environment},startsAt,endsAt,summary:.annotations.summary}]' | redact > "$WORK/alerts.json" || printf '[]\n' > "$WORK/alerts.json"
+bridge_json tahili_alertmanager 9093 /api/v2/alerts 2>/dev/null | jq '[.[] | {status:.status.state,labels:{alertname:.labels.alertname,severity:.labels.severity,service:.labels.service,environment:.labels.environment},startsAt,endsAt,summary:.annotations.summary}]' | redact > "$WORK/alerts.json" || printf '[]\n' > "$WORK/alerts.json"
 docker logs --since "$SINCE" --tail 1200 tahili_app 2>&1 | tail -c 2097152 | jq -R --argjson allowed "$allowed" "$filter | with_entries(select(.key as \$key | \$allowed | index(\$key)))" 2>/dev/null | redact > "$WORK/redacted-logs.jsonl" || : > "$WORK/redacted-logs.jsonl"
 jq '{runId,success,durationSeconds,checks,countsMatch}' /var/lib/tahili-smoke/latest-summary.json 2>/dev/null | redact > "$WORK/smoke-summary.json" || printf '{}\n' > "$WORK/smoke-summary.json"
-docker exec tahili_app node /app/scripts/lib/prometheus-metrics.mjs http://alloy:12345/metrics faro_receiver_events_total faro_receiver_logs_total faro_receiver_measurements_total loki_write_sent_entries_total loki_write_dropped_entries_total loki_write_batch_retries_total 2>/dev/null | redact > "$WORK/frontend-observability-summary.json" || printf '{}\n' > "$WORK/frontend-observability-summary.json"
-docker exec tahili_app node /app/scripts/lib/prometheus-metrics.mjs http://app:3000/api/observability/faro/metrics tahili_faro_enabled tahili_faro_adapter_requests_total tahili_faro_accepted_envelopes_total tahili_faro_forwarded_envelopes_total tahili_faro_last_accepted_timestamp_seconds tahili_faro_last_forwarded_timestamp_seconds 2>/dev/null > "$WORK/frontend-observability-adapter.json" || printf '{}\n' > "$WORK/frontend-observability-adapter.json"
+bridge_metrics tahili_alloy 12345 faro_receiver_events_total faro_receiver_logs_total faro_receiver_measurements_total loki_write_sent_entries_total loki_write_dropped_entries_total loki_write_batch_retries_total 2>/dev/null | redact > "$WORK/frontend-observability-summary.json" || printf '{}\n' > "$WORK/frontend-observability-summary.json"
+bridge_metrics_path tahili_app 3000 /api/observability/faro/metrics tahili_faro_enabled tahili_faro_adapter_requests_total tahili_faro_accepted_envelopes_total tahili_faro_forwarded_envelopes_total tahili_faro_last_accepted_timestamp_seconds tahili_faro_last_forwarded_timestamp_seconds 2>/dev/null > "$WORK/frontend-observability-adapter.json" || printf '{}\n' > "$WORK/frontend-observability-adapter.json"
 if jq -s '.[0] * {adapter: .[1]}' "$WORK/frontend-observability-summary.json" "$WORK/frontend-observability-adapter.json" | redact > "$WORK/frontend-observability-summary.tmp"; then
   mv "$WORK/frontend-observability-summary.tmp" "$WORK/frontend-observability-summary.json"
 else
@@ -71,15 +96,15 @@ else
 fi
 rm -f -- "$WORK/frontend-observability-summary.tmp" "$WORK/frontend-observability-adapter.json"
 docker inspect --format '{"status":"{{.State.Status}}","health":"{{if .State.Health}}{{.State.Health.Status}}{{end}}","restarts":{{.RestartCount}}}' tahili_tempo 2>/dev/null > "$WORK/tempo-summary.json" || printf '{}\n' > "$WORK/tempo-summary.json"
-docker exec tahili_app node /app/scripts/lib/prometheus-metrics.mjs http://tempo:3200/metrics tempo_distributor_spans_received_total tempo_distributor_bytes_received_total tempo_ingester_traces_created_total tempo_ingester_live_traces 2>/dev/null > "$WORK/tempo-metrics.json" || printf '{}\n' > "$WORK/tempo-metrics.json"
+bridge_metrics tahili_tempo 3200 tempo_distributor_spans_received_total tempo_distributor_bytes_received_total tempo_ingester_traces_created_total tempo_ingester_live_traces 2>/dev/null > "$WORK/tempo-metrics.json" || printf '{}\n' > "$WORK/tempo-metrics.json"
 if jq -s '.[0] * {metrics: .[1]}' "$WORK/tempo-summary.json" "$WORK/tempo-metrics.json" | redact > "$WORK/tempo-summary.tmp"; then
   mv "$WORK/tempo-summary.tmp" "$WORK/tempo-summary.json"
 else
   printf '{}\n' > "$WORK/tempo-summary.json"
 fi
 rm -f -- "$WORK/tempo-summary.tmp" "$WORK/tempo-metrics.json"
-docker exec tahili_app node /app/scripts/lib/prometheus-metrics.mjs http://alloy:12345/metrics otelcol_receiver_accepted_spans_total otelcol_exporter_sent_spans_total otelcol_exporter_send_failed_spans_total otelcol_processor_dropped_spans_total 2>/dev/null | redact > "$WORK/alloy-trace-summary.json" || printf '{}\n' > "$WORK/alloy-trace-summary.json"
-docker exec tahili_app node /app/scripts/lib/prometheus-metrics.mjs http://app:3000/api/observability/faro/metrics tahili_otel_enabled tahili_otel_export_attempts_total tahili_otel_export_failures_total tahili_otel_last_export_success_timestamp_seconds 2>/dev/null | redact > "$WORK/otel-summary.json" || printf '{}\n' > "$WORK/otel-summary.json"
+bridge_metrics tahili_alloy 12345 otelcol_receiver_accepted_spans_total otelcol_exporter_sent_spans_total otelcol_exporter_send_failed_spans_total otelcol_processor_dropped_spans_total 2>/dev/null | redact > "$WORK/alloy-trace-summary.json" || printf '{}\n' > "$WORK/alloy-trace-summary.json"
+bridge_metrics_path tahili_app 3000 /api/observability/faro/metrics tahili_otel_enabled tahili_otel_export_attempts_total tahili_otel_export_failures_total tahili_otel_last_export_success_timestamp_seconds 2>/dev/null | redact > "$WORK/otel-summary.json" || printf '{}\n' > "$WORK/otel-summary.json"
 { node --version; npm --version; docker --version; docker compose version; (cd "$ROOT" && npx prisma --version | head -4); } | redact > "$WORK/versions.txt"
 printf '{"generatedAt":"%s","since":"%s","sections":["manifest","git","image","services","resources","migrations","probes","alerts","logs","smoke","frontend-observability","tempo","alloy-traces","otel-summary","versions"],"requestIdIncluded":%s,"errorIdIncluded":%s,"redaction":"allowlisted structured fields only"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SINCE" "$([[ -n "$REQUEST_ID" ]] && echo true || echo false)" "$([[ -n "$ERROR_ID" ]] && echo true || echo false)" > "$WORK/manifest.json"
 

@@ -61,7 +61,13 @@ scripts/collect-debug-bundle.sh --create --since 10m
 scripts/collect-debug-bundle.sh --create --request-id UUID --error-id UUID --output /tmp/tahili-debug.tar.gz
 ```
 
-يجمع السكربت حالة Git/image/services/resources، migrations read-only، probes، alerts، وstructured logs allowlisted فقط. يحظر `.env` وcredentials/cookies/tokens ومفاتيح SSH وDB dumps وuploads وMinIO objects وrequest bodies وبيانات المراجعين. ينشئ archive وchecksum بصلاحية `600`، يفحص الأسرار قبل وبعد الضغط، ويحتفظ بملفات diagnostics المطابقة فقط لمدة 7 أيام دون wildcard واسع.
+يجمع السكربت حالة Git/image/services/resources، حالة migrations غير المتاحة عند منع in-container inspection، probes، alerts، وstructured logs allowlisted فقط. يحظر `.env` وcredentials/cookies/tokens ومفاتيح SSH وDB dumps وuploads وMinIO objects وrequest bodies وبيانات المراجعين. ينشئ archive وchecksum بصلاحية `600`، يفحص الأسرار قبل وبعد الضغط، ويحتفظ بملفات diagnostics المطابقة فقط لمدة 7 أيام دون wildcard واسع.
+
+## تشخيص Codex المحلي (Stage 9)
+
+استخدم `node scripts/tahili-diagnose.mjs` على VM التطوير فقط قبل أي تحقيق أوسع. أوامره الثابتة: `status` و`alerts` و`smoke` و`request UUID` و`error UUID` و`recent-errors` و`service NAME` و`bundle --dry-run`. تقبل `--since` حتى 24 ساعة و`--limit` حتى 20 و`--timeout` المحدود؛ لا تقبل URL أو PromQL/LogQL أو shell أو container أو path من المستخدم. تستخدم Docker inspect وواجهات Docker bridge فقط، ولا تستخدم `docker exec` أو تعرض raw logs/spans أو IDs في التقرير.
+
+`bundle --apply` يحتاج طلباً صريحاً؛ ينشئ archive تحت `/tmp/tahili-diagnose` بصلاحية 600 ويعيد path/checksum/size دون المحتوى. MCP المحلي مؤجل لأن `@modelcontextprotocol/sdk` غير موجود محلياً أو في npm cache؛ لا تنفذ MCP يدوياً ولا تنزّل حزمة وقت التحقيق.
 
 ## Migrations
 
