@@ -33,6 +33,8 @@ docker logs --tail 300 tahili_app 2>&1 | grep -Ei '500|Prisma|ERROR|FATAL' || tr
 
 Faro is disabled unless the server runtime environment has `FARO_ENABLED=true`. It uses only the same-origin `/api/observability/faro` adapter; do not expose or configure the internal Alloy receiver for a browser. The adapter forwards only bounded, sanitized event/log/Web Vital envelopes to local Loki. For a release revision, set the non-secret `GIT_REVISION` runtime value with the app deployment; no rebuild is needed to toggle Faro.
 
+Grafana dashboard UID `tahili-frontend-observability` shows receiver health, sanitized signal kinds, error levels, LCP, normalized routes, and export counters. For a frontend incident, confirm Alloy target `up`, then inspect the dashboard's sanitized Loki panel by time window; never search raw identifiers. `FARO_ENABLED=false` disables collection safely. Lack-of-telemetry alerting is deferred while that flag has no Prometheus metric, preventing false alerts when collection is intentionally disabled.
+
 ## Debug Bundle منقح
 
 استخدم `scripts/collect-debug-bundle.sh` على VM التطوير فقط. الوضع الافتراضي dry-run؛ لا ينشئ archive حتى تضيف `--create`:

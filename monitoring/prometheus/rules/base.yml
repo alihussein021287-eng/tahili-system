@@ -58,3 +58,20 @@ groups:
         for: 10m
         labels: { severity: warning, environment: development, service: smoke }
         annotations: { summary: "Tahili read-only smoke result is stale" }
+  - name: tahili-frontend-observability
+    rules:
+      - alert: TahiliAlloyReceiverUnavailable
+        expr: up{job="alloy"} == 0
+        for: 2m
+        labels: { severity: critical, environment: development, service: tahili-frontend }
+        annotations: { summary: "Faro/Alloy receiver unavailable", summary_ar: "مستقبل Faro/Alloy غير متاح محلياً" }
+      - alert: TahiliFrontendTelemetryDropped
+        expr: sum(loki_write_dropped_entries_total{component_id="loki.write.local"}) > 0
+        for: 2m
+        labels: { severity: warning, environment: development, service: tahili-frontend }
+        annotations: { summary: "Frontend telemetry entries were dropped", summary_ar: "تم إسقاط إشارات واجهة المتصفح" }
+      - alert: TahiliFrontendTelemetryExportRetry
+        expr: sum(loki_write_batch_retries_total{component_id="loki.write.local"}) > 0
+        for: 5m
+        labels: { severity: warning, environment: development, service: tahili-frontend }
+        annotations: { summary: "Frontend telemetry export is retrying", summary_ar: "إرسال إشارات الواجهة يعيد المحاولة" }

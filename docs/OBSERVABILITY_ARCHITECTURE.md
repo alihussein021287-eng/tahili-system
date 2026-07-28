@@ -57,6 +57,10 @@ Stage 6A proves receiver infrastructure only: Alloy returns `202`, receiver coun
 
 `FARO_ENABLED` is a server runtime flag, defaulting to `false`; the same image can run with it enabled on development and disabled elsewhere. It is read by the server layout and adapter only. No `NEXT_PUBLIC_FARO_*` setting exists.
 
+## Frontend dashboard and alerts (Stage 6C)
+
+Provisioned dashboard UID `tahili-frontend-observability` is available through local Grafana only. It reads sanitized Faro logfmt fields from Loki and Alloy counters from Prometheus. `service` and `environment` are the only stream labels; kind, level, normalized route, LCP, app, and revision remain parsed fields to avoid cardinality growth. Prometheus alerts cover Alloy availability and exporter drop/retry counters. Telemetry-absence, adapter-rate-limit, and LCP/error-rate alerts are intentionally deferred until a privacy-safe server metric exists: `FARO_ENABLED=false` must never generate a false alert.
+
 `pg_stat_statements` is not enabled in this work because it requires a PostgreSQL configuration change and restart. PostgreSQL restart is outside this project. Database metrics initially use exporter-safe counters only.
 
 ## Acceptance gates

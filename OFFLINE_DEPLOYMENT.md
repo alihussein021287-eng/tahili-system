@@ -25,6 +25,8 @@ Stage 6A uses `grafana/alloy:v1.16.2@sha256:32913cbfac652d15fa84d256a74e5ee3f715
 
 Stage 6B pins `@grafana/faro-web-sdk@2.8.2` in `package-lock.json`; obtain it through the approved development dependency cache before an offline build. Browser telemetry uses the app's same-origin adapter and has no external runtime endpoint.
 
+The provisioned frontend dashboard is `monitoring/grafana/provisioning/dashboards/json/frontend-observability.json` (UID `tahili-frontend-observability`). It uses only the existing local Grafana, Loki, Prometheus, and Alloy images; no additional image or external endpoint is required offline.
+
 ## حفظ ونقل الصورة
 
 ```bash
