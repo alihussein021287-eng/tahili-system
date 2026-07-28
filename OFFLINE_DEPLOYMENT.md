@@ -41,6 +41,8 @@ Stage 6C.1 adds no image or package. Prometheus scrapes the aggregate-only adapt
 
 ## حفظ ونقل الصورة
 
+حالة development المعتمدة بعد Stage 10: احتفظ محلياً فقط بـ`tahili-system-app:latest` (image `7ae316e8…`, revision التطبيق `af4bd33…`) وبـ`tahili-system-app:943292a26c70` كـrollback واحد. commits التشغيلية `53c45ae` و`6dc9410` لا تتطلب image جديدة. لا تستخدم cache أو tags قديمة كمرجع offline.
+
 ```bash
 docker save tahili-system-app:latest -o /tmp/tahili-system-app.tar
 scp /tmp/tahili-system-app.tar prod:/tmp/

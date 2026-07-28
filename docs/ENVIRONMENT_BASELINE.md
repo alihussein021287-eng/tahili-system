@@ -1,6 +1,6 @@
 # Development Environment Baseline
 
-اللقطة: 2026-07-25، VM التطوير فقط. لا تحتوي أسراراً أو بيانات مرضى. أعد القياس بعد أي تنظيف أو تغيير بنية تحتية.
+اللقطة: 2026-07-28 بعد إغلاق Stage 10، VM التطوير فقط. لا تحتوي أسراراً أو بيانات مرضى. أعد القياس بعد أي تنظيف أو تغيير بنية تحتية.
 
 ## Status
 
@@ -9,7 +9,7 @@
 | CPU | 80 vCPU، Intel Xeon Gold 6230، load `0.52/0.47/0.79` | جاهز |
 | RAM | 157 GiB، available 113 GiB | جاهز |
 | Swap | 8 GiB، مستخدم قرابة 967 MiB | تحذير منخفض؛ راقب فقط |
-| Disk | 492 GiB، مستخدم 103 GiB (22%)، متاح 364 GiB | جاهز |
+| Disk | 492 GiB، مستخدم 130 GiB (28%)، متاح 337 GiB | جاهز |
 | Inodes | 5% مستخدم | جاهز |
 | Network | `eth0=192.168.17.20/24`, `eth1=10.220.170.20/24`; default عبر `192.168.17.1` | جاهز؛ الفحص الحي عبر eth0 فقط |
 | OS/kernel | Ubuntu 24.04.4 LTS؛ kernel Proxmox `7.0.12-1-pve` | جاهز |
@@ -20,30 +20,28 @@
 | MinIO | RELEASE.2025-09-07 | جاهز |
 | ClamAV | 1.5.3؛ signatures 28072 | جاهز |
 | LibreOffice | 25.8.1.1 داخل app image | جاهز |
-| Containers | app/db/MinIO/ClamAV `running`, restart 0؛ ClamAV healthy | جاهز |
-| Docker storage قبل التنظيف | images 86.08 GB؛ build cache 59.57 GB؛ reclaimable معلن 28.89/28.36 GB | تحذير؛ تنظيف انتقائي |
+| Containers | 17 خدمة app/monitoring `running`، restart 0؛ healthchecks المتاحة healthy | جاهز |
+| Docker storage | images 115.2 GB؛ build cache 94.75 GB؛ reclaimable معلن 21.4/47.99 GB | احتفظ بالـcache؛ لا prune عام |
 | Logs | app قرابة 11 KiB؛ Loki قرابة 294 MiB؛ البقية صغيرة | تحذير؛ اضبط rotation لاحقاً ولا تحذف log نشط |
-| Backups | آخر DB/uploads بتاريخ 2026-07-25 02:00 | جاهز؛ لا تحذف |
+| Backups | Stage 10 custom dump + MinIO/uploads archive تحت `/var/backups/tahili`؛ restore drill PASS | جاهز؛ لا تحذف |
 | OOM/disk errors | لا نتائج حديثة في فحص kernel المحدد | جاهز |
 
-## Cleanup Result
+## Cleanup Result (2026-07-28)
 
 | القياس | قبل | بعد |
 | --- | ---: | ---: |
-| filesystem used | 103 GiB (22%) | 42 GiB (9%) |
-| filesystem available | 364 GiB | 425 GiB |
-| Docker images | 86.08 GB | 29.9 GB |
-| reclaimable build cache | 28.36 GB ثم 10.01 GB بعد إزالة tags | 0 B |
-| build cache retained/shared | 59.57 GB total | 21.21 GB active/shared |
-| Tahili app tags | 17 | 3 |
+| filesystem used | 167 GiB (36%) | 130 GiB (28%) |
+| filesystem available | 300 GiB | 337 GiB |
+| Docker images | 158.7 GB | 115.2 GB |
+| build cache | 94.75 GB | 94.75 GB (لم يُنفذ prune عام) |
+| Tahili app tags | 23 قديمة + 2 محمية | 2 |
 
-المساحة المسترجعة على filesystem قرابة **61 GiB**. حُذف build cache غير المستخدم، 14 tag قديمة، قرابة 3 GiB من archives، وPlaywright/Office/test temp القديم. بقيت:
+المساحة المسترجعة على filesystem قرابة **37 GiB**. حُذفت tags تطبيق قديمة مثبتة غير مستخدمة و7 مجلدات `/tmp/tahili-*` مؤقتة فقط؛ لم يُحذف build cache أو volume أو backup أو test-results. بقيت:
 
-- `tahili-system-app:79aa9ab` (الإصدار المنشور الأخير).
-- `tahili-system-app:latest` / image `bac1560…` (الصورة العاملة على التطوير).
-- `tahili-system-app:5f0d4fb` (الصورة المستقرة السابقة).
+- `tahili-system-app:latest` / image `7ae316e8…` (الصورة العاملة، revision التطبيق `af4bd33…`).
+- `tahili-system-app:943292a26c70` / image `450e50d8…` (rollback المحدد الوحيد).
 
-كل الحاويات التسع بقيت عاملة، وكل volumes الثمانية بقيت active. `/login` و`/readiness` أعادا 200، migrations بقيت 16 ومحدثة، وapp/db/MinIO/ClamAV بقيت restart 0 بلا أخطاء تطبيق حديثة.
+كل الحاويات الـ17 بقيت عاملة، وكل volumes الـ11 بقيت active. `/login=200` وSmoke `17/17`، migrations بقيت 16 ومحدثة، وapp/db/MinIO/ClamAV والمراقبة بقيت restart 0 بلا أخطاء تطبيق حديثة.
 
 ## Protected Assets
 
