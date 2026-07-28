@@ -40,6 +40,7 @@ describe("work and navigation registry", () => {
       expect(new Set(group.hrefs).size).toBe(group.hrefs.length);
     }
     expect(ALL_ITEMS.find((item) => item.href === "/my-work")?.label).toBe("عملي اليوم");
+    expect(NAV_GROUPS.find((group) => group.key === "system")?.hrefs).toContain("/observability");
   });
 
   it("keeps registry metadata unique and links work surfaces to openable routes", () => {

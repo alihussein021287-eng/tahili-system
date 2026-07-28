@@ -8,7 +8,7 @@
 
 | الدور | يظهر له عادة | صفحات متوقعة |
 | --- | --- | --- |
-| `ADMIN` | كل النظام، كل المجموعات، الحذف والصلاحيات الحساسة | `/`, `/patients-care`, `/therapy-centers`, `/pharmacy-inventory`, `/reports-finance`, `/staff`, `/settings`, `/users`, `/permissions`, `/readiness` |
+| `ADMIN` | كل النظام، كل المجموعات، الحذف والصلاحيات الحساسة | `/`, `/patients-care`, `/therapy-centers`, `/pharmacy-inventory`, `/reports-finance`, `/staff`, `/settings`, `/users`, `/permissions`, `/readiness`, `/observability` |
 | `MANAGER` | الرعاية، العلاج، الصيدلية، التقارير، الموظفون بدون إدارة مستخدمين كاملة | `/patients-care`, `/therapy-centers`, `/pharmacy-inventory`, `/reports-finance`, `/staff` |
 | `DOCTOR`, `RESIDENT` | ملفات المراجعين، التشخيص، الإحالات، التقارير الطبية، خطط العلاج حسب الصلاحية | `/patients-care`, `/therapy-centers`, `/reports-finance` |
 | `HEAD_THERAPIST` | إدارة الخطط والجلسات والمراكز ضمن العضوية، ومتابعة الفريق | `/therapy-centers`, `/patients-care`, `/staff?tab=tasks` |
@@ -45,6 +45,7 @@
 - الصيدلية: `pharmacy.purchase.prices`, `pharmacy.purchase.approve`, `pharmacy.purchase.override`.
 - التعاون: `files.admin`, `files.delete.permanent`, `files.audit`, `chat.moderate`.
 - الجاهزية والنسخ: `/readiness` و`/backup` يجب أن تبقى خلف صلاحيات النظام.
+- ملخص المراقبة: `/observability` يظهر ويفتح فقط لـ`ADMIN` بحارس server role، ولا يضيف مفتاح صلاحية أو يسمح لأي دور آخر. هو قراءة مجمّعة فقط، وليس بديلاً عن Grafana ولا يعرض logs/traces أو IDs خام.
 
 ## قواعد عملية
 

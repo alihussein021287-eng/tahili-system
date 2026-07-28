@@ -47,6 +47,10 @@ Stage 7C dashboard UID is `tahili-trace-observability`. It uses bounded local RE
 
 For a safe status check, inspect only container health and aggregate metrics: `docker inspect -f '{{.State.Status}} {{.State.Health.Status}}' tahili_tempo tahili_alloy`. Grafana datasource reachability can be verified through its authenticated local proxy to `Tempo /ready`; never copy credentials into shell history or logs. Debug bundles include generic Tempo state/counters only, never trace payloads or raw spans.
 
+## ملخص المراقبة داخل النظام (Stage 8)
+
+`/observability` صفحة قراءة فقط وحصرية لـADMIN؛ تعرض DTO مجمّعاً ومحدوداً من Prometheus وAlertmanager وTempo وLoki داخل شبكة Docker. لا تستخدم Docker socket، ولا تقبل URL أو PromQL من المتصفح، ولا تعرض Grafana أو logs/traces أو Request/Trace IDs خام. تعذر أي مصدر يظهر «غير متاح» ولا يعيد 500 للتطبيق. استخدم Grafana المحلي فقط للتحقيق التفصيلي المصرح به؛ هذه الصفحة ليست بديلاً عنه.
+
 ## Debug Bundle منقح
 
 استخدم `scripts/collect-debug-bundle.sh` على VM التطوير فقط. الوضع الافتراضي dry-run؛ لا ينشئ archive حتى تضيف `--create`:

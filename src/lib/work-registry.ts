@@ -84,6 +84,7 @@ export const ALL_ITEMS: NavigationItem[] = [
   { href: "/login-log", label: "سجل الدخول", icon: "🔐", perm: "settings.view" },
   { href: "/backup", label: "النسخ الاحتياطي", icon: "💾", perm: "settings.backup" },
   { href: "/readiness", label: "جاهزية النظام", icon: "✅", perm: "settings.view" },
+  { href: "/observability", label: "مراقبة النظام", icon: "📡", perm: "settings.view" },
 ];
 
 export const STANDALONE = ["/", "/workspaces", "/my-work", "/notifications", "/collaboration"];
@@ -94,7 +95,7 @@ export const NAV_GROUPS: NavigationGroup[] = [
   { key: "pharm", title: "الصيدلية والمخزون", icon: "💊", href: "/pharmacy-inventory?tab=overview", hrefs: ["/pharmacy-inventory?tab=overview", "/pharmacy-inventory?tab=dispense", "/pharmacy-inventory?tab=stock", "/pharmacy-inventory?tab=batches", "/pharmacy-inventory?tab=purchases", "/pharmacy-inventory?tab=receipts", "/pharmacy-inventory?tab=reports"] },
   { key: "reports", title: "التقارير والمالية", icon: "📊", href: "/reports-finance?tab=overview", hrefs: ["/reports-finance?tab=overview", "/reports-finance?tab=official", "/reports-finance?tab=patients", "/reports-finance?tab=finance", "/reports-finance?tab=wounded", "/reports-finance?tab=approvals", "/reports-finance?tab=exports"] },
   { key: "staff", title: "الموظفون والمهام", icon: "🗂", href: "/staff?tab=overview", hrefs: ["/staff?tab=overview", "/staff?tab=employees", "/staff?tab=tasks", "/staff?tab=attendance", "/staff?tab=shifts", "/staff?tab=leaves", "/staff?tab=reports"] },
-  { key: "system", title: "النظام", icon: "⚙", href: "/settings", hrefs: ["/settings", "/users", "/permissions", "/audit", "/login-log", "/backup", "/readiness"] },
+  { key: "system", title: "النظام", icon: "⚙", href: "/settings", hrefs: ["/settings", "/users", "/permissions", "/audit", "/login-log", "/backup", "/readiness", "/observability"] },
 ];
 
 export const MOBILE_QUICK_HREFS = ["/patients-care?tab=overview", "/therapy-centers?tab=overview", "/pharmacy-inventory?tab=overview", "/staff?tab=overview"];
@@ -135,6 +136,7 @@ const SECTION_BY_PREFIX: [string, string][] = [
   ["/login-log", "system"],
   ["/backup", "system"],
   ["/readiness", "system"],
+  ["/observability", "system"],
 ];
 
 const SENSITIVE_PERMISSIONS = new Set([

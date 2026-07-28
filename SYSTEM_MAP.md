@@ -15,7 +15,7 @@
 | الصيدلية والمخزون | `/pharmacy-inventory?tab=overview`, `dispense`, `stock`, `batches`, `purchases`, `reports`; `/pharmacy/**`, `/inventory` | `pharmacy-inventory/page.tsx`, `pharmacy/**`, `inventory/page.tsx` | `labels.ts`, `access.ts`, `arabic-money.ts` | `pharmacy.*`, `inventory.*`, `pharmacy.purchase.*` | Prescription يربط المراجع والدواء؛ MedicationBatch وStockMovement وPurchaseOrder تغذي المخزون والتقارير. |
 | التقارير والمالية | `/reports-finance?tab=overview`, `official`, `patients`, `finance`, `wounded`, `approvals`; `/reports/**`, `/finance/**`, `/official-docs`, `/approvals` | `reports-finance/page.tsx`, `reports/**`, `finance/**`, `official-docs/**`, `approvals/page.tsx` | `expense-approval.ts`, `arabic-money.ts`, `labels.ts`, `audit.ts` | `reports.*`, `finance.*`, `expenses.*`, `approvals.*`, `officialdocs.*`, `patients.export` | MedicalReport، Invoice، Payment، WoundedExpense، ApprovalRequest، OfficialDocument. مبالغ الصرفيات محكومة بـ `expenses.amounts`. |
 | الموظفون والمهام | `/staff?tab=overview`, `employees`, `attendance`, `shifts`, `leaves`, `tasks`; `/users`, `/tasks`, `/attendance`, `/shifts` | `staff/page.tsx`, `users/**`, `tasks/**`, `attendance/**`, `shifts/**` | `permissions.ts`, `perms.ts`, `role-workspaces.ts`, `presence.ts`, `user-deletion.ts` | `users.*`, `attendance.*`, `shifts.*`, `tasks.*` | User هو محور الحسابات؛ Task وAttendance وShift وLeave تعتمد على المستخدم أو الدور. |
-| النظام والإعدادات | `/settings`, `/users`, `/permissions`, `/audit`, `/login-log`, `/backup`, `/readiness`, `/maintenance` | `settings/**`, `users/**`, `permissions/page.tsx`, `audit/page.tsx`, `login-log/page.tsx`, `backup/page.tsx`, `readiness/page.tsx` | `admin-config.ts`, `backup.ts`, `readiness.ts`, `readiness-config.ts`, `admin-security.ts`, `permission-store.ts`, `session-validation.ts` | `settings.*`, `users.*`, `audit.view`, `maintenance/backup/readiness` عبر `settings.view` و`settings.backup` | إعدادات OrgSetting، صلاحيات RolePermission/UserPermission، سجلات AuditLog/LoginLog. |
+| النظام والإعدادات | `/settings`, `/users`, `/permissions`, `/audit`, `/login-log`, `/backup`, `/readiness`, `/observability`, `/maintenance` | `settings/**`, `users/**`, `permissions/page.tsx`, `audit/page.tsx`, `login-log/page.tsx`, `backup/page.tsx`, `readiness/page.tsx`, `observability/page.tsx` | `admin-config.ts`, `backup.ts`, `readiness.ts`, `readiness-config.ts`, `observability-summary.ts`, `admin-security.ts`, `permission-store.ts`, `session-validation.ts` | `settings.*`, `users.*`, `audit.view`; `/observability` حصرية لـADMIN مع رابط مخفي لباقي الأدوار | صفحة المراقبة DTO مجمّع من Prometheus/Alertmanager/Tempo/Loki داخل Docker فقط؛ لا Docker socket أو raw logs/traces أو معرّفات طلب. |
 | التعاون والملفات | `/collaboration`, `/collaboration/files`, `/collaboration/admin`, API تحت `/api/collaboration/**` | `collaboration/**`, API routes ذات الصلة | `collaboration-service.ts`, `collaboration-storage.ts`, `collaboration-scan.ts`, `collaboration-preview.ts`, `collaboration-rules.ts` | `collaboration.*`, `chat.*`, `files.*` | يعتمد على MinIO وClamAV؛ CollaborationFile/FileVersion/FileShare مرتبطة بالمستخدمين والمراجع اختيارياً. |
 | التنبيهات | `/notifications` وروابط التنبيهات داخل السايدبار | `notifications/page.tsx`, layout app | `notifications.ts`, `notif-actions.ts`, `notify.ts`, `readiness.ts` | غالباً `dashboard.view` مع فلترة رابط الإشعار حسب `canOpenNotification` | Notification يرسل للمستخدم أو الدور؛ الروابط لا تظهر إذا لا يملك المستخدم صلاحية فتحها. |
 | العمل اليومي المشتق | `/`, `/workspaces`, `/my-work`, وبطاقة الرحلة في `/patients/[id]` | `page.tsx`, `workspaces/page.tsx`, `my-work/page.tsx`, `patients/[id]/page.tsx` | `work-registry.ts`, `my-work.ts`, `patient-journey.ts` | الصلاحية الفعلية لكل مصدر ورابط؛ `dashboard.view` لفتح قائمة العمل | View Model فقط: يجمع حالات موجودة باستعلامات محدودة، يزيل التكرار، ولا ينشئ Task أو Journey state جديداً. |
@@ -30,18 +30,18 @@
 
 | المؤشر | العدد |
 | --- | ---: |
-| صفحات واجهة مكتشفة | 93 |
+| صفحات واجهة مكتشفة | 94 |
 | صفحات تشغيل مطوّرة بصرياً | 73 |
 | شاشات متخصصة لا تحتاج تغييراً | 4 |
 | صفحات طباعة | 13 |
 | routes توافق قديمة مرتبطة بالصفحات الجامعة | 3 |
-| Route Handlers / API | 19 |
+| Route Handlers / API | 21 |
 | صفحات غير مفحوصة | 0 |
 
 ## Deterministic Inventory And Boundaries
 
 - شغّل `node scripts/audit-project.mjs` للجرد JSON، أو `node scripts/audit-project.mjs --markdown` لتوليد جدول الصفحات.
-- الجرد الحالي: 93 صفحة، 19 API route، 36 ملف Actions و256 Server Action مصدرة، 44 ملف component، 58 ملف `src/lib`، 87 Prisma model، 61 enum، 139 permission، 15 role، و16 migration.
+- الجرد الحالي: 94 صفحة، 21 API route، 36 ملف Actions و256 Server Action مصدرة، 47 ملف component، 66 ملف `src/lib`، 87 Prisma model، 61 enum، 139 permission، 15 role، 77 ملف اختبار، و16 migration.
 - التصنيف التفصيلي لكل صفحة موجود في `docs/UI_INFORMATION_ARCHITECTURE.md`; غير المصنف = 0.
 - حدود الدورات الطبية والعلاجية والمالية في `docs/MEDICAL_WORKFLOW_BOUNDARIES.md`.
 - سجل التكرار وقرار الإبقاء/التوحيد في `docs/UI_DUPLICATION_REGISTER.md`.
