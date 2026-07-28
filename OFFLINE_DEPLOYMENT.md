@@ -27,6 +27,8 @@ Stage 6B pins `@grafana/faro-web-sdk@2.8.2` in `package-lock.json`; obtain it th
 
 The provisioned frontend dashboard is `monitoring/grafana/provisioning/dashboards/json/frontend-observability.json` (UID `tahili-frontend-observability`). It uses only the existing local Grafana, Loki, Prometheus, and Alloy images; no additional image or external endpoint is required offline.
 
+Stage 6C.1 adds no image or package. Prometheus scrapes the aggregate-only adapter endpoint over the existing Docker network. `tahili_faro_*` counters are in-memory and reset when the app restarts; use the process-start and last-forwarded timestamps when diagnosing warm-up. `FARO_ENABLED=false` exports `tahili_faro_enabled 0` and deliberately suppresses the telemetry-absence alert.
+
 ## حفظ ونقل الصورة
 
 ```bash

@@ -31,6 +31,13 @@ function isPublicPath(pathname: string) {
 export async function proxy(request: NextRequest) {
   const id = crypto.randomUUID();
   try {
+    const internalFaroMetrics = request.nextUrl.pathname === "/api/observability/faro/metrics" && request.headers.get("host") === "app:3000";
+    if (internalFaroMetrics) {
+      const headers = new Headers(request.headers);
+      headers.delete("x-request-id"); headers.delete("x-tahili-request-id"); headers.delete("x-tahili-request-id-source");
+      headers.set("x-tahili-request-id", id); headers.set("x-tahili-request-id-source", "proxy");
+      const response = NextResponse.next({ request: { headers } }); response.headers.set("X-Request-ID", id); return response;
+    }
     const access = resolveEnvironmentAccess(request.headers);
     if (!access) return new NextResponse("Unrecognized Tahili host", { status: 421 });
     if (isPublicPath(request.nextUrl.pathname)) {

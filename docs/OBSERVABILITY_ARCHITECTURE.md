@@ -59,7 +59,9 @@ Stage 6A proves receiver infrastructure only: Alloy returns `202`, receiver coun
 
 ## Frontend dashboard and alerts (Stage 6C)
 
-Provisioned dashboard UID `tahili-frontend-observability` is available through local Grafana only. It reads sanitized Faro logfmt fields from Loki and Alloy counters from Prometheus. `service` and `environment` are the only stream labels; kind, level, normalized route, LCP, app, and revision remain parsed fields to avoid cardinality growth. Prometheus alerts cover Alloy availability and exporter drop/retry counters. Telemetry-absence, adapter-rate-limit, and LCP/error-rate alerts are intentionally deferred until a privacy-safe server metric exists: `FARO_ENABLED=false` must never generate a false alert.
+Provisioned dashboard UID `tahili-frontend-observability` is available through local Grafana only. It reads sanitized Faro logfmt fields from Loki and aggregate adapter counters from Prometheus. `service` and `environment` are the only stream labels; kind, level, normalized route, LCP, app, and revision remain parsed fields to avoid cardinality growth. Prometheus alerts cover Alloy availability, exporter drop/retry counters, telemetry absence, error rate, LCP, bounded rejection rate, and forwarding failures.
+
+Stage 6C.1 adds a Docker-internal Prometheus scrape of the adapter's aggregate-only metrics endpoint. The endpoint does not expose telemetry, configuration, or identity data. `tahili_faro_enabled` gates telemetry-absence alerting; a 15-minute process warm-up prevents startup noise, and the counter reset is explicit through `tahili_faro_process_start_time_seconds`.
 
 `pg_stat_statements` is not enabled in this work because it requires a PostgreSQL configuration change and restart. PostgreSQL restart is outside this project. Database metrics initially use exporter-safe counters only.
 

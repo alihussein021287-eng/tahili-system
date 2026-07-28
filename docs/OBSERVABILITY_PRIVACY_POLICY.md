@@ -35,6 +35,8 @@ Stage 6B is controlled only by the server runtime variable `FARO_ENABLED` (defau
 
 Privacy regression tests block forbidden values in structured logs and debug bundles. Any new telemetry field requires review against this policy before release.
 
+Faro adapter metrics are server in-memory aggregates only. They use fixed names and bounded labels for rejection reason, signal kind, forwarding failure reason, and log level. They never include routes, URLs, query values, identifiers, user/session data, payload values, or environment values. Counters reset on an app restart; process-start and last-accepted/forwarded timestamps make this visible to monitoring.
+
 ## Identifier semantics
 
 Request ID identifies one HTTP request. Error ID identifies the incident shown to the user. Report Request ID identifies only the browser-error reporting POST. The guaranteed lookup chain is `Error ID → Report Request ID → Loki`; client render errors are not claimed to correlate reliably to the original page request. Future OpenTelemetry/Faro work may add a privacy-reviewed correlation mechanism.
