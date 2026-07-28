@@ -17,6 +17,9 @@ export async function POST(request: NextRequest) {
   const now = Date.now(); const key = `${request.headers.get("x-forwarded-for") || "local"}:${parsed.data.errorId}`;
   if ((seen.get(key) || 0) + 60_000 > now) return new NextResponse(null, { status: 429, headers: { "Cache-Control": "no-store" } });
   seen.set(key, now);
-  logEvent({ eventType: "client_error_report", level: "error", errorId: parsed.data.errorId, requestId: requestId(request.headers.get("x-request-id")), route: normalizeRoute(parsed.data.route), errorCode: parsed.data.errorCode, fingerprint: parsed.data.fingerprint, release: process.env.npm_package_version || "unknown" });
-  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  const trusted = request.headers.get("x-tahili-request-id-source") === "proxy" ? request.headers.get("x-tahili-request-id") : null;
+  const reportRequestId = requestId(trusted);
+  const source = trusted && reportRequestId === trusted ? "proxy" : "route-generated";
+  logEvent({ eventType: "client_error_report", level: "error", errorId: parsed.data.errorId, requestId: reportRequestId, requestIdSource: source, route: normalizeRoute(parsed.data.route), errorCode: parsed.data.errorCode, fingerprint: parsed.data.fingerprint, release: process.env.npm_package_version || "unknown" });
+  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store", "X-Request-ID": reportRequestId } });
 }
