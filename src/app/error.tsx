@@ -1,6 +1,13 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
 export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  const errorId = error.digest || "غير متاح";
+  const [errorId] = useState(() => crypto.randomUUID());
+  const sent = useRef(false);
+  useEffect(() => {
+    if (sent.current) return;
+    sent.current = true;
+    void fetch("/api/observability/client-error", { method: "POST", headers: { "content-type": "application/json" }, cache: "no-store", body: JSON.stringify({ errorId, route: location.pathname, errorCode: "CLIENT_RENDER_ERROR", fingerprint: error.digest || "boundary" }) }).catch(() => {});
+  }, [error.digest, errorId]);
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-8 text-center">
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-red-200 bg-red-50 text-2xl font-bold text-red-700" aria-hidden="true">!</div>

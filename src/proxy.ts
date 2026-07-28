@@ -16,6 +16,7 @@ const PUBLIC_PATHS = [
   /^\/api\/auth(?:\/|$)/,
   /^\/api\/display(?:\/|$)/,
   /^\/api\/reminders(?:\/|$)/,
+  /^\/api\/observability\/client-error(?:\/|$)/,
   /^\/favicon\.ico$/,
   /^\/manifest\.json$/,
   /^\/sw\.js$/,

@@ -25,3 +25,5 @@ export function errorId(error: unknown) {
 export function logEvent(event: Record<string, unknown>) {
   console.log(JSON.stringify(redact({ timestamp: new Date().toISOString(), environment: "development", service: "tahili-app", ...event })));
 }
+
+export const CLIENT_ERROR_CODES = ["CLIENT_RENDER_ERROR", "CLIENT_EVENT_ERROR", "CLIENT_NAVIGATION_ERROR"] as const;
