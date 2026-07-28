@@ -32,7 +32,10 @@ export async function proxy(request: NextRequest) {
     const access = resolveEnvironmentAccess(request.headers);
     if (!access) return new NextResponse("Unrecognized Tahili host", { status: 421 });
     if (isPublicPath(request.nextUrl.pathname)) {
-      const response = NextResponse.next(); response.headers.set("X-Request-ID", id); return response;
+      const response = NextResponse.next();
+      response.headers.set("X-Request-ID", id);
+      logEvent({ level: "info", route: normalizeRoute(request.nextUrl.pathname), method: request.method, status: 200, requestId: id });
+      return response;
     }
 
     const token = await getToken({
