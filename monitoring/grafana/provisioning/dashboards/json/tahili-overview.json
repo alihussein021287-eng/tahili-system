@@ -1,0 +1,1 @@
+{"uid":"tahili-overview","title":"Tahili Overview","schemaVersion":39,"version":1,"panels":[{"type":"stat","title":"Targets up","datasource":{"type":"prometheus","uid":"Prometheus"},"targets":[{"expr":"sum(up)","refId":"A"}]},{"type":"timeseries","title":"HTTP probe success","datasource":{"type":"prometheus","uid":"Prometheus"},"targets":[{"expr":"probe_success","refId":"A"}]}]}

@@ -1,0 +1,75 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: tahili_prometheus
+    profiles: [observability]
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheusdata:/prometheus
+    depends_on: [alertmanager, node-exporter, cadvisor, postgres-exporter, blackbox-exporter]
+    deploy: { resources: { limits: { cpus: '0.50', memory: 768M } } }
+    healthcheck: { test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/healthy"], interval: 30s, timeout: 5s, retries: 3 }
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: tahili_alertmanager
+    profiles: [observability]
+    restart: unless-stopped
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanagerdata:/alertmanager
+    deploy: { resources: { limits: { cpus: '0.20', memory: 192M } } }
+    healthcheck: { test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9093/-/healthy"], interval: 30s, timeout: 5s, retries: 3 }
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: tahili_node_exporter
+    profiles: [observability]
+    restart: unless-stopped
+    command: ["--path.rootfs=/host"]
+    volumes: ["/:/host:ro,rslave"]
+    deploy: { resources: { limits: { cpus: '0.15', memory: 128M } } }
+    healthcheck: { test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9100/metrics"], interval: 30s, timeout: 5s, retries: 3 }
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: tahili_cadvisor
+    profiles: [observability]
+    restart: unless-stopped
+    privileged: false
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    deploy: { resources: { limits: { cpus: '0.30', memory: 384M } } }
+    healthcheck: { test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"], interval: 30s, timeout: 5s, retries: 3 }
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: tahili_postgres_exporter
+    profiles: [observability]
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
+    depends_on: [postgres]
+    deploy: { resources: { limits: { cpus: '0.15', memory: 128M } } }
+    healthcheck: { test: ["CMD", "/bin/postgres_exporter", "--version"], interval: 30s, timeout: 5s, retries: 3 }
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: tahili_blackbox_exporter
+    profiles: [observability]
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes: ["./monitoring/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro"]
+    deploy: { resources: { limits: { cpus: '0.15', memory: 128M } } }
+    healthcheck: { test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9115/-/healthy"], interval: 30s, timeout: 5s, retries: 3 }
+
+volumes:
+  prometheusdata:
+  alertmanagerdata:

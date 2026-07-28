@@ -1,0 +1,8 @@
+groups:
+  - name: tahili-availability
+    rules:
+      - alert: TahiliTargetDown
+        expr: up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "Tahili monitoring target is down" }
