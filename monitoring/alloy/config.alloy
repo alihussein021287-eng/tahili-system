@@ -57,7 +57,7 @@ otelcol.processor.transform "spanmetrics_privacy" {
   trace_statements {
     context = "span"
     statements = [
-      `keep_keys(attributes, ["http.request.method", "http.route", "http.response.status_code", "tahili.status_class", "error.type"])`,
+      `keep_keys(attributes, ["http.request.method", "http.route", "http.response.status_code", "tahili.route_template", "tahili.status_class", "error.type"])`,
     ]
   }
   trace_statements {
@@ -74,7 +74,7 @@ otelcol.processor.transform "trace_privacy" {
   trace_statements {
     context = "span"
     statements = [
-      `keep_keys(attributes, ["http.request.method", "http.route", "http.response.status_code", "tahili.status_class", "error.type", "tahili.request_id"])`,
+      `keep_keys(attributes, ["http.request.method", "http.route", "http.response.status_code", "tahili.route_template", "tahili.status_class", "error.type", "tahili.request_id"])`,
     ]
   }
   trace_statements {
