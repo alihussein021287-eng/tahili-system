@@ -29,6 +29,8 @@ Development logs, metrics, alerts, and telemetry retain at most seven days by de
 
 ## Review
 
+Alloy accepts telemetry only on the Docker network and forwards only to local Loki. It has no Cloud endpoint or host-published receiver port. SDK and same-origin adapter controls in Stage 6B provide the second allowlist/redaction boundary; 6A does not claim semantic browser-event coverage.
+
 Privacy regression tests block forbidden values in structured logs and debug bundles. Any new telemetry field requires review against this policy before release.
 
 ## Identifier semantics

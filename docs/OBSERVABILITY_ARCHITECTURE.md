@@ -21,7 +21,7 @@ Docker JSON logs + app structured JSON
   -> Grafana / bounded Tahili adapter
 
 browser telemetry (sampled, redacted, optional)
-  -> local receiver / Loki-compatible store
+  -> Alloy Faro receiver (`alloy:12347`, Docker internal only) -> Loki
   -> Grafana
 
 Tahili /observability
@@ -40,6 +40,7 @@ No application container receives a Docker socket. Only the dedicated collector 
 | Prometheus | Docker internal | 7 days | Metrics only |
 | Alertmanager | Docker internal | 7 days | Local notification grouping/silencing only |
 | Exporters | Docker internal | none | No public ports |
+| Alloy Faro receiver | Docker internal; no host port | 7 days in Loki | `grafana/alloy:v1.16.2@sha256:32913cbfac652d15fa84d256a74e5ee3f71575961bb19d34796ce3838bfba693` |
 | Debug bundles | `/tmp` or `test-results` | 7 days maximum | Redacted archive, preview first |
 | Smoke results | `test-results` | 14 days maximum | Aggregate status only |
 
@@ -50,6 +51,8 @@ Pinned image digests/tags are recorded in the offline manifest before a release.
 `/observability` is an administrative operational area. It must use its own permission keys, default to ADMIN, and never change medical-role access. All adapter operations are allowlisted, timeout-bounded, schema-validated, redacted, and read-only except explicit alert acknowledgement and non-medical operational notes.
 
 ## Deferred decision
+
+Stage 6A proves receiver infrastructure only: Alloy returns `202`, receiver counters increase, and Alloy writes a sanitized Loki entry without drops. Semantic browser `event`/`log` validation is deferred to Stage 6B because `@grafana/faro-web-sdk` is not installed and no official local fixture is available. Stage 6B adds SDK and a same-origin bounded adapter; it does not expose this receiver to the browser.
 
 `pg_stat_statements` is not enabled in this work because it requires a PostgreSQL configuration change and restart. PostgreSQL restart is outside this project. Database metrics initially use exporter-safe counters only.
 

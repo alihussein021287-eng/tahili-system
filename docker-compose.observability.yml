@@ -1,4 +1,18 @@
 services:
+  alloy:
+    image: grafana/alloy:v1.16.2@sha256:32913cbfac652d15fa84d256a74e5ee3f71575961bb19d34796ce3838bfba693
+    container_name: tahili_alloy
+    profiles: [observability]
+    restart: unless-stopped
+    user: "473:473"
+    command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/tmp/alloy"]
+    volumes: ["./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    deploy: { resources: { limits: { cpus: '0.20', memory: 192M } } }
+    healthcheck: { test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:12345/-/ready"], interval: 30s, timeout: 5s, retries: 3 }
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: tahili_prometheus
