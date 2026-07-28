@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { SpanStatusCode } from "@opentelemetry/api";
+import { context, SpanStatusCode, trace } from "@opentelemetry/api";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
+import { SamplingDecision, type ReadableSpan, type Sampler, type SpanExporter } from "@opentelemetry/sdk-trace-base";
 import { excludeOtelRoute, normalizeOtelRoute, otelEnabled, otelForceSample, sanitizeOtelSpan } from "@/lib/otel/privacy";
 import { createServerTracingConfig, PrivacyExporter, startServerTracing } from "@/lib/otel/server";
 
@@ -21,6 +21,26 @@ describe("server trace privacy", () => {
     expect(startServerTracing(env, (value) => calls.push(value))).toBe(true);
     expect(startServerTracing(env, (value) => calls.push(value))).toBe(false);
     expect(calls).toHaveLength(1);
+  });
+
+  it("does not let a remote sampled parent bypass the five-percent sampler", () => {
+    const sampler = createServerTracingConfig({ OTEL_ENABLED: "true", GIT_REVISION: "revision" }).traceSampler as Sampler;
+    const remoteParent = trace.wrapSpanContext({ traceId: "0123456789abcdef0123456789abcdef", spanId: "0123456789abcdef", traceFlags: 1, isRemote: true });
+    const decisions = Array.from({ length: 100 }, (_, index) => sampler.shouldSample(
+      trace.setSpan(context.active(), remoteParent),
+      index.toString(16).padStart(32, "0"),
+      "GET /probe",
+      0,
+      {},
+      [],
+    ).decision);
+    expect(decisions).toContain(SamplingDecision.NOT_RECORD);
+  });
+
+  it("keeps locally sampled parent spans sampled", () => {
+    const sampler = createServerTracingConfig({ OTEL_ENABLED: "true", GIT_REVISION: "revision" }).traceSampler as Sampler;
+    const localParent = trace.wrapSpanContext({ traceId: "abcdefabcdefabcdefabcdefabcdefab", spanId: "abcdefabcdefabcd", traceFlags: 1, isRemote: false });
+    expect(sampler.shouldSample(trace.setSpan(context.active(), localParent), "fedcfedcfedcfedcfedcfedcfedcfedc", "GET /probe", 0, {}, []).decision).toBe(SamplingDecision.RECORD_AND_SAMPLED);
   });
 
   it("normalizes dynamic routes and removes query/hash values", () => {

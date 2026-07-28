@@ -4,6 +4,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { registerOTel, type Configuration } from "@vercel/otel";
 import {
   AlwaysOnSampler,
+  AlwaysOffSampler,
   BatchSpanProcessor,
   ParentBasedSampler,
   TraceIdRatioBasedSampler,
@@ -51,7 +52,13 @@ export function createServerTracingConfig(env: Record<string, string | undefined
   const exporter = new PrivacyExporter(new OTLPTraceExporter({ url: OTLP_ENDPOINT, timeoutMillis: 250 }), resource);
   const sampler = otelForceSample(env)
     ? new AlwaysOnSampler()
-    : new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(SAMPLE_RATIO) });
+    : new ParentBasedSampler({
+      root: new TraceIdRatioBasedSampler(SAMPLE_RATIO),
+      remoteParentSampled: new TraceIdRatioBasedSampler(SAMPLE_RATIO),
+      remoteParentNotSampled: new AlwaysOffSampler(),
+      localParentSampled: new AlwaysOnSampler(),
+      localParentNotSampled: new AlwaysOffSampler(),
+    });
   return {
     serviceName: "tahili-app",
     attributes: {
