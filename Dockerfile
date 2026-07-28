@@ -1,4 +1,5 @@
 # مرحلة البناء
+ARG GIT_REVISION=unknown
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
@@ -8,9 +9,12 @@ RUN npx prisma generate && npm run build
 
 # مرحلة التشغيل
 FROM public.ecr.aws/docker/library/node:20-alpine AS runner
+ARG GIT_REVISION
+LABEL org.opencontainers.image.revision=${GIT_REVISION}
 RUN apk add --no-cache postgresql16-client libreoffice font-noto font-noto-arabic
 WORKDIR /app
 ENV NODE_ENV=production
+ENV GIT_REVISION=${GIT_REVISION}
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json

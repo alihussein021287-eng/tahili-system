@@ -25,7 +25,7 @@ browser telemetry (sampled, redacted, optional)
   -> Alloy Faro receiver (`alloy:12347`, Docker internal only) -> Loki
   -> Grafana
 
-internal OTLP traces (Stage 7A infrastructure only)
+server OTLP traces (Stage 7B; Node runtime only)
   -> Alloy OTLP receiver (`alloy:4317` gRPC, `alloy:4318` HTTP; Docker internal only)
   -> Tempo (`tempo:4317` OTLP, `tempo:3200` query; local named volume only)
   -> Grafana Tempo datasource UID `Tempo`
@@ -71,16 +71,18 @@ Stage 6C.1 adds a Docker-internal Prometheus scrape of the adapter's aggregate-o
 
 `pg_stat_statements` is not enabled in this work because it requires a PostgreSQL configuration change and restart. PostgreSQL restart is outside this project. Database metrics initially use exporter-safe counters only.
 
-## Traces (Stage 7A)
+## Traces (Stages 7A–7B)
 
 Tempo is a development-only, single-binary local trace store. It has a 72-hour retention period, a read-only configuration mount, a writable dedicated named volume, a 32 MiB temporary filesystem, and limits of 0.30 CPU / 384 MiB RAM. It publishes no host or LAN port and has no cloud endpoint, object storage, metrics generator, or service map.
 
-Alloy accepts OTLP gRPC and HTTP only on the Docker network and forwards traces only to `tempo:4317`. Faro continues to send logs only to Loki; browser traces and Next.js instrumentation are intentionally deferred to Stage 7B. Grafana datasource `Tempo` uses `http://tempo:3200`; its traces-to-logs mapping uses only `service.name -> service` and `deployment.environment -> environment`.
+Alloy accepts OTLP gRPC and HTTP only on the Docker network and forwards traces only to `tempo:4317`. Grafana datasource `Tempo` uses `http://tempo:3200`; its traces-to-logs mapping uses only `service.name -> service` and `deployment.environment -> environment`.
+
+Stage 7B uses Next.js `src/instrumentation.ts` in the Node runtime only. `OTEL_ENABLED` is a server runtime flag and defaults to `false`; it initializes once, disables automatic instrumentations, and sends sanitized server request spans through OTLP/HTTP to `http://alloy:4318/v1/traces`. The normal development sampler is parent-based 5%. Browser tracing, Prisma, SQL, request bodies, and workflow instrumentation remain disabled. The image carries its immutable build revision in server-only `GIT_REVISION`, used as `service.version`; it is not a runtime feature flag.
 
 ## Acceptance gates
 
 - No public administrative port or cloud dependency.
 - No data-bearing log fields or arbitrary query/shell interfaces.
 - PostgreSQL, MinIO, and Caddy are never restarted for observability work.
-- Stage 7A does not add application, Prisma, SQL, browser, or workflow instrumentation.
+- Stage 7B adds only sanitized Node server request tracing; it does not add Prisma, SQL, browser, or workflow instrumentation.
 - Each runtime phase has an isolated commit, push, dev-only release, health check, and checkpoint.

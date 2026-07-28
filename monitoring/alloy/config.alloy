@@ -19,12 +19,64 @@ otelcol.exporter.otlp "tempo" {
   }
 }
 
+otelcol.processor.attributes "trace_privacy" {
+  action {
+    key    = "http.target"
+    action = "delete"
+  }
+  action {
+    key    = "http.url"
+    action = "delete"
+  }
+  action {
+    key    = "url.full"
+    action = "delete"
+  }
+  action {
+    key    = "url.query"
+    action = "delete"
+  }
+  action {
+    key    = "http.request.header.authorization"
+    action = "delete"
+  }
+  action {
+    key    = "http.request.header.cookie"
+    action = "delete"
+  }
+  action {
+    key    = "db.statement"
+    action = "delete"
+  }
+  action {
+    key    = "db.query.text"
+    action = "delete"
+  }
+  action {
+    key    = "exception.message"
+    action = "delete"
+  }
+  action {
+    key    = "exception.stacktrace"
+    action = "delete"
+  }
+  action {
+    key    = "user.id"
+    action = "delete"
+  }
+  action {
+    key    = "client.address"
+    action = "delete"
+  }
+  output { traces = [otelcol.exporter.otlp.tempo.input] }
+}
+
 otelcol.receiver.otlp "internal" {
   grpc {}
   http {}
 
   output {
-    traces = [otelcol.exporter.otlp.tempo.input]
+    traces = [otelcol.processor.attributes.trace_privacy.input]
   }
 }
 

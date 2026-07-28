@@ -37,8 +37,8 @@ valid_id "$REQUEST_ID" && valid_id "$ERROR_ID" || { printf '%s\n' 'IDs must be U
 safe_output "$OUTPUT" || { printf '%s\n' 'Output must be under /tmp or test-results/diagnostics' >&2; exit 2; }
 
 if ((CREATE == 0)); then
-  printf 'mode=dry-run since=%s sections=manifest,git,image,services,resources,migrations,probes,alerts,logs,smoke,frontend-observability,tempo,versions\n' "$SINCE"
-  printf '%s\n' 'files=manifest.json git.txt image.txt services.txt resources.txt migrations.txt probes.txt alerts.json redacted-logs.jsonl smoke-summary.json frontend-observability-summary.json tempo-summary.json versions.txt'
+  printf 'mode=dry-run since=%s sections=manifest,git,image,services,resources,migrations,probes,alerts,logs,smoke,frontend-observability,tempo,alloy-traces,versions\n' "$SINCE"
+  printf '%s\n' 'files=manifest.json git.txt image.txt services.txt resources.txt migrations.txt probes.txt alerts.json redacted-logs.jsonl smoke-summary.json frontend-observability-summary.json tempo-summary.json alloy-trace-summary.json versions.txt'
   printf '%s\n' 'excludes=.env credentials cookies tokens ssh-keys db-dumps uploads minio-objects patient-data request-bodies'
   exit 0
 fi
@@ -78,8 +78,9 @@ else
   printf '{}\n' > "$WORK/tempo-summary.json"
 fi
 rm -f -- "$WORK/tempo-summary.tmp" "$WORK/tempo-metrics.json"
+docker exec tahili_app node -e 'const hold=setTimeout(()=>{process.exitCode=1},5000);(async()=>{const t=await (await fetch("http://alloy:12345/metrics")).text();const keys=["otelcol_receiver_accepted_spans_total","otelcol_exporter_sent_spans_total","otelcol_exporter_send_failed_spans_total","otelcol_processor_dropped_spans_total"];const out={};for(const key of keys)out[key]=[...t.matchAll(new RegExp("^"+key+"(?:\\\\{[^}]*\\\\})? ([0-9.e+-]+)$","gm"))].reduce((sum,m)=>sum+Number(m[1]),0);console.log(JSON.stringify(out))})().then(()=>clearTimeout(hold),()=>{clearTimeout(hold);process.exitCode=1})' 2>/dev/null | redact > "$WORK/alloy-trace-summary.json" || printf '{}\n' > "$WORK/alloy-trace-summary.json"
 { node --version; npm --version; docker --version; docker compose version; (cd "$ROOT" && npx prisma --version | head -4); } | redact > "$WORK/versions.txt"
-printf '{"generatedAt":"%s","since":"%s","sections":["manifest","git","image","services","resources","migrations","probes","alerts","logs","smoke","frontend-observability","tempo","versions"],"requestIdIncluded":%s,"errorIdIncluded":%s,"redaction":"allowlisted structured fields only"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SINCE" "$([[ -n "$REQUEST_ID" ]] && echo true || echo false)" "$([[ -n "$ERROR_ID" ]] && echo true || echo false)" > "$WORK/manifest.json"
+printf '{"generatedAt":"%s","since":"%s","sections":["manifest","git","image","services","resources","migrations","probes","alerts","logs","smoke","frontend-observability","tempo","alloy-traces","versions"],"requestIdIncluded":%s,"errorIdIncluded":%s,"redaction":"allowlisted structured fields only"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SINCE" "$([[ -n "$REQUEST_ID" ]] && echo true || echo false)" "$([[ -n "$ERROR_ID" ]] && echo true || echo false)" > "$WORK/manifest.json"
 
 forbidden='(^|/)(\.env|.*credential.*|.*token.*|.*cookie.*|.*ssh.*|.*upload.*|.*dump.*|.*sql)$'
 find "$WORK" -type f -printf '%f\n' | rg -i "$forbidden" >/dev/null && { printf '%s\n' 'Unsafe bundle path detected' >&2; exit 1; } || true
