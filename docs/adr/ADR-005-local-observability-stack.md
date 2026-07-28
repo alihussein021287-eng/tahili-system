@@ -1,7 +1,9 @@
 # ADR-005: Local, read-only observability stack
 
-**Status:** Accepted  
-**Date:** 2026-07-28  
+**Status:** Accepted
+
+**Date:** 2026-07-28
+
 **Affects:** development Docker monitoring, Grafana/Loki, Tahili admin operations
 
 ## Context
