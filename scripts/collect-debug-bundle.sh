@@ -79,8 +79,9 @@ else
 fi
 rm -f -- "$WORK/tempo-summary.tmp" "$WORK/tempo-metrics.json"
 docker exec tahili_app node /app/scripts/lib/prometheus-metrics.mjs http://alloy:12345/metrics otelcol_receiver_accepted_spans_total otelcol_exporter_sent_spans_total otelcol_exporter_send_failed_spans_total otelcol_processor_dropped_spans_total 2>/dev/null | redact > "$WORK/alloy-trace-summary.json" || printf '{}\n' > "$WORK/alloy-trace-summary.json"
+docker exec tahili_app node /app/scripts/lib/prometheus-metrics.mjs http://app:3000/api/observability/faro/metrics tahili_otel_enabled tahili_otel_export_attempts_total tahili_otel_export_failures_total tahili_otel_last_export_success_timestamp_seconds 2>/dev/null | redact > "$WORK/otel-summary.json" || printf '{}\n' > "$WORK/otel-summary.json"
 { node --version; npm --version; docker --version; docker compose version; (cd "$ROOT" && npx prisma --version | head -4); } | redact > "$WORK/versions.txt"
-printf '{"generatedAt":"%s","since":"%s","sections":["manifest","git","image","services","resources","migrations","probes","alerts","logs","smoke","frontend-observability","tempo","alloy-traces","versions"],"requestIdIncluded":%s,"errorIdIncluded":%s,"redaction":"allowlisted structured fields only"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SINCE" "$([[ -n "$REQUEST_ID" ]] && echo true || echo false)" "$([[ -n "$ERROR_ID" ]] && echo true || echo false)" > "$WORK/manifest.json"
+printf '{"generatedAt":"%s","since":"%s","sections":["manifest","git","image","services","resources","migrations","probes","alerts","logs","smoke","frontend-observability","tempo","alloy-traces","otel-summary","versions"],"requestIdIncluded":%s,"errorIdIncluded":%s,"redaction":"allowlisted structured fields only"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SINCE" "$([[ -n "$REQUEST_ID" ]] && echo true || echo false)" "$([[ -n "$ERROR_ID" ]] && echo true || echo false)" > "$WORK/manifest.json"
 
 forbidden='(^|/)(\.env|.*credential.*|.*token.*|.*cookie.*|.*ssh.*|.*upload.*|.*dump.*|.*sql)$'
 find "$WORK" -type f -printf '%f\n' | rg -i "$forbidden" >/dev/null && { printf '%s\n' 'Unsafe bundle path detected' >&2; exit 1; } || true

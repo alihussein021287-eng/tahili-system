@@ -100,3 +100,40 @@ groups:
         for: 5m
         labels: { severity: warning, environment: development, service: tahili-frontend }
         annotations: { summary: "Faro adapter forwarding is failing", summary_ar: "إرسال مهايئ Faro يفشل" }
+  - name: tahili-trace-observability
+    rules:
+      - alert: TahiliTempoUnavailable
+        expr: up{job="tempo"} == 0
+        for: 2m
+        labels: { severity: critical, environment: development, service: tempo }
+        annotations: { summary: "Tempo trace store is unavailable" }
+      - alert: TahiliTracePipelineUnavailable
+        expr: up{job="alloy"} == 0 or up{job="tempo"} == 0
+        for: 2m
+        labels: { severity: critical, environment: development, service: tracing }
+        annotations: { summary: "Local trace pipeline is unavailable" }
+      - alert: TahiliTraceExportFailures
+        expr: sum(increase(otelcol_exporter_send_failed_spans_total[5m])) > 0 or increase(tahili_otel_export_failures_total[5m]) > 0
+        for: 5m
+        labels: { severity: warning, environment: development, service: tracing }
+        annotations: { summary: "Trace export failures detected" }
+      - alert: TahiliTraceDrops
+        expr: sum(increase(otelcol_processor_dropped_spans_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning, environment: development, service: tracing }
+        annotations: { summary: "Trace spans were dropped" }
+      - alert: TahiliServerLatencyP95High
+        expr: histogram_quantile(0.95, sum by (le) (rate(tahili_server_duration_milliseconds_bucket[10m]))) > 1000
+        for: 10m
+        labels: { severity: warning, environment: development, service: tahili-app }
+        annotations: { summary: "Server trace p95 latency remains high" }
+      - alert: TahiliServer5xxRateHigh
+        expr: sum(rate(tahili_server_calls_total{status_code="STATUS_CODE_ERROR"}[10m])) / clamp_min(sum(rate(tahili_server_calls_total[10m])), 0.001) > 0.05
+        for: 10m
+        labels: { severity: warning, environment: development, service: tahili-app }
+        annotations: { summary: "Server 5xx trace rate remains high" }
+      - alert: TahiliTracesAbsent
+        expr: tahili_otel_enabled == 1 and (time() - tahili_otel_process_start_time_seconds > 900) and (time() - tahili_otel_last_export_success_timestamp_seconds > 900)
+        for: 5m
+        labels: { severity: warning, environment: development, service: tahili-app }
+        annotations: { summary: "No trace exports after OTEL warm-up" }

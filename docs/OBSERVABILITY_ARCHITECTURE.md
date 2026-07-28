@@ -79,6 +79,12 @@ Alloy accepts OTLP gRPC and HTTP only on the Docker network and forwards traces 
 
 Stage 7B uses Next.js `src/instrumentation.ts` and the official `registerOTel` integration in the Node runtime only. `OTEL_ENABLED` is a server runtime flag and defaults to `false`; it initializes once with `instrumentations: []`, relying only on Next's built-in server spans before sending the privacy-projected output through OTLP/HTTP to `http://alloy:4318/v1/traces`. The normal development sampler is parent-based 5%. Browser tracing, Prisma, SQL, request bodies, outgoing HTTP, and workflow instrumentation remain disabled. The image carries its immutable build revision in server-only `GIT_REVISION`, used as `service.version`; it is not a runtime feature flag.
 
+## Trace correlation and RED metrics (Stage 7C)
+
+The proxy remains the sole Request ID issuer. A sampled Node server span may carry only its proxy-minted UUID as `tahili.request_id`; the structured server log may carry that Request ID and sampled Trace ID. Neither identifier is a Loki/Prometheus label or metric dimension, and inbound trace headers cannot establish trust. Alloy applies a second trace/resource allowlist before local Tempo storage.
+
+Alloy derives local-only RED metrics with a 500-series cap. The only metric dimensions are service, environment, normalized route template, HTTP method, and bounded status class. It forwards them to the existing Docker-internal Prometheus receiver with exemplars disabled; there is no cloud or external remote write. This adds an estimated 40–80 MiB Alloy and 10–25 MiB Prometheus working memory; Alloy is limited to 256 MiB.
+
 ## Acceptance gates
 
 - No public administrative port or cloud dependency.

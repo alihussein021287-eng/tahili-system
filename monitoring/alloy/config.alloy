@@ -19,56 +19,71 @@ otelcol.exporter.otlp "tempo" {
   }
 }
 
-otelcol.processor.attributes "trace_privacy" {
-  action {
-    key    = "http.target"
-    action = "delete"
+// Local-only bounded RED metrics. The generated series deliberately omit IDs,
+// revision, raw status codes, and every resource attribute except service/env.
+prometheus.remote_write "local" {
+  endpoint {
+    url            = "http://prometheus:9090/api/v1/write"
+    send_exemplars = false
   }
-  action {
-    key    = "http.url"
-    action = "delete"
+}
+
+otelcol.exporter.prometheus "spanmetrics" {
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+otelcol.connector.spanmetrics "server" {
+  namespace                      = "tahili_server"
+  aggregation_cardinality_limit  = 500
+  metrics_flush_interval         = "30s"
+  metrics_expiration             = "15m"
+  resource_metrics_key_attributes = ["service.name", "deployment.environment.name"]
+  exclude_dimensions = ["span.name", "span.kind", "status.code"]
+
+  histogram {
+    explicit {
+      buckets = ["10ms", "25ms", "50ms", "100ms", "250ms", "500ms", "1s", "2s", "5s", "10s"]
+    }
   }
-  action {
-    key    = "url.full"
-    action = "delete"
+  dimension { name = "deployment.environment.name" }
+  dimension { name = "tahili.route_template" }
+  dimension { name = "http.request.method" }
+  dimension { name = "tahili.status_class" }
+  output { metrics = [otelcol.exporter.prometheus.spanmetrics.input] }
+}
+
+otelcol.processor.transform "spanmetrics_privacy" {
+  error_mode = "ignore"
+  trace_statements {
+    context = "span"
+    statements = [
+      `keep_keys(attributes, ["http.request.method", "http.route", "http.response.status_code", "tahili.status_class", "error.type"])`,
+    ]
   }
-  action {
-    key    = "url.query"
-    action = "delete"
+  trace_statements {
+    context = "resource"
+    statements = [
+      `keep_keys(attributes, ["service.name", "deployment.environment.name"])`,
+    ]
   }
-  action {
-    key    = "http.request.header.authorization"
-    action = "delete"
+  output { traces = [otelcol.connector.spanmetrics.server.input] }
+}
+
+otelcol.processor.transform "trace_privacy" {
+  error_mode = "ignore"
+  trace_statements {
+    context = "span"
+    statements = [
+      `keep_keys(attributes, ["http.request.method", "http.route", "http.response.status_code", "tahili.status_class", "error.type", "tahili.request_id"])`,
+    ]
   }
-  action {
-    key    = "http.request.header.cookie"
-    action = "delete"
+  trace_statements {
+    context = "resource"
+    statements = [
+      `keep_keys(attributes, ["service.name", "deployment.environment.name", "service.version"])`,
+    ]
   }
-  action {
-    key    = "db.statement"
-    action = "delete"
-  }
-  action {
-    key    = "db.query.text"
-    action = "delete"
-  }
-  action {
-    key    = "exception.message"
-    action = "delete"
-  }
-  action {
-    key    = "exception.stacktrace"
-    action = "delete"
-  }
-  action {
-    key    = "user.id"
-    action = "delete"
-  }
-  action {
-    key    = "client.address"
-    action = "delete"
-  }
-  output { traces = [otelcol.exporter.otlp.tempo.input] }
+  output { traces = [otelcol.exporter.otlp.tempo.input, otelcol.processor.transform.spanmetrics_privacy.input] }
 }
 
 otelcol.receiver.otlp "internal" {
@@ -76,7 +91,7 @@ otelcol.receiver.otlp "internal" {
   http {}
 
   output {
-    traces = [otelcol.processor.attributes.trace_privacy.input]
+    traces = [otelcol.processor.transform.trace_privacy.input]
   }
 }
 

@@ -8,3 +8,10 @@ datasources:
     url: http://loki:3100
     isDefault: true
     editable: true
+    jsonData:
+      derivedFields:
+        - name: Trace ID
+          matcherRegex: '"traceId":"([a-f0-9]{32})"'
+          datasourceUid: Tempo
+          url: '$${__value.raw}'
+          urlDisplayLabel: View trace

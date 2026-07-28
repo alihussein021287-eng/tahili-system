@@ -16,5 +16,7 @@ datasources:
             value: service
           - key: deployment.environment
             value: environment
-        filterByTraceID: false
+        filterByTraceID: true
         filterBySpanID: false
+        customQuery: true
+        query: '{service="tahili-app"} | json | traceId="${__trace.traceId}"'

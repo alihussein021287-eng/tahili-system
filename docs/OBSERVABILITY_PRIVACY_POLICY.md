@@ -35,6 +35,8 @@ Stage 7A keeps OTLP gRPC/HTTP inside Docker only: Alloy forwards traces only to 
 
 Stage 7B permits sampled Node server request spans only when `OTEL_ENABLED=true`. Before export, the application replaces each span with a prototype-preserving safe projection: fixed service/environment/build revision and only normalized route template, HTTP method, bounded status, and error class. It removes events, links, exception messages/stacks, headers, cookies, request/response bodies, query strings, identities, database attributes, and all other span/resource attributes. Alloy deletes sensitive keys again defensively. `OTEL_TEST_FORCE_SAMPLE` is test-only and is not present in the deployment compose contract.
 
+Stage 7C adds only the proxy-minted random Request ID to a sampled span and the corresponding sampled Trace ID to a structured server log. They are never labels, metric dimensions, raw traceparent/baggage values, or Debug Bundle contents. Alloy keeps only the explicit trace allowlist and strips the Request ID before span-metric aggregation.
+
 Stage 6B is controlled only by the server runtime variable `FARO_ENABLED` (default `false`). The browser receives only an enabled boolean, never Alloy addressing or server configuration. The adapter accepts bounded event/log/measurement envelopes only and drops exceptions, traces, identity metadata, and empty envelopes. It extracts a pathname before normalizing it, so URL origins, query strings, hashes, and dynamic identifiers never reach Loki.
 
 Privacy regression tests block forbidden values in structured logs and debug bundles. Any new telemetry field requires review against this policy before release.

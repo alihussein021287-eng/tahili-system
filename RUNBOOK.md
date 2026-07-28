@@ -43,6 +43,8 @@ Tempo is Docker-internal only and uses local `tempodata` storage with 72-hour re
 
 The image build must receive a non-secret `GIT_REVISION` build argument. It becomes immutable server-only `service.version`; do not override it in compose. Keep `OTEL_TEST_FORCE_SAMPLE` absent from deployment compose and use it only in a disposable diagnostic container.
 
+Stage 7C dashboard UID is `tahili-trace-observability`. It uses bounded local RED metrics and a Tempo↔Loki correlation link. Request/Trace IDs remain structured fields only; never use them as labels, metric dimensions, or Debug Bundle content. Trace-absence alerting is gated by `tahili_otel_enabled=1` after a 15-minute warm-up.
+
 For a safe status check, inspect only container health and aggregate metrics: `docker inspect -f '{{.State.Status}} {{.State.Health.Status}}' tahili_tempo tahili_alloy`. Grafana datasource reachability can be verified through its authenticated local proxy to `Tempo /ready`; never copy credentials into shell history or logs. Debug bundles include generic Tempo state/counters only, never trace payloads or raw spans.
 
 ## Debug Bundle منقح

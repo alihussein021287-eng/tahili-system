@@ -43,8 +43,13 @@ export function sanitizeOtelSpan(input: { name: string; attributes: Record<strin
   const status = typeof rawStatus === "number"
     ? Math.max(100, Math.min(599, Math.trunc(rawStatus)))
     : undefined;
-  const attributes: Record<string, string | number> = { "http.request.method": method, "http.route": route };
+  const attributes: Record<string, string | number> = { "http.request.method": method, "http.route": route, "tahili.route_template": route };
   if (status) attributes["http.response.status_code"] = status;
+  if (status) attributes["tahili.status_class"] = `${Math.floor(status / 100)}xx`;
+  const trustedRequestId = input.attributes["tahili.request_id"];
+  if (typeof trustedRequestId === "string" && /^[a-f0-9-]{36}$/i.test(trustedRequestId)) {
+    attributes["tahili.request_id"] = trustedRequestId;
+  }
   if (status && status >= 500) attributes["error.type"] = "server_error";
   else if (input.statusCode === 2) attributes["error.type"] = "server_error";
   return { name: `HTTP ${method} ${route}`, attributes };

@@ -19,3 +19,11 @@ scrape_configs:
         target_label: "container"
       - source_labels: ["__meta_docker_container_log_stream"]
         target_label: "stream"
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/tahili_app"
+        target_label: "service"
+        replacement: "tahili-app"
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/tahili_app"
+        target_label: "environment"
+        replacement: "development"

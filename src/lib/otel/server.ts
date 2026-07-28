@@ -12,6 +12,7 @@ import {
   type SpanExporter,
 } from "@opentelemetry/sdk-trace-base";
 import { otelEnabled, otelForceSample, sanitizeOtelSpan } from "@/lib/otel/privacy";
+import { recordOtelExport, recordOtelExportSuccess } from "@/lib/otel/metrics";
 
 const OTLP_ENDPOINT = "http://alloy:4318/v1/traces";
 const SAMPLE_RATIO = 0.05;
@@ -36,7 +37,11 @@ export class PrivacyExporter implements SpanExporter {
       return [safeSpan];
     });
     if (!safeSpans.length) return callback({ code: 0 });
-    this.delegate.export(safeSpans, callback);
+    this.delegate.export(safeSpans, (result) => {
+      recordOtelExport(result);
+      if (result.code === 0) recordOtelExportSuccess();
+      callback(result);
+    });
   }
 
   shutdown() { return this.delegate.shutdown(); }

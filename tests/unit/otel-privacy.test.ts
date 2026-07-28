@@ -61,20 +61,37 @@ describe("server trace privacy", () => {
       attributes: { "next.route": "/patients/synthetic-id?phone=private", "http.method": "get", "http.status_code": 500, "http.target": "/patients/synthetic-id?phone=private", "db.statement": "SELECT private" },
       statusCode: 2,
     });
-    expect(span).toEqual({ name: "HTTP GET /patients/:id", attributes: { "http.request.method": "GET", "http.route": "/patients/:id", "http.response.status_code": 500, "error.type": "server_error" } });
+    expect(span).toEqual({ name: "HTTP GET /patients/:id", attributes: { "http.request.method": "GET", "http.route": "/patients/:id", "tahili.route_template": "/patients/:id", "http.response.status_code": 500, "tahili.status_class": "5xx", "error.type": "server_error" } });
     expect(JSON.stringify(span)).not.toContain("private");
     expect(JSON.stringify(span)).not.toContain("db.statement");
   });
 
   it("uses a Next server span template only when no route attribute is available", () => {
-    expect(sanitizeOtelSpan({ name: "GET /patients/[id]", attributes: { "http.method": "GET" } })).toEqual({ name: "HTTP GET /patients/:id", attributes: { "http.request.method": "GET", "http.route": "/patients/:id" } });
+    expect(sanitizeOtelSpan({ name: "GET /patients/[id]", attributes: { "http.method": "GET" } })).toEqual({ name: "HTTP GET /patients/:id", attributes: { "http.request.method": "GET", "http.route": "/patients/:id", "tahili.route_template": "/patients/:id" } });
   });
 
   it("sanitizes HTTP instrumentation semantic attributes without exporting the raw target", () => {
     expect(sanitizeOtelSpan({
       name: "GET",
       attributes: { "http.request.method": "get", "http.target": "/patients/synthetic-id?private=value", "http.response.status_code": 200 },
-    })).toEqual({ name: "HTTP GET /patients/:id", attributes: { "http.request.method": "GET", "http.route": "/patients/:id", "http.response.status_code": 200 } });
+    })).toEqual({ name: "HTTP GET /patients/:id", attributes: { "http.request.method": "GET", "http.route": "/patients/:id", "tahili.route_template": "/patients/:id", "http.response.status_code": 200, "tahili.status_class": "2xx" } });
+  });
+
+  it("keeps a generated request ID but rejects all other correlation attributes", () => {
+    expect(sanitizeOtelSpan({
+      name: "GET /patients/[id]",
+      attributes: {
+        "http.method": "GET",
+        "tahili.request_id": "123e4567-e89b-12d3-a456-426614174000",
+        traceparent: "forbidden",
+        cookie: "forbidden",
+      },
+    })?.attributes).toEqual({
+      "http.request.method": "GET",
+      "http.route": "/patients/:id",
+      "tahili.route_template": "/patients/:id",
+      "tahili.request_id": "123e4567-e89b-12d3-a456-426614174000",
+    });
   });
 
   it("does not treat a non-route span name as a request trace", () => {
@@ -105,7 +122,7 @@ describe("server trace privacy", () => {
     expect(safe.spanContext()).toEqual(original.spanContext());
     expect(safe).not.toBe(original);
     expect(safe.name).toBe("HTTP GET /patients/:id");
-    expect(safe.attributes).toEqual({ "http.request.method": "GET", "http.route": "/patients/:id", "error.type": "server_error" });
+    expect(safe.attributes).toEqual({ "http.request.method": "GET", "http.route": "/patients/:id", "tahili.route_template": "/patients/:id", "error.type": "server_error" });
     expect(safe.events).toEqual([]);
     expect(safe.links).toEqual([]);
     expect(JSON.stringify(safe)).not.toContain("private");

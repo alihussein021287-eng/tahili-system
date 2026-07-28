@@ -1,0 +1,26 @@
+{
+  "uid": "tahili-trace-observability",
+  "title": "Server Trace Observability",
+  "tags": ["tahili", "tempo", "local-only"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "templating": {"list": [
+    {"name":"service","type":"custom","query":"tahili-app","current":{"text":"tahili-app","value":"tahili-app"}},
+    {"name":"environment","type":"custom","query":"development","current":{"text":"development","value":"development"}},
+    {"name":"route","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":"label_values(tahili_server_calls_total, tahili_route_template)","includeAll":true,"allValue":".*","current":{"text":"All","value":"$__all"}}
+  ]},
+  "panels": [
+    {"id":1,"type":"stat","title":"OTEL enabled","datasource":{"uid":"Prometheus","type":"prometheus"},"gridPos":{"x":0,"y":0,"w":4,"h":4},"targets":[{"expr":"tahili_otel_enabled","refId":"A"}]},
+    {"id":2,"type":"stat","title":"Alloy / Tempo","datasource":{"uid":"Prometheus","type":"prometheus"},"gridPos":{"x":4,"y":0,"w":4,"h":4},"targets":[{"expr":"min(up{job=~\"alloy|tempo\"})","refId":"A"}]},
+    {"id":3,"type":"stat","title":"Trace export failures / drops","datasource":{"uid":"Prometheus","type":"prometheus"},"gridPos":{"x":8,"y":0,"w":8,"h":4},"targets":[{"expr":"sum(otelcol_exporter_send_failed_spans_total) + sum(otelcol_processor_dropped_spans_total) + tahili_otel_export_failures_total","refId":"A"}]},
+    {"id":4,"type":"timeseries","title":"Server trace rate","datasource":{"uid":"Prometheus","type":"prometheus"},"gridPos":{"x":0,"y":4,"w":8,"h":7},"targets":[{"expr":"sum(rate(tahili_server_calls_total{service_name=\"$service\",deployment_environment_name=\"$environment\",tahili_route_template=~\"$route\"}[5m]))","refId":"A","legendFormat":"traces/s"}]},
+    {"id":5,"type":"timeseries","title":"Server latency p50 / p95 / p99","datasource":{"uid":"Prometheus","type":"prometheus"},"gridPos":{"x":8,"y":4,"w":16,"h":7},"targets":[{"expr":"histogram_quantile(0.50, sum by(le) (rate(tahili_server_duration_milliseconds_bucket{service_name=\"$service\",deployment_environment_name=\"$environment\",tahili_route_template=~\"$route\"}[5m])))","refId":"A","legendFormat":"p50"},{"expr":"histogram_quantile(0.95, sum by(le) (rate(tahili_server_duration_milliseconds_bucket{service_name=\"$service\",deployment_environment_name=\"$environment\",tahili_route_template=~\"$route\"}[5m])))","refId":"B","legendFormat":"p95"},{"expr":"histogram_quantile(0.99, sum by(le) (rate(tahili_server_duration_milliseconds_bucket{service_name=\"$service\",deployment_environment_name=\"$environment\",tahili_route_template=~\"$route\"}[5m])))","refId":"C","legendFormat":"p99"}]},
+    {"id":6,"type":"table","title":"Slowest route templates (p95)","datasource":{"uid":"Prometheus","type":"prometheus"},"gridPos":{"x":0,"y":11,"w":12,"h":7},"targets":[{"expr":"topk(10, histogram_quantile(0.95, sum by(le,tahili_route_template) (rate(tahili_server_duration_milliseconds_bucket[10m]))))","refId":"A"}]},
+    {"id":7,"type":"timeseries","title":"Server error rate","datasource":{"uid":"Prometheus","type":"prometheus"},"gridPos":{"x":12,"y":11,"w":12,"h":7},"targets":[{"expr":"sum(rate(tahili_server_calls_total{status_code=\"STATUS_CODE_ERROR\"}[5m])) / clamp_min(sum(rate(tahili_server_calls_total[5m])),0.001)","refId":"A","legendFormat":"5xx rate"}]},
+    {"id":8,"type":"traces","title":"Recent sanitized traces","datasource":{"uid":"Tempo","type":"tempo"},"gridPos":{"x":0,"y":18,"w":12,"h":9},"targets":[{"query":"{ resource.service.name = \"$service\" }","refId":"A"}]},
+    {"id":9,"type":"logs","title":"Request logs with trace links","datasource":{"uid":"Loki","type":"loki"},"gridPos":{"x":12,"y":18,"w":12,"h":9},"targets":[{"expr":"{service=\"tahili-app\"} | json | eventType=\"request_trace\"","refId":"A"}],"options":{"showTime":true,"wrapLogMessage":true,"sortOrder":"Descending"}},
+    {"id":10,"type":"text","title":"Privacy and correlation","gridPos":{"x":0,"y":27,"w":24,"h":5},"options":{"mode":"markdown","content":"Local-only: Next server spans → Alloy → Tempo; logs remain in Loki. Request/trace IDs are structured fields only, never labels or metric dimensions. Dashboard filters are limited to service, environment, route template, and bounded method/status dimensions."}}
+  ]
+}
