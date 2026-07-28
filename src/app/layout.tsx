@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { Providers } from "@/components/Providers";
+import { FaroInitializer } from "@/components/FaroInitializer";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
@@ -16,6 +17,7 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const faroEnabled = process.env.FARO_ENABLED === "true";
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
@@ -29,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}` }} />
       </head>
       <body>
-        <Providers>{children}</Providers>
+        <Providers><FaroInitializer enabled={faroEnabled} />{children}</Providers>
       </body>
     </html>
   );
