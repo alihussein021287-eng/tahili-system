@@ -77,7 +77,7 @@ Tempo is a development-only, single-binary local trace store. It has a 72-hour r
 
 Alloy accepts OTLP gRPC and HTTP only on the Docker network and forwards traces only to `tempo:4317`. Grafana datasource `Tempo` uses `http://tempo:3200`; its traces-to-logs mapping uses only `service.name -> service` and `deployment.environment -> environment`.
 
-Stage 7B uses Next.js `src/instrumentation.ts` in the Node runtime only. `OTEL_ENABLED` is a server runtime flag and defaults to `false`; it initializes once and uses only incoming Node HTTP instrumentation, with outgoing instrumentation disabled, before sending sanitized request spans through OTLP/HTTP to `http://alloy:4318/v1/traces`. The normal development sampler is parent-based 5%. Browser tracing, Prisma, SQL, request bodies, and workflow instrumentation remain disabled. The image carries its immutable build revision in server-only `GIT_REVISION`, used as `service.version`; it is not a runtime feature flag.
+Stage 7B uses Next.js `src/instrumentation.ts` and the official `registerOTel` integration in the Node runtime only. `OTEL_ENABLED` is a server runtime flag and defaults to `false`; it initializes once with `instrumentations: []`, relying only on Next's built-in server spans before sending the privacy-projected output through OTLP/HTTP to `http://alloy:4318/v1/traces`. The normal development sampler is parent-based 5%. Browser tracing, Prisma, SQL, request bodies, outgoing HTTP, and workflow instrumentation remain disabled. The image carries its immutable build revision in server-only `GIT_REVISION`, used as `service.version`; it is not a runtime feature flag.
 
 ## Acceptance gates
 

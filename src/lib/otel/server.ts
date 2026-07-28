@@ -1,8 +1,7 @@
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import { registerOTel } from "@vercel/otel";
+import { registerOTel, type Configuration } from "@vercel/otel";
 import {
   AlwaysOnSampler,
   BatchSpanProcessor,
@@ -11,7 +10,7 @@ import {
   type ReadableSpan,
   type SpanExporter,
 } from "@opentelemetry/sdk-trace-base";
-import { excludeOtelRoute, normalizeOtelRoute, otelEnabled, otelForceSample, sanitizeOtelSpan } from "@/lib/otel/privacy";
+import { otelEnabled, otelForceSample, sanitizeOtelSpan } from "@/lib/otel/privacy";
 
 const OTLP_ENDPOINT = "http://alloy:4318/v1/traces";
 const SAMPLE_RATIO = 0.05;
@@ -43,36 +42,37 @@ export class PrivacyExporter implements SpanExporter {
   forceFlush() { return this.delegate.forceFlush?.() ?? Promise.resolve(); }
 }
 
-export function startServerTracing(env: Record<string, string | undefined> = process.env) {
-  if (tracingStarted || !otelEnabled(env)) return false;
-  try {
-    const resource = resourceFromAttributes({
-      "service.name": "tahili-app",
+export function createServerTracingConfig(env: Record<string, string | undefined> = process.env): Configuration {
+  const resource = resourceFromAttributes({
+    "service.name": "tahili-app",
+    "deployment.environment.name": "development",
+    "service.version": env.GIT_REVISION || "unknown",
+  });
+  const exporter = new PrivacyExporter(new OTLPTraceExporter({ url: OTLP_ENDPOINT, timeoutMillis: 250 }), resource);
+  const sampler = otelForceSample(env)
+    ? new AlwaysOnSampler()
+    : new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(SAMPLE_RATIO) });
+  return {
+    serviceName: "tahili-app",
+    attributes: {
       "deployment.environment.name": "development",
       "service.version": env.GIT_REVISION || "unknown",
-    });
-    const exporter = new PrivacyExporter(new OTLPTraceExporter({ url: OTLP_ENDPOINT, timeoutMillis: 250 }), resource);
-    const sampler = otelForceSample(env)
-      ? new AlwaysOnSampler()
-      : new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(SAMPLE_RATIO) });
-    // Next may initialize its no-op provider before this startup hook. Replace it
-    // before registering the explicit, privacy-preserving provider.
-    trace.disable();
-    registerOTel({
-      serviceName: "tahili-app",
-      attributes: {
-        "deployment.environment.name": "development",
-        "service.version": env.GIT_REVISION || "unknown",
-      },
-      autoDetectResources: false,
-      instrumentations: [new HttpInstrumentation({
-        disableOutgoingRequestInstrumentation: true,
-        ignoreIncomingRequestHook: (request) => excludeOtelRoute(normalizeOtelRoute(request.url)),
-      })],
-      propagators: ["tracecontext"],
-      traceSampler: sampler,
-      spanProcessors: [new BatchSpanProcessor(exporter, { maxQueueSize: 256, maxExportBatchSize: 32, scheduledDelayMillis: 1000, exportTimeoutMillis: 500 })],
-    });
+    },
+    autoDetectResources: false,
+    instrumentations: [],
+    propagators: ["tracecontext"],
+    traceSampler: sampler,
+    spanProcessors: [new BatchSpanProcessor(exporter, { maxQueueSize: 256, maxExportBatchSize: 32, scheduledDelayMillis: 1000, exportTimeoutMillis: 500 })],
+  };
+}
+
+export function startServerTracing(
+  env: Record<string, string | undefined> = process.env,
+  register: (config: Configuration) => void = registerOTel,
+) {
+  if (tracingStarted || !otelEnabled(env)) return false;
+  try {
+    register(createServerTracingConfig(env));
     tracingStarted = true;
     if (otelForceSample(env)) {
       const span = trace.getTracer("tahili.otel.test").startSpan("GET /__otel-test", {

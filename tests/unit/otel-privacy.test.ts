@@ -3,13 +3,24 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
 import { excludeOtelRoute, normalizeOtelRoute, otelEnabled, otelForceSample, sanitizeOtelSpan } from "@/lib/otel/privacy";
-import { PrivacyExporter } from "@/lib/otel/server";
+import { createServerTracingConfig, PrivacyExporter, startServerTracing } from "@/lib/otel/server";
 
 describe("server trace privacy", () => {
   it("defaults to disabled and only force-samples an explicitly enabled test runtime", () => {
     expect(otelEnabled({})).toBe(false);
     expect(otelEnabled({ OTEL_ENABLED: "false" })).toBe(false);
     expect(otelForceSample({ OTEL_ENABLED: "true", OTEL_TEST_FORCE_SAMPLE: "true" })).toBe(true);
+  });
+
+  it("registers the official Next tracing configuration once with no instrumentations", () => {
+    const config = createServerTracingConfig({ OTEL_ENABLED: "true", GIT_REVISION: "revision" });
+    expect(config.instrumentations).toEqual([]);
+    expect(config.attributes).toMatchObject({ "service.version": "revision", "deployment.environment.name": "development" });
+    const calls: unknown[] = [];
+    const env = { OTEL_ENABLED: "true", GIT_REVISION: "revision" };
+    expect(startServerTracing(env, (value) => calls.push(value))).toBe(true);
+    expect(startServerTracing(env, (value) => calls.push(value))).toBe(false);
+    expect(calls).toHaveLength(1);
   });
 
   it("normalizes dynamic routes and removes query/hash values", () => {
