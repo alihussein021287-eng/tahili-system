@@ -13,6 +13,10 @@
 - Inspect only the last ten minutes of redacted logs by default.
 - Escalate repeated app failures, migration discrepancies, stale backup, or unavailable file scanning.
 
+## Redacted debug bundle
+
+ابدأ دائماً بـ`./scripts/collect-debug-bundle.sh --dry-run`. عند الحاجة إلى evidence غير حساس فقط، نفّذ `--create --since 10m` (أو أضف Request/Error ID UUID). الناتج محصور في `/tmp` أو `test-results/diagnostics`، بصلاحية `600` مع checksum وsecret scan. لا تشارك archive قبل التحقق من manifest؛ لا يحتوي dumps أو `.env` أو uploads أو MinIO أو credentials أو cookies/tokens أو request bodies أو بيانات طبية.
+
 ## Prohibited actions
 
 - No automatic restart, database migration, restore, cleanup, Docker socket access from the app, or configuration change through the monitoring UI.

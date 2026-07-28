@@ -29,6 +29,18 @@ docker logs --tail 300 tahili_app 2>&1 | grep -Ei '500|Prisma|ERROR|FATAL' || tr
 عند 500: افتح آخر logs، حدّد route، افحص Prisma error أو permission redirect. عند Prisma: افحص `DATABASE_URL` داخل app فقط ولا تطبعها، ثم شغّل `migrate status`. عند فشل login: افحص NextAuth URL، الكوكيز، حالة المستخدم، و`authVersion`. عند فشل preview/رفع ملفات التعاون: افحص app logs، MinIO، ClamAV، وحالة scan.
 إذا ظهر Server Action mismatch بعد نشر حديث، اطلب من المستخدم تحديث الصفحة وتحقق من أنه غير متكرر في آخر logs قبل اعتباره عطل تطبيق.
 
+## Debug Bundle منقح
+
+استخدم `scripts/collect-debug-bundle.sh` على VM التطوير فقط. الوضع الافتراضي dry-run؛ لا ينشئ archive حتى تضيف `--create`:
+
+```bash
+scripts/collect-debug-bundle.sh --dry-run
+scripts/collect-debug-bundle.sh --create --since 10m
+scripts/collect-debug-bundle.sh --create --request-id UUID --error-id UUID --output /tmp/tahili-debug.tar.gz
+```
+
+يجمع السكربت حالة Git/image/services/resources، migrations read-only، probes، alerts، وstructured logs allowlisted فقط. يحظر `.env` وcredentials/cookies/tokens ومفاتيح SSH وDB dumps وuploads وMinIO objects وrequest bodies وبيانات المراجعين. ينشئ archive وchecksum بصلاحية `600`، يفحص الأسرار قبل وبعد الضغط، ويحتفظ بملفات diagnostics المطابقة فقط لمدة 7 أيام دون wildcard واسع.
+
 ## Migrations
 
 ```bash
