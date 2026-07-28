@@ -4,5 +4,45 @@ groups:
       - alert: TahiliTargetDown
         expr: up == 0
         for: 2m
-        labels: { severity: critical }
+        labels: { severity: critical, environment: development, service: "{{ $labels.job }}" }
         annotations: { summary: "Tahili monitoring target is down" }
+      - alert: TahiliHttpProbeFailure
+        expr: probe_success == 0
+        for: 2m
+        labels: { severity: critical, environment: development, service: "{{ $labels.job }}" }
+        annotations: { summary: "Tahili internal HTTP/TCP probe failed" }
+      - alert: TahiliContainerRestarting
+        expr: changes(container_start_time_seconds[15m]) > 0
+        for: 5m
+        labels: { severity: warning, environment: development, service: docker }
+        annotations: { summary: "Tahili container restarted" }
+      - alert: TahiliHighCpu
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 15m
+        labels: { severity: warning, environment: development, service: host }
+        annotations: { summary: "Host CPU remains high" }
+      - alert: TahiliHighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 10m
+        labels: { severity: warning, environment: development, service: host }
+        annotations: { summary: "Host memory remains high" }
+      - alert: TahiliHighSwap
+        expr: (1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 > 50
+        for: 10m
+        labels: { severity: warning, environment: development, service: host }
+        annotations: { summary: "Host swap use remains high" }
+      - alert: TahiliDiskWarning
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 15m
+        labels: { severity: warning, environment: development, service: host }
+        annotations: { summary: "Host disk is above warning threshold" }
+      - alert: TahiliDiskCritical
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 95
+        for: 10m
+        labels: { severity: critical, environment: development, service: host }
+        annotations: { summary: "Host disk is above critical threshold" }
+      - alert: TahiliInodesWarning
+        expr: (1 - (node_filesystem_files_free{fstype!~"tmpfs|overlay"} / node_filesystem_files{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 15m
+        labels: { severity: warning, environment: development, service: host }
+        annotations: { summary: "Host inode use is high" }
