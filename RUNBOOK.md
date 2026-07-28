@@ -29,6 +29,10 @@ docker logs --tail 300 tahili_app 2>&1 | grep -Ei '500|Prisma|ERROR|FATAL' || tr
 عند 500: افتح آخر logs، حدّد route، افحص Prisma error أو permission redirect. عند Prisma: افحص `DATABASE_URL` داخل app فقط ولا تطبعها، ثم شغّل `migrate status`. عند فشل login: افحص NextAuth URL، الكوكيز، حالة المستخدم، و`authVersion`. عند فشل preview/رفع ملفات التعاون: افحص app logs، MinIO، ClamAV، وحالة scan.
 إذا ظهر Server Action mismatch بعد نشر حديث، اطلب من المستخدم تحديث الصفحة وتحقق من أنه غير متكرر في آخر logs قبل اعتباره عطل تطبيق.
 
+## Browser telemetry (development)
+
+Faro is disabled unless the server runtime environment has `FARO_ENABLED=true`. It uses only the same-origin `/api/observability/faro` adapter; do not expose or configure the internal Alloy receiver for a browser. The adapter forwards only bounded, sanitized event/log/Web Vital envelopes to local Loki. For a release revision, set the non-secret `GIT_REVISION` runtime value with the app deployment; no rebuild is needed to toggle Faro.
+
 ## Debug Bundle منقح
 
 استخدم `scripts/collect-debug-bundle.sh` على VM التطوير فقط. الوضع الافتراضي dry-run؛ لا ينشئ archive حتى تضيف `--create`:

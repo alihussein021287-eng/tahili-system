@@ -23,6 +23,8 @@ docker inspect -f '{{.Image}}' tahili_app
 
 Stage 6A uses `grafana/alloy:v1.16.2@sha256:32913cbfac652d15fa84d256a74e5ee3f71575961bb19d34796ce3838bfba693`. For an approved offline transfer only: `docker save grafana/alloy:v1.16.2 -o /tmp/grafana-alloy-v1.16.2.tar`, checksum it, transfer by an approved channel, then `docker load`. Alloy uses only Docker-internal `alloy:12347` and local `http://loki:3100/loki/api/v1/push`; runtime has no external endpoint.
 
+Stage 6B pins `@grafana/faro-web-sdk@2.8.2` in `package-lock.json`; obtain it through the approved development dependency cache before an offline build. Browser telemetry uses the app's same-origin adapter and has no external runtime endpoint.
+
 ## حفظ ونقل الصورة
 
 ```bash

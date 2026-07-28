@@ -21,6 +21,7 @@ Docker JSON logs + app structured JSON
   -> Grafana / bounded Tahili adapter
 
 browser telemetry (sampled, redacted, optional)
+  -> same-origin `POST /api/observability/faro`
   -> Alloy Faro receiver (`alloy:12347`, Docker internal only) -> Loki
   -> Grafana
 
@@ -52,7 +53,9 @@ Pinned image digests/tags are recorded in the offline manifest before a release.
 
 ## Deferred decision
 
-Stage 6A proves receiver infrastructure only: Alloy returns `202`, receiver counters increase, and Alloy writes a sanitized Loki entry without drops. Semantic browser `event`/`log` validation is deferred to Stage 6B because `@grafana/faro-web-sdk` is not installed and no official local fixture is available. Stage 6B adds SDK and a same-origin bounded adapter; it does not expose this receiver to the browser.
+Stage 6A proves receiver infrastructure only: Alloy returns `202`, receiver counters increase, and Alloy writes a sanitized Loki entry without drops. Stage 6B adds pinned `@grafana/faro-web-sdk@2.8.2` and a same-origin bounded adapter; the browser never receives the Alloy address. It accepts only sanitized event/log/measurement envelopes, sends no exceptions or traces, and keeps route, app name, environment, and revision server-controlled.
+
+`FARO_ENABLED` is a server runtime flag, defaulting to `false`; the same image can run with it enabled on development and disabled elsewhere. It is read by the server layout and adapter only. No `NEXT_PUBLIC_FARO_*` setting exists.
 
 `pg_stat_statements` is not enabled in this work because it requires a PostgreSQL configuration change and restart. PostgreSQL restart is outside this project. Database metrics initially use exporter-safe counters only.
 

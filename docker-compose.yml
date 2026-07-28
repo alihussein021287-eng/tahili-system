@@ -48,6 +48,7 @@ services:
       - minio
     environment:
       FARO_ENABLED: ${FARO_ENABLED:-false}
+      GIT_REVISION: ${GIT_REVISION:-unknown}
       DATABASE_URL: postgresql://${DB_USER:?set DB_USER in .env}:${DB_PASSWORD:?set DB_PASSWORD in .env}@postgres:5432/${DB_NAME:?set DB_NAME in .env}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
       NEXTAUTH_URL: ${NEXTAUTH_URL:?set NEXTAUTH_URL in .env}
