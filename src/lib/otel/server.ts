@@ -1,5 +1,6 @@
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { registerOTel } from "@vercel/otel";
 import {
@@ -10,7 +11,7 @@ import {
   type ReadableSpan,
   type SpanExporter,
 } from "@opentelemetry/sdk-trace-base";
-import { otelEnabled, otelForceSample, sanitizeOtelSpan } from "@/lib/otel/privacy";
+import { excludeOtelRoute, normalizeOtelRoute, otelEnabled, otelForceSample, sanitizeOtelSpan } from "@/lib/otel/privacy";
 
 const OTLP_ENDPOINT = "http://alloy:4318/v1/traces";
 const SAMPLE_RATIO = 0.05;
@@ -64,7 +65,10 @@ export function startServerTracing(env: Record<string, string | undefined> = pro
         "service.version": env.GIT_REVISION || "unknown",
       },
       autoDetectResources: false,
-      instrumentations: [],
+      instrumentations: [new HttpInstrumentation({
+        disableOutgoingRequestInstrumentation: true,
+        ignoreIncomingRequestHook: (request) => excludeOtelRoute(normalizeOtelRoute(request.url)),
+      })],
       propagators: ["tracecontext"],
       traceSampler: sampler,
       spanProcessors: [new BatchSpanProcessor(exporter, { maxQueueSize: 256, maxExportBatchSize: 32, scheduledDelayMillis: 1000, exportTimeoutMillis: 500 })],

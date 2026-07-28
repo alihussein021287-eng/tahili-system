@@ -33,13 +33,15 @@ export function excludeOtelRoute(route: string | null) {
 
 export function sanitizeOtelSpan(input: { name: string; attributes: Record<string, unknown>; statusCode?: number }) {
   const nameRoute = /^[A-Z]{2,10} (\/[^\s]*)/.exec(input.name)?.[1];
-  const route = normalizeOtelRoute(input.attributes["next.route"] ?? input.attributes["http.route"] ?? nameRoute);
+  const route = normalizeOtelRoute(input.attributes["next.route"] ?? input.attributes["http.route"] ?? input.attributes["http.target"] ?? input.attributes["url.path"] ?? nameRoute);
   if (excludeOtelRoute(route)) return null;
-  const method = typeof input.attributes["http.method"] === "string"
-    ? input.attributes["http.method"].toUpperCase().slice(0, 10)
+  const rawMethod = input.attributes["http.request.method"] ?? input.attributes["http.method"];
+  const method = typeof rawMethod === "string"
+    ? rawMethod.toUpperCase().slice(0, 10)
     : "GET";
-  const status = typeof input.attributes["http.status_code"] === "number"
-    ? Math.max(100, Math.min(599, Math.trunc(input.attributes["http.status_code"])))
+  const rawStatus = input.attributes["http.response.status_code"] ?? input.attributes["http.status_code"];
+  const status = typeof rawStatus === "number"
+    ? Math.max(100, Math.min(599, Math.trunc(rawStatus)))
     : undefined;
   const attributes: Record<string, string | number> = { "http.request.method": method, "http.route": route };
   if (status) attributes["http.response.status_code"] = status;

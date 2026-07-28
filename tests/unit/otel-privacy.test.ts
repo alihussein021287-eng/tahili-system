@@ -39,6 +39,13 @@ describe("server trace privacy", () => {
     expect(sanitizeOtelSpan({ name: "GET /patients/[id]", attributes: { "http.method": "GET" } })).toEqual({ name: "HTTP GET /patients/:id", attributes: { "http.request.method": "GET", "http.route": "/patients/:id" } });
   });
 
+  it("sanitizes HTTP instrumentation semantic attributes without exporting the raw target", () => {
+    expect(sanitizeOtelSpan({
+      name: "GET",
+      attributes: { "http.request.method": "get", "http.target": "/patients/synthetic-id?private=value", "http.response.status_code": 200 },
+    })).toEqual({ name: "HTTP GET /patients/:id", attributes: { "http.request.method": "GET", "http.route": "/patients/:id", "http.response.status_code": 200 } });
+  });
+
   it("does not treat a non-route span name as a request trace", () => {
     expect(sanitizeOtelSpan({ name: "Prisma query", attributes: {} })).toBeNull();
   });

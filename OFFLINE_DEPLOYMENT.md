@@ -27,7 +27,7 @@ Stage 7A uses `grafana/tempo:2.9.4@sha256:3ecdaa1af90b3068e77e4fb4b11d9f26201c3a
 
 Stage 6B pins `@grafana/faro-web-sdk@2.8.2` in `package-lock.json`; obtain it through the approved development dependency cache before an offline build. Browser telemetry uses the app's same-origin adapter and has no external runtime endpoint.
 
-Stage 7B pins `@vercel/otel@2.1.3`, `@opentelemetry/api@1.9.0`, `@opentelemetry/resources@2.10.0`, `@opentelemetry/sdk-trace-base@2.10.0`, `@opentelemetry/sdk-trace-node@2.10.0`, and `@opentelemetry/exporter-trace-otlp-http@0.221.0` in `package-lock.json`. Cache these packages before an offline build. Build the application image with `--build-arg GIT_REVISION=<commit>`; this server-only value is embedded as `service.version` and requires no external endpoint.
+Stage 7B pins `@vercel/otel@2.1.3`, `@opentelemetry/api@1.9.0`, `@opentelemetry/resources@2.10.0`, `@opentelemetry/sdk-trace-base@2.10.0`, `@opentelemetry/sdk-trace-node@2.10.0`, `@opentelemetry/exporter-trace-otlp-http@0.221.0`, and `@opentelemetry/instrumentation-http@0.221.0` in `package-lock.json`. Cache these packages before an offline build. Build the application image with `--build-arg GIT_REVISION=<commit>`; this server-only value is embedded as `service.version` and requires no external endpoint.
 
 The provisioned frontend dashboard is `monitoring/grafana/provisioning/dashboards/json/frontend-observability.json` (UID `tahili-frontend-observability`). It uses only the existing local Grafana, Loki, Prometheus, and Alloy images; no additional image or external endpoint is required offline.
 
