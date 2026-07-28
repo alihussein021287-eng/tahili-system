@@ -10,10 +10,10 @@
 | `UNCHANGED` | 4 | شاشة متخصصة خارج AppShell ولا تحتاج توحيد واجهة التشغيل |
 | `PRINT` | 13 | صفحة طباعة أو مستند ثابت؛ راجعت للطباعة والاستجابة ولا تعامل كواجهة تشغيل |
 | `LEGACY` | 3 | route قديم محفوظ للتوافق ويحوّل إلى الصفحة الجامعة مع query parameters |
-| `API` | 18 | Route Handler بلا واجهة مرئية |
+| `API` | 19 | Route Handler بلا واجهة مرئية |
 | غير مفحوص | 0 | لا توجد صفحة مستخدم فعلية خارج الجرد |
 
-إجمالي صفحات الواجهة `page.tsx`: **93**. إجمالي Route Handlers: **18**. إجمالي routes في الجرد: **111**.
+إجمالي صفحات الواجهة `page.tsx`: **93**. إجمالي Route Handlers: **19**. إجمالي routes في الجرد: **112**.
 
 ## Pages
 
@@ -130,6 +130,7 @@
 | `/api/export/patients-template` | `API` | قالب استيراد المراجعين |
 | `/api/export/wounded-expenses` | `API` | تصدير الصرفيات |
 | `/api/files/[...key]` | `API` | الملفات المحمية |
+| `/api/observability/client-error` | `API` | تقرير خطأ واجهة منقح |
 | `/api/permissions/export` | `API` | تصدير الصلاحيات |
 | `/api/presence/ping` | `API` | حالة الاتصال |
 | `/api/queue/today` | `API` | بيانات طابور اليوم |

@@ -44,7 +44,7 @@ describe("UX route inventory", () => {
   it("lists every route.ts exactly once", () => {
     const actual = findFiles("src/app", "route.ts").map(apiRoute).sort();
     const documented = documentedRoutes(apiSection);
-    expect(actual).toHaveLength(18);
+    expect(actual).toHaveLength(19);
     expect(documented).toEqual(actual);
   });
 
@@ -53,7 +53,7 @@ describe("UX route inventory", () => {
     expect(doc).toContain("| `UNCHANGED` | 4 |");
     expect(doc).toContain("| `PRINT` | 13 |");
     expect(doc).toContain("| `LEGACY` | 3 |");
-    expect(doc).toContain("| `API` | 18 |");
+    expect(doc).toContain("| `API` | 19 |");
     expect(doc).toContain("| غير مفحوص | 0 |");
   });
 });
