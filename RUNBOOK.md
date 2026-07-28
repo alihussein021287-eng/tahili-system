@@ -63,6 +63,10 @@ scripts/collect-debug-bundle.sh --create --request-id UUID --error-id UUID --out
 
 يجمع السكربت حالة Git/image/services/resources، حالة migrations غير المتاحة عند منع in-container inspection، probes، alerts، وstructured logs allowlisted فقط. يحظر `.env` وcredentials/cookies/tokens ومفاتيح SSH وDB dumps وuploads وMinIO objects وrequest bodies وبيانات المراجعين. ينشئ archive وchecksum بصلاحية `600`، يفحص الأسرار قبل وبعد الضغط، ويحتفظ بملفات diagnostics المطابقة فقط لمدة 7 أيام دون wildcard واسع.
 
+## Backup / isolated restore drill (Stage 10)
+
+استخدم scripts Stage 10 على VM التطوير فقط: `stage10-backup.sh --apply` ثم `stage10-verify-backup.sh NAME` ثم `stage10-isolated-restore-drill.sh NAME`. النسخة local فقط تحت `/var/backups/tahili`، PostgreSQL بصيغة custom وMinIO/uploads كـarchives من volumes read-only. الـdrill لا يربط التطبيق ولا يلمس الخدمات الأصلية، وينظف حصراً موارد `tahili-stage10-*`. راجع `docs/BACKUP_RESTORE_DRILL.md`؛ لا تستخدم backup القديم أو استعادة الواجهة كتجربة عزل.
+
 ## تشخيص Codex المحلي (Stage 9)
 
 استخدم `node scripts/tahili-diagnose.mjs` على VM التطوير فقط قبل أي تحقيق أوسع. أوامره الثابتة: `status` و`alerts` و`smoke` و`request UUID` و`error UUID` و`recent-errors` و`service NAME` و`bundle --dry-run`. تقبل `--since` حتى 24 ساعة و`--limit` حتى 20 و`--timeout` المحدود؛ لا تقبل URL أو PromQL/LogQL أو shell أو container أو path من المستخدم. تستخدم Docker inspect وواجهات Docker bridge فقط، ولا تستخدم `docker exec` أو تعرض raw logs/spans أو IDs في التقرير.

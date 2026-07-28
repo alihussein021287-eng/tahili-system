@@ -37,8 +37,8 @@ valid_id "$REQUEST_ID" && valid_id "$ERROR_ID" || { printf '%s\n' 'IDs must be U
 safe_output "$OUTPUT" || { printf '%s\n' 'Output must be under /tmp or test-results/diagnostics' >&2; exit 2; }
 
 if ((CREATE == 0)); then
-  printf 'mode=dry-run since=%s sections=manifest,git,image,services,resources,migrations,probes,alerts,logs,smoke,frontend-observability,tempo,alloy-traces,versions\n' "$SINCE"
-  printf '%s\n' 'files=manifest.json git.txt image.txt services.txt resources.txt migrations.txt probes.txt alerts.json redacted-logs.jsonl smoke-summary.json frontend-observability-summary.json tempo-summary.json alloy-trace-summary.json versions.txt'
+  printf 'mode=dry-run since=%s sections=manifest,git,image,services,resources,migrations,probes,alerts,logs,smoke,backup-summary,frontend-observability,tempo,alloy-traces,versions\n' "$SINCE"
+  printf '%s\n' 'files=manifest.json git.txt image.txt services.txt resources.txt migrations.txt probes.txt alerts.json redacted-logs.jsonl smoke-summary.json backup-summary.json frontend-observability-summary.json tempo-summary.json alloy-trace-summary.json versions.txt'
   printf '%s\n' 'excludes=.env credentials cookies tokens ssh-keys db-dumps uploads minio-objects patient-data request-bodies'
   exit 0
 fi
@@ -87,6 +87,8 @@ printf '%s\n' 'status=unavailable reason=bridge-only diagnostics exclude in-cont
 bridge_json tahili_alertmanager 9093 /api/v2/alerts 2>/dev/null | jq '[.[] | {status:.status.state,labels:{alertname:.labels.alertname,severity:.labels.severity,service:.labels.service,environment:.labels.environment},startsAt,endsAt,summary:.annotations.summary}]' | redact > "$WORK/alerts.json" || printf '[]\n' > "$WORK/alerts.json"
 docker logs --since "$SINCE" --tail 1200 tahili_app 2>&1 | tail -c 2097152 | jq -R --argjson allowed "$allowed" "$filter | with_entries(select(.key as \$key | \$allowed | index(\$key)))" 2>/dev/null | redact > "$WORK/redacted-logs.jsonl" || : > "$WORK/redacted-logs.jsonl"
 jq '{runId,success,durationSeconds,checks,countsMatch}' /var/lib/tahili-smoke/latest-summary.json 2>/dev/null | redact > "$WORK/smoke-summary.json" || printf '{}\n' > "$WORK/smoke-summary.json"
+latest_stage10="$(find /var/backups/tahili -mindepth 1 -maxdepth 1 -type d -name 'stage10-*' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)"
+if [[ -n "$latest_stage10" && -f "$latest_stage10/manifest.json" ]]; then jq '{createdAt,revision,schema,objects,encryption}' "$latest_stage10/manifest.json" | redact > "$WORK/backup-summary.json"; else printf '{}\n' > "$WORK/backup-summary.json"; fi
 bridge_metrics tahili_alloy 12345 faro_receiver_events_total faro_receiver_logs_total faro_receiver_measurements_total loki_write_sent_entries_total loki_write_dropped_entries_total loki_write_batch_retries_total 2>/dev/null | redact > "$WORK/frontend-observability-summary.json" || printf '{}\n' > "$WORK/frontend-observability-summary.json"
 bridge_metrics_path tahili_app 3000 /api/observability/faro/metrics tahili_faro_enabled tahili_faro_adapter_requests_total tahili_faro_accepted_envelopes_total tahili_faro_forwarded_envelopes_total tahili_faro_last_accepted_timestamp_seconds tahili_faro_last_forwarded_timestamp_seconds 2>/dev/null > "$WORK/frontend-observability-adapter.json" || printf '{}\n' > "$WORK/frontend-observability-adapter.json"
 if jq -s '.[0] * {adapter: .[1]}' "$WORK/frontend-observability-summary.json" "$WORK/frontend-observability-adapter.json" | redact > "$WORK/frontend-observability-summary.tmp"; then
@@ -106,7 +108,7 @@ rm -f -- "$WORK/tempo-summary.tmp" "$WORK/tempo-metrics.json"
 bridge_metrics tahili_alloy 12345 otelcol_receiver_accepted_spans_total otelcol_exporter_sent_spans_total otelcol_exporter_send_failed_spans_total otelcol_processor_dropped_spans_total 2>/dev/null | redact > "$WORK/alloy-trace-summary.json" || printf '{}\n' > "$WORK/alloy-trace-summary.json"
 bridge_metrics_path tahili_app 3000 /api/observability/faro/metrics tahili_otel_enabled tahili_otel_export_attempts_total tahili_otel_export_failures_total tahili_otel_last_export_success_timestamp_seconds 2>/dev/null | redact > "$WORK/otel-summary.json" || printf '{}\n' > "$WORK/otel-summary.json"
 { node --version; npm --version; docker --version; docker compose version; (cd "$ROOT" && npx prisma --version | head -4); } | redact > "$WORK/versions.txt"
-printf '{"generatedAt":"%s","since":"%s","sections":["manifest","git","image","services","resources","migrations","probes","alerts","logs","smoke","frontend-observability","tempo","alloy-traces","otel-summary","versions"],"requestIdIncluded":%s,"errorIdIncluded":%s,"redaction":"allowlisted structured fields only"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SINCE" "$([[ -n "$REQUEST_ID" ]] && echo true || echo false)" "$([[ -n "$ERROR_ID" ]] && echo true || echo false)" > "$WORK/manifest.json"
+printf '{"generatedAt":"%s","since":"%s","sections":["manifest","git","image","services","resources","migrations","probes","alerts","logs","smoke","backup-summary","frontend-observability","tempo","alloy-traces","otel-summary","versions"],"requestIdIncluded":%s,"errorIdIncluded":%s,"redaction":"allowlisted structured fields only"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SINCE" "$([[ -n "$REQUEST_ID" ]] && echo true || echo false)" "$([[ -n "$ERROR_ID" ]] && echo true || echo false)" > "$WORK/manifest.json"
 
 forbidden='(^|/)(\.env|.*credential.*|.*token.*|.*cookie.*|.*ssh.*|.*upload.*|.*dump.*|.*sql)$'
 find "$WORK" -type f -printf '%f\n' | rg -i "$forbidden" >/dev/null && { printf '%s\n' 'Unsafe bundle path detected' >&2; exit 1; } || true

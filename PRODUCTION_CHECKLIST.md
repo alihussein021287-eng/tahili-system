@@ -17,6 +17,7 @@
 | الاختبارات المطلوبة نجحت |  |  |
 | `prisma migrate status` لا يظهر تعارضاً |  |  |
 | نسخة احتياطية موثقة إذا توجد migration أو تغيير بيانات |  |  |
+| isolated restore drill حديث وموثق من التطوير عند الحاجة للبيانات |  |  |
 | صورة التطوير SHA موثقة |  |  |
 | أدوات runtime داخل image مؤكدة إذا تغيرت الملفات/preview/ClamAV/LibreOffice |  |  |
 | لا secrets أو كلمات مرور في diff أو logs |  |  |

@@ -21,8 +21,13 @@ description: Release a Tahili change to the development VM only. Use automatical
 - If ClamAV was added or changed, recreate only the needed service too; otherwise leave supporting services untouched.
 - Verify `/login`, changed pages, and the application startup log through the development LAN IP. For protected pages, verify either 200 with a valid session or expected redirect for unauthenticated access.
 - Do not create rollback images or backups unless requested.
+- When a requested change affects data recovery, use the Stage 10 isolated drill scripts; never test a restore against a running database or storage volume.
 - Never clean images, volumes, or data without an explicit request.
 - Never touch the production VM.
 - If an environment or operational blocker repeats twice or consumes more than 10 minutes, include it as a "lesson learned" in the final report. After release succeeds or stops cleanly, add one concise, generic, non-secret line to the most relevant Tahili skill only; never update skills mid-task, and skip one-off or unclear issues.
 - Report only the commit, application status, and applied change.
+
+## Operational notes
+
+- If the LibreOffice `apk add` layer runs for an extended period, verify active CPU or I/O before treating it as stalled; do not start a parallel build.
 - Ignore a pre-existing untracked `skills-lock.json`; do not modify or stage it.
