@@ -10,6 +10,7 @@ const alloy = readFileSync("monitoring/production/alloy.config.alloy", "utf8");
 const rules = readFileSync("monitoring/production/rules.yml", "utf8");
 const gateway = readFileSync("monitoring/production/gateway.mjs", "utf8");
 const gatewayPolicy = readFileSync("monitoring/production/gateway-policy.mjs", "utf8");
+const traceDashboard = JSON.parse(readFileSync("monitoring/grafana/provisioning/dashboards/json/trace-observability.json", "utf8"));
 
 const pinnedImages = [
   "grafana/grafana:11.1.0@sha256:079600c9517b678c10cda6006b4487d3174512fd4c6cface37df7822756ed7a5",
@@ -126,5 +127,27 @@ describe("production monitoring contract", () => {
     expect(absenceRule).toContain("tahili_faro_process_start_time_seconds > 900");
     expect(absenceRule).toContain("tahili_faro_last_forwarded_timestamp_seconds > 900");
     expect(absenceRule).not.toMatch(/route|user|session|ip|request_id|trace_id/i);
+  });
+
+  it("selects the trace environment from bounded Prometheus labels", () => {
+    const environment = traceDashboard.templating.list.find((item: { name: string }) => item.name === "environment");
+    expect(environment).toMatchObject({
+      type: "query",
+      query: "label_values(tahili_server_calls_total, deployment_environment_name)",
+      regex: "/^(development|production)$/",
+      refresh: 1,
+    });
+    expect(environment.includeAll).not.toBe(true);
+    expect(environment.allValue).toBeUndefined();
+    expect(environment.current).toBeUndefined();
+    const expressions = traceDashboard.panels.flatMap((panel: { targets?: Array<{ expr?: string }> }) =>
+      (panel.targets ?? []).map((target) => target.expr ?? ""),
+    );
+    expect(expressions.some((expression: string) => expression.includes('deployment_environment_name=~"$environment"'))).toBe(false);
+    const environmentExpressions = expressions.filter((expression: string) => expression.includes("deployment_environment_name"));
+    expect(environmentExpressions.length).toBeGreaterThan(0);
+    for (const expression of environmentExpressions) {
+      expect(expression).toContain('deployment_environment_name="$environment"');
+    }
   });
 });

@@ -23,6 +23,13 @@ describe("server trace privacy", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("uses only the closed server runtime environment for trace resources", () => {
+    expect(createServerTracingConfig({ TAHILI_ENVIRONMENT: "production" }).attributes)
+      .toMatchObject({ "deployment.environment.name": "production" });
+    expect(createServerTracingConfig({ TAHILI_ENVIRONMENT: "invalid" }).attributes)
+      .toMatchObject({ "deployment.environment.name": "development" });
+  });
+
   it("does not let a remote sampled parent bypass the five-percent sampler", () => {
     const sampler = createServerTracingConfig({ OTEL_ENABLED: "true", GIT_REVISION: "revision" }).traceSampler as Sampler;
     const remoteParent = trace.wrapSpanContext({ traceId: "0123456789abcdef0123456789abcdef", spanId: "0123456789abcdef", traceFlags: 1, isRemote: true });

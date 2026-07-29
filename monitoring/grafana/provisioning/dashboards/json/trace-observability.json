@@ -8,7 +8,7 @@
   "time": {"from": "now-6h", "to": "now"},
   "templating": {"list": [
     {"name":"service","type":"custom","query":"tahili-app","current":{"text":"tahili-app","value":"tahili-app"}},
-    {"name":"environment","type":"custom","query":"development","current":{"text":"development","value":"development"}},
+    {"name":"environment","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":"label_values(tahili_server_calls_total, deployment_environment_name)","regex":"/^(development|production)$/","refresh":1},
     {"name":"route","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":"label_values(tahili_server_calls_total, tahili_route_template)","includeAll":true,"allValue":".*","current":{"text":"All","value":"$__all"}}
   ]},
   "panels": [

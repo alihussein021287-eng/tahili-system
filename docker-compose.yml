@@ -47,6 +47,7 @@ services:
       - postgres
       - minio
     environment:
+      TAHILI_ENVIRONMENT: ${TAHILI_ENVIRONMENT:-development}
       FARO_ENABLED: ${FARO_ENABLED:-false}
       OTEL_ENABLED: ${OTEL_ENABLED:-false}
       DATABASE_URL: postgresql://${DB_USER:?set DB_USER in .env}:${DB_PASSWORD:?set DB_PASSWORD in .env}@postgres:5432/${DB_NAME:?set DB_NAME in .env}

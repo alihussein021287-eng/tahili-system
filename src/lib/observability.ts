@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import { tahiliRuntimeEnvironment } from "@/lib/runtime-environment";
 
 const SENSITIVE_KEY = /password|cookie|authorization|token|secret|phone|patient|medical|note|body|formdata|sql|query/i;
 
@@ -22,8 +23,11 @@ export function errorId(error: unknown) {
   return createHash("sha256").update(String(error instanceof Error ? error.message : error)).digest("hex").slice(0, 12);
 }
 
-export function logEvent(event: Record<string, unknown>) {
-  console.log(JSON.stringify(redact({ timestamp: new Date().toISOString(), environment: "development", service: "tahili-app", ...event })));
+export function logEvent(
+  event: Record<string, unknown>,
+  env: Record<string, string | undefined> = process.env,
+) {
+  console.log(JSON.stringify(redact({ ...event, timestamp: new Date().toISOString(), environment: tahiliRuntimeEnvironment(env), service: "tahili-app" })));
 }
 
 export const CLIENT_ERROR_CODES = ["CLIENT_RENDER_ERROR", "CLIENT_EVENT_ERROR", "CLIENT_NAVIGATION_ERROR"] as const;

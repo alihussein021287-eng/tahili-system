@@ -13,6 +13,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { otelEnabled, otelForceSample, sanitizeOtelSpan } from "@/lib/otel/privacy";
 import { recordOtelExport, recordOtelExportSuccess } from "@/lib/otel/metrics";
+import { tahiliRuntimeEnvironment } from "@/lib/runtime-environment";
 
 const OTLP_ENDPOINT = "http://alloy:4318/v1/traces";
 const SAMPLE_RATIO = 0.05;
@@ -49,9 +50,10 @@ export class PrivacyExporter implements SpanExporter {
 }
 
 export function createServerTracingConfig(env: Record<string, string | undefined> = process.env): Configuration {
+  const environment = tahiliRuntimeEnvironment(env);
   const resource = resourceFromAttributes({
     "service.name": "tahili-app",
-    "deployment.environment.name": "development",
+    "deployment.environment.name": environment,
     "service.version": env.GIT_REVISION || "unknown",
   });
   const exporter = new PrivacyExporter(new OTLPTraceExporter({ url: OTLP_ENDPOINT, timeoutMillis: 250 }), resource);
@@ -67,7 +69,7 @@ export function createServerTracingConfig(env: Record<string, string | undefined
   return {
     serviceName: "tahili-app",
     attributes: {
-      "deployment.environment.name": "development",
+      "deployment.environment.name": environment,
       "service.version": env.GIT_REVISION || "unknown",
     },
     autoDetectResources: false,
