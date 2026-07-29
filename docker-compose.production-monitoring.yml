@@ -16,6 +16,8 @@ services:
   grafana:
     <<: *monitoring-service
     image: grafana/grafana:11.1.0@sha256:079600c9517b678c10cda6006b4487d3174512fd4c6cface37df7822756ed7a5
+    # Docker Compose file secrets are host-mode 0600; Grafana must read its own.
+    user: "0:0"
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,size=32m", "/var/log/grafana:rw,noexec,nosuid,size=16m"]
     environment:

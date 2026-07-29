@@ -44,6 +44,10 @@ Prometheus bind to loopback only; every other endpoint remains Docker-internal.
 - Grafana retains its read-only root filesystem; only its runtime log path is
   a bounded `16m` tmpfs. Persistent Grafana state remains limited to the
   named data volume.
+- Grafana runs as `0:0` only to read its Docker Compose secret file, whose
+  host mode remains `600`. It keeps `read_only`, `cap_drop: ALL`,
+  `no-new-privileges`, its internal-only network, and no host mounts; no secret
+  is copied into environment text or the compose file.
 - Promtail has no Docker socket or container-log mount. It intentionally
   scrapes nothing until a dedicated sanitized log source is approved.
 - node-exporter and cAdvisor are kept as pinned `host-metrics` profile

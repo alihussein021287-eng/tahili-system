@@ -41,8 +41,10 @@ describe("production monitoring contract", () => {
     expect(compose).toContain('"127.0.0.1:9090:9090"');
     expect((compose.match(/\bports:/g) ?? [])).toHaveLength(2);
     expect(compose).not.toContain("TAHILI_LAN_IP");
+    expect(service("grafana")).toContain('user: "0:0"');
     expect(service("grafana")).toContain("/var/log/grafana:rw,noexec,nosuid,size=16m");
     expect(service("grafana")).toContain("read_only: true");
+    expect(service("grafana")).toContain("GF_SECURITY_ADMIN_PASSWORD__FILE");
   });
 
   it("keeps only app and gateway on the fixed observability network", () => {
