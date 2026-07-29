@@ -1,0 +1,14 @@
+services:
+  app:
+    image: tahili-system-app:rollback-8110db56f0c4a7044daaf82cacec530d762d4307
+    pull_policy: never
+    environment:
+      FARO_ENABLED: "false"
+      OTEL_ENABLED: "false"
+    volumes:
+      - production_uploads:/app/uploads
+
+volumes:
+  production_uploads:
+    external: true
+    name: tahili-system_uploads_v3

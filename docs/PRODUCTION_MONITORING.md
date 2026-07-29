@@ -14,6 +14,16 @@ joins that bridge.
 - Start the monitoring stack first: it owns the dedicated
   `tahili-observability` bridge (`172.30.255.0/28`). The base compose attaches
   only `app` at fixed `172.30.255.2`; it retains its default network unchanged.
+- On production, apply `docker-compose.production-app.yml` together with the
+  base compose. The override pins the approved offline app image, enables only
+  the three Stage 11 runtime flags, and preserves the existing external
+  `tahili-system_uploads_v3` volume. Use `--no-deps --no-build app`.
+- Do not roll back by removing the production override alone. Render and use
+  `docker-compose.production-app.rollback-stage11.yml`; it pins the preserved
+  pre-Stage-11 image, disables Faro/OTEL, and keeps the same external uploads
+  volume. Recreate only `app` with `--no-deps --no-build`. The mode-600
+  pre-change Compose backup remains the second rollback proof and must not be
+  deleted.
 - The app has fixed `/etc/hosts` mappings for `prometheus`, `alertmanager`,
   `loki`, `tempo`, and `alloy` to gateway `172.30.255.3`. This deliberately
   takes precedence over any legacy-network aliases without changing those
