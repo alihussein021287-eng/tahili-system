@@ -26,6 +26,8 @@ describe("observability page boundary", () => {
     expect(source).toContain("لا توجد أخطاء");
     expect(source).toContain("Faro forwarding");
     expect(source).toContain("غير مفعلة حالياً — N/A مقصود");
+    expect(source).toContain("آخر ملخص للفحص الآلي المعتمد للقراءة فقط");
+    expect(source).not.toContain("من Stage 5");
     expect(source).toContain("زر التحديث لا يبدأ الفحص");
     expect(client).not.toMatch(/smoke|fetch\(|POST|server action/i);
   });

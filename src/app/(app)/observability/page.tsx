@@ -88,7 +88,7 @@ export default async function ObservabilityPage() {
         <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">الخدمات: {summary.alerts.state === "unavailable" ? "غير متاح فعلياً" : summary.alerts.services.length ? summary.alerts.services.join("، ") : "لا توجد تنبيهات نشطة"}</p>
       </Section>
 
-      <Section title="الفحص التلقائي Smoke" detail="آخر ملخص قراءة فقط من Stage 5؛ زر التحديث لا يبدأ الفحص.">
+      <Section title="الفحص التلقائي Smoke" detail="آخر ملخص للفحص الآلي المعتمد للقراءة فقط؛ زر التحديث لا يبدأ الفحص.">
         <StatusCard label="الحالة" state={summary.smoke.state} />
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Metric
