@@ -1,11 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { OBSERVABILITY_QUERIES } from "@/lib/observability-summary";
-import { APP_IP, GATEWAY_IP, KNOWN_PROM_QUERIES, PROMETHEUS_IP, ROUTES, isAllowedRequest } from "../../monitoring/production/gateway-policy.mjs";
+import { APP_IP, GATEWAY_IP, KNOWN_PROM_QUERIES, PROMETHEUS_IP, ROUTES, SMOKE_SUMMARY_PATH, isAllowedRequest } from "../../monitoring/production/gateway-policy.mjs";
+import { parseSmokeSummary } from "../../monitoring/production/smoke-summary.mjs";
 
 describe("production monitoring gateway policy", () => {
   it("allows only the fixed app source and known summary query", () => {
     expect(isAllowedRequest({ source: APP_IP, port: 9090, method: "GET", rawUrl: "/api/v1/query?query=up" })).toBe(true);
     expect(isAllowedRequest({ source: APP_IP, port: 9090, method: "GET", rawUrl: "/api/v1/query?query=arbitrary" })).toBe(false);
+  });
+
+  it("serves only the fixed bounded smoke aggregate to the app peer", () => {
+    expect(isAllowedRequest({ source: APP_IP, port: 9090, method: "GET", rawUrl: SMOKE_SUMMARY_PATH })).toBe(true);
+    expect(isAllowedRequest({ source: "172.30.255.9", port: 9090, method: "GET", rawUrl: SMOKE_SUMMARY_PATH })).toBe(false);
+    expect(isAllowedRequest({ source: APP_IP, port: 9090, method: "GET", rawUrl: `${SMOKE_SUMMARY_PATH}?path=x` })).toBe(false);
+    expect(parseSmokeSummary([
+      "tahili_smoke_success 1",
+      "tahili_smoke_last_run_timestamp 1000",
+      "tahili_smoke_duration_seconds 4.5",
+      "tahili_smoke_failed_checks 0",
+      "tahili_smoke_passed_checks 17",
+      "tahili_smoke_total_checks 17",
+    ].join("\n"), 1_100)).toEqual({
+      success: true,
+      timestampSeconds: 1_000,
+      durationSeconds: 4.5,
+      failedChecks: 0,
+      passedChecks: 17,
+      totalChecks: 17,
+    });
+    expect(parseSmokeSummary("tahili_smoke_success 1", 1_100)).toBeNull();
   });
 
   it("covers every immutable application summary query without allowing arbitrary queries", () => {

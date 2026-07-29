@@ -49,7 +49,7 @@ For a safe status check, inspect only container health and aggregate metrics: `d
 
 ## ملخص المراقبة داخل النظام (Stage 8)
 
-`/observability` صفحة قراءة فقط وحصرية لـADMIN؛ تعرض DTO مجمّعاً ومحدوداً من Prometheus وAlertmanager وTempo وLoki داخل شبكة Docker. لا تستخدم Docker socket، ولا تقبل URL أو PromQL من المتصفح، ولا تعرض Grafana أو logs/traces أو Request/Trace IDs خام. تعذر أي مصدر يظهر «غير متاح» ولا يعيد 500 للتطبيق. استخدم Grafana المحلي فقط للتحقيق التفصيلي المصرح به؛ هذه الصفحة ليست بديلاً عنه.
+`/observability` صفحة قراءة فقط وحصرية لـADMIN؛ تعرض DTO مجمّعاً ومحدوداً من Prometheus وAlertmanager وTempo وLoki داخل شبكة Docker. لا تستخدم Docker socket، ولا تقبل URL أو PromQL من المتصفح، ولا تعرض Grafana أو logs/traces أو Request/Trace IDs خام. تميّز بين «سليم»، «يحتاج انتباهاً»، «بانتظار بيانات»، «غير مراقب أمنياً»، و«غير متاح فعلياً»؛ العزل المقصود أو غياب العينة ليس عطل تطبيق. آخر Smoke يأتي من ملف metrics مجمّع واحد للقراءة فقط ولا يشغله زر الصفحة. استخدم Grafana المحلي فقط للتحقيق التفصيلي المصرح به؛ هذه الصفحة ليست بديلاً عنه.
 
 ## Debug Bundle منقح
 

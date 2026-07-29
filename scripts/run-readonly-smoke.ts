@@ -62,11 +62,14 @@ async function visit(page: Page, name: string, route: string, checks: Check[], c
 function writeMetrics(success: boolean, started: number, checks: Check[]) {
   fs.mkdirSync(METRICS_DIR, { recursive: true, mode: 0o755 }); fs.chmodSync(METRICS_DIR, 0o755);
   const failed = checks.filter((check) => !check.passed).length;
+  const passed = checks.length - failed;
   const body = [
     "# HELP tahili_smoke_success Latest read-only smoke run success (1/0)", "# TYPE tahili_smoke_success gauge", `tahili_smoke_success ${success ? 1 : 0}`,
     "# HELP tahili_smoke_last_run_timestamp Unix timestamp of the latest smoke run", "# TYPE tahili_smoke_last_run_timestamp gauge", `tahili_smoke_last_run_timestamp ${Math.floor(Date.now() / 1000)}`,
     "# HELP tahili_smoke_duration_seconds Duration of the latest smoke run", "# TYPE tahili_smoke_duration_seconds gauge", `tahili_smoke_duration_seconds ${(Date.now() - started) / 1000}`,
     "# HELP tahili_smoke_failed_checks Failed checks in the latest smoke run", "# TYPE tahili_smoke_failed_checks gauge", `tahili_smoke_failed_checks ${failed}`,
+    "# HELP tahili_smoke_passed_checks Passed checks in the latest smoke run", "# TYPE tahili_smoke_passed_checks gauge", `tahili_smoke_passed_checks ${passed}`,
+    "# HELP tahili_smoke_total_checks Total checks in the latest smoke run", "# TYPE tahili_smoke_total_checks gauge", `tahili_smoke_total_checks ${checks.length}`,
   ].join("\n").concat("\n");
   const target = path.join(METRICS_DIR, "tahili_smoke.prom"); const temporary = `${target}.tmp`;
   fs.writeFileSync(temporary, body, { mode: 0o644 }); fs.renameSync(temporary, target); fs.chmodSync(target, 0o644);
@@ -111,7 +114,7 @@ async function main() {
   } finally { await context?.close().catch(() => {}); await browser?.close().catch(() => {}); await prisma.$disconnect(); }
   const countsMatch = sameCounts(before, after); const success = checks.length > 0 && checks.every((check) => check.passed) && countsMatch;
   const summary = { runId: RUN_ID, startedAt: new Date(started).toISOString(), durationSeconds: (Date.now() - started) / 1000, success, checks, counts: { before, after, match: countsMatch } };
-  writeJson(path.join(RESULT_DIR, `smoke-${RUN_ID}.json`), summary); writeJson(CHECKPOINT, summary); writeJson(LATEST, { runId: RUN_ID, success, durationSeconds: summary.durationSeconds, checks: checks.map(({ name, passed }) => ({ name, passed })), countsMatch });
+  writeJson(path.join(RESULT_DIR, `smoke-${RUN_ID}.json`), summary); writeJson(CHECKPOINT, summary); writeJson(LATEST, { runId: RUN_ID, startedAt: summary.startedAt, success, durationSeconds: summary.durationSeconds, checks: checks.map(({ name, passed }) => ({ name, passed })), countsMatch });
   fs.writeFileSync(path.join(RESULT_DIR, `smoke-${RUN_ID}.xml`), `<?xml version="1.0"?><testsuite name="tahili-readonly-smoke" tests="${checks.length}" failures="${checks.filter((c) => !c.passed).length}">${checks.map((c) => `<testcase name="${xml(c.name)}" time="${c.durationMs / 1000}">${c.passed ? "" : `<failure message="${xml(c.error || "failed")}"/>`}</testcase>`).join("")}</testsuite>\n`, { mode: 0o600 });
   clean(RESULT_DIR, "smoke-", success ? 7 : 14); clean(RESULT_DIR, "failure-", 14); writeMetrics(success, started, checks);
   console.log(`smoke=${success ? "PASS" : "FAIL"} checks=${checks.filter((c) => c.passed).length}/${checks.length} duration_seconds=${summary.durationSeconds.toFixed(1)}`);

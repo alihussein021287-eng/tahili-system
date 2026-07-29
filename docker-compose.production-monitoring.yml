@@ -100,6 +100,8 @@ services:
     volumes:
       - ./monitoring/production/gateway.mjs:/etc/tahili-gateway/gateway.mjs:ro
       - ./monitoring/production/gateway-policy.mjs:/etc/tahili-gateway/gateway-policy.mjs:ro
+      - ./monitoring/production/smoke-summary.mjs:/etc/tahili-gateway/smoke-summary.mjs:ro
+      - /var/lib/tahili-smoke/metrics/tahili_smoke.prom:/run/tahili-smoke/tahili_smoke.prom:ro
     networks:
       monitoring_internal:
         ipv4_address: 172.30.254.3

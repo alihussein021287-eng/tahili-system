@@ -1,7 +1,23 @@
 import http from "node:http";
-import { MAX_BODY_BYTES, MAX_REQUESTS_PER_MINUTE, ROUTES, isAllowedRequest, normalizeAddress } from "./gateway-policy.mjs";
+import { open } from "node:fs/promises";
+import { MAX_BODY_BYTES, MAX_REQUESTS_PER_MINUTE, ROUTES, SMOKE_SUMMARY_PATH, isAllowedRequest, normalizeAddress } from "./gateway-policy.mjs";
+import { parseSmokeSummary } from "./smoke-summary.mjs";
 
 const hits = new Map();
+const SMOKE_METRICS_FILE = "/run/tahili-smoke/tahili_smoke.prom";
+const SMOKE_FILE_LIMIT_BYTES = 16 * 1024;
+
+async function readSmokeSummary() {
+  const file = await open(SMOKE_METRICS_FILE, "r");
+  try {
+    const buffer = Buffer.alloc(SMOKE_FILE_LIMIT_BYTES + 1);
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+    if (bytesRead > SMOKE_FILE_LIMIT_BYTES) return null;
+    return parseSmokeSummary(buffer.subarray(0, bytesRead).toString("utf8"));
+  } finally {
+    await file.close();
+  }
+}
 
 function rateAllowed(source) {
   const now = Date.now();
@@ -35,6 +51,17 @@ for (const [listenPort, route] of ROUTES) {
     }
     if (!request.method || !isAllowedRequest({ source, port: listenPort, method: request.method, rawUrl: request.url ?? "/" })) {
       response.writeHead(403).end();
+      return;
+    }
+    if (listenPort === 9090 && new URL(request.url ?? "/", "http://gateway").pathname === SMOKE_SUMMARY_PATH) {
+      readSmokeSummary().then((summary) => {
+        if (!summary) {
+          response.writeHead(503, { "cache-control": "no-store" }).end();
+          return;
+        }
+        response.writeHead(200, { "cache-control": "no-store", "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify(summary));
+      }).catch(() => response.writeHead(503, { "cache-control": "no-store" }).end());
       return;
     }
     const [hostname, port] = route.target;

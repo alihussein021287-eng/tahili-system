@@ -87,7 +87,7 @@ describe("production monitoring contract", () => {
     expect(service("blackbox-exporter")).toContain("profiles: [dependency-probes]");
   });
 
-  it("uses project-scoped volumes, bounded retention, file-backed secrets, and no host mounts", () => {
+  it("uses project-scoped volumes, bounded retention, and only the narrow read-only smoke aggregate bind", () => {
     expect(compose).toContain("tahili-monitoring-prometheus-data");
     expect(compose).toContain("tahili-monitoring-loki-data");
     expect(compose).toContain("tahili-monitoring-tempo-data");
@@ -99,6 +99,9 @@ describe("production monitoring contract", () => {
     expect(compose).not.toContain("docker.sock");
     expect(compose).not.toContain("/var/lib/docker");
     expect(compose).not.toContain("/:/rootfs");
+    expect(service("observability-gateway")).toContain("/var/lib/tahili-smoke/metrics/tahili_smoke.prom:/run/tahili-smoke/tahili_smoke.prom:ro");
+    expect(compose).not.toContain("/var/lib/tahili-smoke/results");
+    expect(compose).not.toContain("latest-summary.json");
     expect(compose).toContain("max-size: \"10m\"");
   });
 
@@ -107,6 +110,7 @@ describe("production monitoring contract", () => {
     expect(alloy).not.toContain("tahili.request_id");
     expect(gateway).not.toContain('from "node:net"');
     expect(gateway).toContain("MAX_BODY_BYTES");
+    expect(gateway).toContain("SMOKE_FILE_LIMIT_BYTES");
     expect(gateway).toContain("isAllowedRequest");
     expect(gateway).toContain("route.upstreamHost");
     expect(gateway).toContain("response.writeHead(403)");
