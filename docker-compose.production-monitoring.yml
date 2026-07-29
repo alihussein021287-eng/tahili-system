@@ -28,7 +28,7 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-    ports: ["127.0.0.1:3002:3000"]
+    ports: ["127.0.0.1:13002:3000"]
     networks: [monitoring_internal]
     deploy: { resources: { limits: { cpus: "0.50", memory: 512M } } }
 

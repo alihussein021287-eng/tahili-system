@@ -37,7 +37,7 @@ describe("production monitoring contract", () => {
   });
 
   it("uses only loopback Grafana and Prometheus host ports", () => {
-    expect(compose).toContain('"127.0.0.1:3002:3000"');
+    expect(compose).toContain('"127.0.0.1:13002:3000"');
     expect(compose).toContain('"127.0.0.1:9090:9090"');
     expect((compose.match(/\bports:/g) ?? [])).toHaveLength(2);
     expect(compose).not.toContain("TAHILI_LAN_IP");

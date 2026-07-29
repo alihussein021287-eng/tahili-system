@@ -2,8 +2,8 @@
 
 `docker-compose.production-monitoring.yml` is a standalone, pinned monitoring
 stack. It is intentionally separate from the development-only compose files.
-It has no LAN-published monitoring ports: Grafana and Prometheus bind to
-loopback only; every other endpoint remains Docker-internal.
+It has no LAN-published monitoring ports: Grafana (`127.0.0.1:13002`) and
+Prometheus bind to loopback only; every other endpoint remains Docker-internal.
 
 ## Preconditions
 
