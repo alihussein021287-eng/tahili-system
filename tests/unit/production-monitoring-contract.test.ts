@@ -67,12 +67,16 @@ describe("production monitoring contract", () => {
 
   it("keeps backends internal, scrapes app metrics through the fixed gateway, and omits dependency probes", () => {
     for (const name of ["alertmanager", "loki", "tempo", "alloy"]) {
-      expect(service(name)).toContain("networks: [monitoring_internal]");
+      expect(service(name)).toContain("monitoring_internal");
     }
     expect(service("prometheus")).toContain("monitoring_internal:");
     expect(service("prometheus")).toContain("ipv4_address: 172.30.254.2");
     expect(service("observability-gateway")).toContain("ipv4_address: 172.30.254.3");
-    expect(service("alloy")).toContain("networks: [monitoring_internal]");
+    expect(service("alertmanager")).toContain("ipv4_address: 172.30.254.4");
+    expect(service("loki")).toContain("ipv4_address: 172.30.254.5");
+    expect(service("tempo")).toContain("ipv4_address: 172.30.254.6");
+    expect(service("alloy")).toContain("ipv4_address: 172.30.254.7");
+    expect(service("alloy")).toContain("monitoring_internal:");
     expect(prometheus).toContain('targets: ["observability-gateway:9101"]');
     expect(prometheus).not.toContain("blackbox");
     expect(prometheus).not.toContain("postgres-exporter");

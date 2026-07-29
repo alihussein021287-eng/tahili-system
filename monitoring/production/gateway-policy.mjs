@@ -1,5 +1,6 @@
 export const APP_IP = "172.30.255.2";
 export const PROMETHEUS_IP = "172.30.254.2";
+export const GATEWAY_IP = "172.30.255.3";
 export const MAX_BODY_BYTES = 64 * 1024;
 export const MAX_REQUESTS_PER_MINUTE = 120;
 
@@ -29,13 +30,13 @@ export const KNOWN_PROM_QUERIES = new Set([
 ]);
 
 export const ROUTES = new Map([
-  [9090, { target: ["prometheus", 9090], sources: [APP_IP], methods: ["GET"], paths: ["/api/v1/query"], query: "known-prom-query" }],
-  [9093, { target: ["alertmanager", 9093], sources: [APP_IP], methods: ["GET"], paths: ["/api/v2/alerts", "/-/healthy"] }],
-  [3100, { target: ["loki", 3100], sources: [APP_IP], methods: ["GET"], paths: ["/ready"] }],
-  [3200, { target: ["tempo", 3200], sources: [APP_IP], methods: ["GET"], paths: ["/ready"] }],
-  [12347, { target: ["alloy", 12347], sources: [APP_IP], methods: ["POST"], paths: ["/collect"] }],
-  [4318, { target: ["alloy", 4318], sources: [APP_IP], methods: ["POST"], paths: ["/v1/traces"] }],
-  [9101, { target: ["app", 3000], sources: [PROMETHEUS_IP], methods: ["GET"], paths: ["/api/observability/faro/metrics"] }],
+  [9090, { target: ["172.30.254.2", 9090], sources: [APP_IP], methods: ["GET"], paths: ["/api/v1/query"], query: "known-prom-query" }],
+  [9093, { target: ["172.30.254.4", 9093], sources: [APP_IP], methods: ["GET"], paths: ["/api/v2/alerts", "/-/healthy"] }],
+  [3100, { target: ["172.30.254.5", 3100], sources: [APP_IP], methods: ["GET"], paths: ["/ready"] }],
+  [3200, { target: ["172.30.254.6", 3200], sources: [APP_IP], methods: ["GET"], paths: ["/ready"] }],
+  [12347, { target: ["172.30.254.7", 12347], sources: [APP_IP], methods: ["POST"], paths: ["/collect"] }],
+  [4318, { target: ["172.30.254.7", 4318], sources: [APP_IP], methods: ["POST"], paths: ["/v1/traces"] }],
+  [9101, { target: [APP_IP, 3000], sources: [PROMETHEUS_IP], methods: ["GET"], paths: ["/api/observability/faro/metrics"] }],
 ]);
 
 export function normalizeAddress(address = "") {

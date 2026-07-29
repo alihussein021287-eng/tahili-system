@@ -43,7 +43,9 @@ services:
     volumes:
       - loki-data:/loki
       - ./monitoring/production/loki.yml:/etc/loki/loki.yml:ro
-    networks: [monitoring_internal]
+    networks:
+      monitoring_internal:
+        ipv4_address: 172.30.254.5
     deploy: { resources: { limits: { cpus: "0.40", memory: 512M } } }
 
   promtail:
@@ -69,7 +71,9 @@ services:
     volumes:
       - tempo-data:/var/tempo
       - ./monitoring/production/tempo.yml:/etc/tempo/tempo.yml:ro
-    networks: [monitoring_internal]
+    networks:
+      monitoring_internal:
+        ipv4_address: 172.30.254.6
     deploy: { resources: { limits: { cpus: "0.30", memory: 384M } } }
 
   alloy:
@@ -80,7 +84,9 @@ services:
     tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
     command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/tmp/alloy"]
     volumes: ["./monitoring/production/alloy.config.alloy:/etc/alloy/config.alloy:ro"]
-    networks: [monitoring_internal]
+    networks:
+      monitoring_internal:
+        ipv4_address: 172.30.254.7
     depends_on: [loki, prometheus, tempo]
     deploy: { resources: { limits: { cpus: "0.25", memory: 256M } } }
 
@@ -129,7 +135,9 @@ services:
     volumes:
       - alertmanager-data:/alertmanager
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-    networks: [monitoring_internal]
+    networks:
+      monitoring_internal:
+        ipv4_address: 172.30.254.4
     deploy: { resources: { limits: { cpus: "0.20", memory: 192M } } }
 
   node-exporter:

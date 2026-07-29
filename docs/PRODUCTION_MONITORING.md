@@ -38,6 +38,9 @@ Prometheus bind to loopback only; every other endpoint remains Docker-internal.
 - The internal subnet reserves `172.30.254.2` for Prometheus and
   `172.30.254.3` for the gateway. Automatic monitoring leases are restricted
   to `172.30.254.8/29`, so startup order cannot claim either fixed address.
+- Gateway control-plane targets are fixed internal addresses: Alertmanager
+  `.4`, Loki `.5`, Tempo `.6`, and Alloy `.7`. They never resolve through the
+  app-network aliases that point back to the gateway.
 - The gateway accepts only the fixed app address on control-plane/Faro/OTLP
   ports, and only fixed Prometheus on its internal metrics path. It allows only
   the named app summary queries, fixed method/path mappings, 64 KiB bodies,
