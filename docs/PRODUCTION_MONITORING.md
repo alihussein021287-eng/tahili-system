@@ -10,6 +10,10 @@ Prometheus bind to loopback only; every other endpoint remains Docker-internal.
 - Start the monitoring stack first: it owns the dedicated
   `tahili-observability` bridge (`172.30.255.0/28`). The base compose attaches
   only `app` at fixed `172.30.255.2`; it retains its default network unchanged.
+- The app has fixed `/etc/hosts` mappings for `prometheus`, `alertmanager`,
+  `loki`, `tempo`, and `alloy` to gateway `172.30.255.3`. This deliberately
+  takes precedence over any legacy-network aliases without changing those
+  services or networks.
 - All twelve pinned images must be loaded locally before use. `pull_policy:
   never` is deliberate.
 - Create the production-only secret directory with mode `700` and both files

@@ -76,6 +76,12 @@ services:
       default: {}
       observability:
         ipv4_address: 172.30.255.2
+    extra_hosts:
+      - "prometheus:172.30.255.3"
+      - "alertmanager:172.30.255.3"
+      - "loki:172.30.255.3"
+      - "tempo:172.30.255.3"
+      - "alloy:172.30.255.3"
 
 volumes:
   pgdata:

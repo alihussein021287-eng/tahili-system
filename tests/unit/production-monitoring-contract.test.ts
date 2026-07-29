@@ -51,6 +51,9 @@ describe("production monitoring contract", () => {
     expect(baseCompose).toContain("name: tahili-observability");
     expect(baseCompose).toContain("ipv4_address: 172.30.255.2");
     expect(baseCompose).toContain("default: {}");
+    for (const hostname of ["prometheus", "alertmanager", "loki", "tempo", "alloy"]) {
+      expect(baseCompose).toContain(`\"${hostname}:172.30.255.3\"`);
+    }
     expect(compose).toContain("name: tahili-observability");
     expect(compose).toContain("subnet: 172.30.255.0/28");
     expect(compose).toContain("ip_range: 172.30.254.8/29");
