@@ -110,7 +110,8 @@ describe("production monitoring contract", () => {
     expect(compose).not.toContain("docker.sock");
     expect(compose).not.toContain("/var/lib/docker");
     expect(compose).not.toContain("/:/rootfs");
-    expect(service("observability-gateway")).toContain("/var/lib/tahili-smoke/metrics/tahili_smoke.prom:/run/tahili-smoke/tahili_smoke.prom:ro");
+    expect(service("observability-gateway")).toContain("/var/lib/tahili-smoke/metrics:/run/tahili-smoke:ro");
+    expect(service("observability-gateway")).not.toContain("/var/lib/tahili-smoke:/run/tahili-smoke");
     expect(compose).not.toContain("/var/lib/tahili-smoke/results");
     expect(compose).not.toContain("latest-summary.json");
     expect(compose).toContain("max-size: \"10m\"");

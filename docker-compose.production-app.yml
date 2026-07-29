@@ -1,6 +1,6 @@
 services:
   app:
-    image: tahili-system-app:377d6a9d662ed469d12280b10a0586b8a7bf46f4
+    image: tahili-system-app:2790a7f30b2baa35c8e40bd9acb00ff37e2840b3
     pull_policy: never
     environment:
       TAHILI_ENVIRONMENT: production

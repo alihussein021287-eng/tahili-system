@@ -7,7 +7,7 @@ const monitoringDoc = readFileSync("docs/PRODUCTION_MONITORING.md", "utf8");
 
 describe("production app compose override", () => {
   it("pins the approved offline image and closed runtime telemetry environment", () => {
-    expect(override).toContain("image: tahili-system-app:377d6a9d662ed469d12280b10a0586b8a7bf46f4");
+    expect(override).toContain("image: tahili-system-app:2790a7f30b2baa35c8e40bd9acb00ff37e2840b3");
     expect(override).toContain("pull_policy: never");
     expect(override).toContain("TAHILI_ENVIRONMENT: production");
     expect(override).toContain('FARO_ENABLED: "true"');
