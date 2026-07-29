@@ -52,7 +52,8 @@ Prometheus bind to loopback only; every other endpoint remains Docker-internal.
   access.
 - The optional `database-metrics`, `dependency-probes`, and `host-metrics`
   profiles remain disabled. Their images stay pinned for offline inventory,
-  but they are not part of the safe default monitoring deployment.
+  but they are not part of the safe default monitoring deployment; Prometheus
+  has no default `depends_on` or scrape target for them.
 
 ## Deliberate validation constraints
 

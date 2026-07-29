@@ -68,6 +68,11 @@ describe("production monitoring contract", () => {
     expect(prometheus).toContain('targets: ["observability-gateway:9101"]');
     expect(prometheus).not.toContain("blackbox");
     expect(prometheus).not.toContain("postgres-exporter");
+    expect(service("prometheus")).toContain("depends_on: [alertmanager]");
+    expect(service("prometheus")).not.toContain("postgres-exporter");
+    expect(service("prometheus")).not.toContain("blackbox-exporter");
+    expect(service("postgres-exporter")).toContain("profiles: [database-metrics]");
+    expect(service("blackbox-exporter")).toContain("profiles: [dependency-probes]");
   });
 
   it("uses project-scoped volumes, bounded retention, file-backed secrets, and no host mounts", () => {
