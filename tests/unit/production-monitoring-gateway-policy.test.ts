@@ -29,5 +29,6 @@ describe("production monitoring gateway policy", () => {
     expect(isAllowedRequest({ source: "172.30.255.9", port: 12347, method: "POST", rawUrl: "/collect" })).toBe(false);
     expect(isAllowedRequest({ source: PROMETHEUS_IP, port: 9101, method: "GET", rawUrl: "/api/observability/faro/metrics" })).toBe(true);
     expect(isAllowedRequest({ source: PROMETHEUS_IP, port: 9101, method: "GET", rawUrl: "/anything-else" })).toBe(false);
+    expect(ROUTES.get(9101)?.upstreamHost).toBe("app:3000");
   });
 });

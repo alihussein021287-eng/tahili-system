@@ -108,8 +108,10 @@ describe("production monitoring contract", () => {
     expect(gateway).not.toContain('from "node:net"');
     expect(gateway).toContain("MAX_BODY_BYTES");
     expect(gateway).toContain("isAllowedRequest");
+    expect(gateway).toContain("route.upstreamHost");
     expect(gateway).toContain("response.writeHead(403)");
     expect(gatewayPolicy).toContain("12347");
     expect(gatewayPolicy).toContain("4318");
+    expect(gatewayPolicy).toContain('upstreamHost: "app:3000"');
   });
 });

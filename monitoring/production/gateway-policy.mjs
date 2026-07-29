@@ -36,7 +36,7 @@ export const ROUTES = new Map([
   [3200, { target: ["172.30.254.6", 3200], sources: [APP_IP], methods: ["GET"], paths: ["/ready"] }],
   [12347, { target: ["172.30.254.7", 12347], sources: [APP_IP], methods: ["POST"], paths: ["/collect"] }],
   [4318, { target: ["172.30.254.7", 4318], sources: [APP_IP], methods: ["POST"], paths: ["/v1/traces"] }],
-  [9101, { target: [APP_IP, 3000], sources: [PROMETHEUS_IP], methods: ["GET"], paths: ["/api/observability/faro/metrics"] }],
+  [9101, { target: [APP_IP, 3000], upstreamHost: "app:3000", sources: [PROMETHEUS_IP], methods: ["GET"], paths: ["/api/observability/faro/metrics"] }],
 ]);
 
 export function normalizeAddress(address = "") {

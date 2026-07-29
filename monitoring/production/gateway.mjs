@@ -14,8 +14,8 @@ function rateAllowed(source) {
   return current.count <= MAX_REQUESTS_PER_MINUTE;
 }
 
-function safeHeaders(request, hostname, port, contentLength) {
-  const headers = { accept: request.headers.accept ?? "application/json", host: `${hostname}:${port}` };
+function safeHeaders(request, hostname, port, contentLength, upstreamHost) {
+  const headers = { accept: request.headers.accept ?? "application/json", host: upstreamHost ?? `${hostname}:${port}` };
   if (request.headers["content-type"]) headers["content-type"] = request.headers["content-type"];
   if (contentLength > 0) headers["content-length"] = String(contentLength);
   return headers;
@@ -43,7 +43,7 @@ for (const [listenPort, route] of ROUTES) {
       port,
       method: request.method,
       path: request.url,
-      headers: safeHeaders(request, hostname, port, contentLength),
+      headers: safeHeaders(request, hostname, port, contentLength, route.upstreamHost),
       timeout: 1500,
     }, (upstreamResponse) => {
       response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);

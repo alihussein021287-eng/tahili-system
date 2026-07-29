@@ -46,6 +46,9 @@ Prometheus bind to loopback only; every other endpoint remains Docker-internal.
   the named app summary queries, fixed method/path mappings, 64 KiB bodies,
   and 120 requests per source/port/minute. Other source addresses, paths,
   methods, or queries receive rejection.
+- The fixed Prometheus metrics route overwrites its upstream `Host` with
+  `app:3000`, matching the application's dedicated internal metrics bypass;
+  arbitrary client `Host` headers are never forwarded.
 - Volumes are explicitly named `tahili-monitoring-*`.
 - Retention is Prometheus 7d, Loki 7d (`168h`), and Tempo 72h.
 - Grafana retains its read-only root filesystem; only its runtime log path is
