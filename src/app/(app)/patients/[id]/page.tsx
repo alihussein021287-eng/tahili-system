@@ -12,6 +12,7 @@ import { GENDER, MARITAL, PATIENT_STATUS, CASE_TYPE, ADMISSION, APPT_STATUS, THE
 import { ROLE_LABELS } from "@/lib/permissions";
 import { getAdminConfig } from "@/lib/admin-config";
 import { activeCenterHallOptions } from "@/lib/center-halls";
+import { patientCenterScope } from "@/lib/patient-center-scope";
 import { derivePatientJourney, nextPatientStep, type DerivedJourneyStage } from "@/lib/patient-journey";
 
 export const dynamic = "force-dynamic";
@@ -62,8 +63,8 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     const accessSession = await getSession();
     const memberships = await prisma.centerMembership.findMany({ where: { userId: (accessSession?.user as any)?.id, status: "ACTIVE" }, select: { centerId: true } });
     const allowed = new Set(memberships.map((membership) => membership.centerId));
-    (patient as any).centerPrograms = (patient.centerPrograms || []).filter((program: any) => allowed.has(program.centerId));
-    (patient as any).treatmentPlans = (patient.treatmentPlans || []).filter((plan: any) => !plan.centerId || allowed.has(plan.centerId));
+    (patient as any).centerPrograms = patientCenterScope((patient.centerPrograms || []), allowed, false);
+    (patient as any).treatmentPlans = patientCenterScope((patient.treatmentPlans || []), allowed, false, true);
     (patient as any).referralRequests = (patient.referralRequests || []).filter((request: any) => !request.destinationCenterId || allowed.has(request.destinationCenterId));
     visibleCenters = centers.filter((center: any) => allowed.has(center.id));
     visibleCenterHalls = centerHalls.filter((hall) => allowed.has(hall.centerId));

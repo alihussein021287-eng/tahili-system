@@ -34,30 +34,9 @@ import { PatientExpenses } from "@/components/expenses/PatientExpenses";
 import { CenterHallSelect } from "@/components/CenterHallSelect";
 import { EmptyState, LoadingState, SectionCard, StatCard } from "@/components/Ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import { PATIENT_TABS } from "@/lib/patient-tab-policy";
 
-const TABS = [
-  { key: "overview", label: "نظرة عامة", icon: "▦", group: "followup", perms: ["patients.view"] },
-  { key: "timeline", label: "الخط الزمني", icon: "◷", group: "followup", perms: ["patients.view"] },
-  { key: "journey", label: "مسار المتابعة", icon: "◇", group: "followup", perms: ["journey.view"] },
-  { key: "diag", label: "الاستشارية الطبية", icon: "+", group: "medical", perms: ["clinical.view", "clinical.diagnosis", "clinical.report"] },
-  { key: "resident", label: "الطبيب المقيم", icon: "○", group: "medical", perms: ["clinical.view", "clinical.wound", "clinical.metrics"] },
-  { key: "referrals", label: "الفحوص والإحالات", icon: "↗", group: "medical", perms: ["referrals.view", "referrals.create"] },
-  { key: "sessions", label: "الجلسات العلاجية", icon: "▷", group: "therapy", perms: ["clinical.session", "therapy.view", "therapy.session.record"] },
-  { key: "therapyProgram", label: "برنامج العلاج الطبيعي", icon: "▤", group: "therapy", perms: ["therapy.view"] },
-  { key: "centerPrograms", label: "برامج المراكز", icon: "⌂", group: "therapy", perms: ["centers.view"] },
-  { key: "plan", label: "الخطة العلاجية", icon: "◎", group: "therapy", perms: ["clinical.plan", "therapy.view"] },
-  { key: "metrics", label: "المقاييس", icon: "↗", group: "therapy", perms: ["clinical.metrics"] },
-  { key: "care", label: "التداوي والتضميد", icon: "✚", group: "therapy", perms: ["clinical.care"] },
-  { key: "expenses", label: "الصرفيات المالية", icon: "¤", group: "admin", perms: ["expenses.view"] },
-  { key: "rx", label: "الوصفات والتجهيز", icon: "⊕", group: "admin", perms: ["clinical.prescription", "pharmacy.view"] },
-  { key: "adm", label: "الرقود", icon: "□", group: "admin", perms: ["clinical.admission", "beds.view"] },
-  { key: "official", label: "الإجراءات الرسمية", icon: "§", group: "admin", perms: ["officialdocs.view"] },
-  { key: "sickleave", label: "الإجازات المرضية", icon: "△", group: "admin", perms: ["sickleave.view"] },
-  { key: "corr", label: "المخاطبات", icon: "✉", group: "admin", perms: ["clinical.report"] },
-  { key: "files", label: "المرفقات", icon: "⌕", group: "admin", perms: ["clinical.view", "officialdocs.view"] },
-  { key: "rel", label: "ذوو القربى", icon: "⋈", group: "admin", perms: ["patients.view"] },
-  { key: "activity", label: "سجل النشاط", icon: "≡", group: "system", perms: ["audit.view"] },
-];
+const TABS = PATIENT_TABS.map((item) => ({ ...item, perms: item.permissions }));
 const TAB_GROUPS: Record<string, string> = {
   followup: "المتابعة",
   medical: "الملف الطبي",

@@ -1,5 +1,5 @@
 "use server";
-import { requireSession } from "@/lib/access";
+import { requireSession, currentPerms } from "@/lib/access";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
@@ -11,6 +11,7 @@ import { assertCenterHallByName } from "@/lib/center-halls";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { loadPatientTabData } from "@/lib/patient-tab-loader";
 
 const patientSchema = z.object({
   fullName: z.string().trim().min(3, "الاسم الرباعي مطلوب (3 أحرف على الأقل)"),
@@ -568,29 +569,18 @@ export async function deleteAttachment(patientId: string, id: string) {
 
 // ===== تحميل بيانات التبويب عند الطلب (لتخفيف تحميل صفحة المريض) =====
 export async function getPatientTabData(patientId: string, tab: string) {
-  await assertPerm("patients.view");
-  switch (tab) {
-    case "files":
-      return prisma.attachment.findMany({ where: { patientId }, orderBy: { uploadedAt: "desc" } });
-    case "metrics":
-      return prisma.progressMetric.findMany({ where: { patientId }, orderBy: { date: "asc" } });
-    case "vitals":
-      return prisma.vitalSign.findMany({ where: { patientId }, orderBy: { date: "asc" } });
-    case "resident":
-      return prisma.residentReview.findMany({ where: { patientId }, orderBy: { date: "desc" } });
-    case "referrals":
-      return prisma.referralRequest.findMany({ where: { patientId }, include: { destinationCenter: { select: { name: true } }, assignedReviewer: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } });
-    case "plan":
-      return prisma.treatmentPlan.findMany({ where: { patientId }, orderBy: { createdAt: "desc" } });
-    case "rel":
-      return prisma.relative.findMany({ where: { patientId } });
-    case "activity":
-      return prisma.auditLog.findMany({ where: { tableName: "patients", recordId: patientId }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 80 });
-    case "care":
-      return prisma.dressingRecord.findMany({ where: { patientId }, orderBy: { date: "desc" } });
-    default:
-      return [];
-  }
+  return loadPatientTabData(patientId, tab, {
+    session: requireSession,
+    patientsView: () => assertPerm("patients.view"),
+    perms: currentPerms,
+    prisma,
+    memberships: async (userId) => (
+      await prisma.centerMembership.findMany({
+        where: { userId, status: "ACTIVE" },
+        select: { centerId: true },
+      })
+    ).map((row) => row.centerId),
+  });
 }
 
 // ===== التداوي والتضميد =====
