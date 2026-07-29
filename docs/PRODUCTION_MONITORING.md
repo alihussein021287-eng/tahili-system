@@ -4,6 +4,10 @@
 stack. It is intentionally separate from the development-only compose files.
 It has no LAN-published monitoring ports: Grafana (`127.0.0.1:13002`) and
 Prometheus bind to loopback only; every other endpoint remains Docker-internal.
+Grafana and Prometheus also join a project-scoped `monitoring_loopback` bridge
+so Docker can realize those host-loopback NAT bindings while their service
+traffic remains on `monitoring_internal`. No application or dependency service
+joins that bridge.
 
 ## Preconditions
 

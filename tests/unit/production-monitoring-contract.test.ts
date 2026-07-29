@@ -48,6 +48,16 @@ describe("production monitoring contract", () => {
     expect(service("grafana")).toContain("GF_SECURITY_ADMIN_PASSWORD__FILE");
   });
 
+  it("uses a dedicated bridge only to make the two loopback bindings effective", () => {
+    expect(compose).toMatch(/monitoring_loopback:\n\s+driver: bridge/);
+    for (const name of ["grafana", "prometheus"]) {
+      expect(service(name)).toContain("monitoring_loopback");
+    }
+    for (const name of ["loki", "promtail", "tempo", "alloy", "observability-gateway", "alertmanager", "node-exporter", "cadvisor", "postgres-exporter", "blackbox-exporter"]) {
+      expect(service(name)).not.toContain("monitoring_loopback");
+    }
+  });
+
   it("keeps only app and gateway on the fixed observability network", () => {
     expect(baseCompose).toContain("name: tahili-observability");
     expect(baseCompose).toContain("ipv4_address: 172.30.255.2");

@@ -31,7 +31,7 @@ services:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     ports: ["127.0.0.1:13002:3000"]
-    networks: [monitoring_internal]
+    networks: [monitoring_internal, monitoring_loopback]
     deploy: { resources: { limits: { cpus: "0.50", memory: 512M } } }
 
   loki:
@@ -125,6 +125,7 @@ services:
     networks:
       monitoring_internal:
         ipv4_address: 172.30.254.2
+      monitoring_loopback: {}
     depends_on: [alertmanager]
     deploy: { resources: { limits: { cpus: "0.50", memory: 768M } } }
 
@@ -189,6 +190,8 @@ networks:
     ipam:
       # Reserve .2 (Prometheus) and .3 (gateway); automatic leases start at .8.
       config: [{ subnet: 172.30.254.0/28, ip_range: 172.30.254.8/29, gateway: 172.30.254.1 }]
+  monitoring_loopback:
+    driver: bridge
   observability:
     name: tahili-observability
     driver: bridge
