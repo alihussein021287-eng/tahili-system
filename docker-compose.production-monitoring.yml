@@ -17,7 +17,7 @@ services:
     <<: *monitoring-service
     image: grafana/grafana:11.1.0@sha256:079600c9517b678c10cda6006b4487d3174512fd4c6cface37df7822756ed7a5
     read_only: true
-    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m", "/var/log/grafana:rw,noexec,nosuid,size=16m"]
     environment:
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
       GF_AUTH_ANONYMOUS_ENABLED: "false"
@@ -175,7 +175,8 @@ networks:
   monitoring_internal:
     internal: true
     ipam:
-      config: [{ subnet: 172.30.254.0/28, gateway: 172.30.254.1 }]
+      # Reserve .2 (Prometheus) and .3 (gateway); automatic leases start at .8.
+      config: [{ subnet: 172.30.254.0/28, ip_range: 172.30.254.8/29, gateway: 172.30.254.1 }]
   observability:
     name: tahili-observability
     driver: bridge

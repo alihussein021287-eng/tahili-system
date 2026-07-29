@@ -31,6 +31,9 @@ Prometheus bind to loopback only; every other endpoint remains Docker-internal.
   attached to `tahili-observability` and has fixed `172.30.255.3`. Its aliases
   preserve the immutable app hostnames `prometheus`, `alertmanager`, `loki`,
   `tempo`, and `alloy`; it has no published ports.
+- The internal subnet reserves `172.30.254.2` for Prometheus and
+  `172.30.254.3` for the gateway. Automatic monitoring leases are restricted
+  to `172.30.254.8/29`, so startup order cannot claim either fixed address.
 - The gateway accepts only the fixed app address on control-plane/Faro/OTLP
   ports, and only fixed Prometheus on its internal metrics path. It allows only
   the named app summary queries, fixed method/path mappings, 64 KiB bodies,
@@ -38,6 +41,9 @@ Prometheus bind to loopback only; every other endpoint remains Docker-internal.
   methods, or queries receive rejection.
 - Volumes are explicitly named `tahili-monitoring-*`.
 - Retention is Prometheus 7d, Loki 7d (`168h`), and Tempo 72h.
+- Grafana retains its read-only root filesystem; only its runtime log path is
+  a bounded `16m` tmpfs. Persistent Grafana state remains limited to the
+  named data volume.
 - Promtail has no Docker socket or container-log mount. It intentionally
   scrapes nothing until a dedicated sanitized log source is approved.
 - node-exporter and cAdvisor are kept as pinned `host-metrics` profile

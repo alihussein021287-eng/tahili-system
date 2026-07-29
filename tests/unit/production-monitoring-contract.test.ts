@@ -41,6 +41,8 @@ describe("production monitoring contract", () => {
     expect(compose).toContain('"127.0.0.1:9090:9090"');
     expect((compose.match(/\bports:/g) ?? [])).toHaveLength(2);
     expect(compose).not.toContain("TAHILI_LAN_IP");
+    expect(service("grafana")).toContain("/var/log/grafana:rw,noexec,nosuid,size=16m");
+    expect(service("grafana")).toContain("read_only: true");
   });
 
   it("keeps only app and gateway on the fixed observability network", () => {
@@ -49,6 +51,7 @@ describe("production monitoring contract", () => {
     expect(baseCompose).toContain("default: {}");
     expect(compose).toContain("name: tahili-observability");
     expect(compose).toContain("subnet: 172.30.255.0/28");
+    expect(compose).toContain("ip_range: 172.30.254.8/29");
     expect(service("observability-gateway")).toContain("ipv4_address: 172.30.255.3");
     expect(service("observability-gateway")).toContain("aliases: [prometheus, alertmanager, loki, tempo, alloy]");
     for (const name of ["postgres", "minio", "clamav"]) expect(baseService(name)).not.toContain("observability");
