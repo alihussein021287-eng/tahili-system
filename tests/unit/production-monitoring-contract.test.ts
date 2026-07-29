@@ -118,4 +118,13 @@ describe("production monitoring contract", () => {
     expect(gatewayPolicy).toContain("4318");
     expect(gatewayPolicy).toContain('upstreamHost: "app:3000"');
   });
+
+  it("gates frontend telemetry absence on the label-free expectation gauge", () => {
+    const absenceRule = rules.match(/- alert: TahiliFrontendTelemetryAbsent[\s\S]*?for: 5m/)?.[0] ?? "";
+    expect(absenceRule).toContain("tahili_faro_enabled == 1");
+    expect(absenceRule).toContain("tahili_faro_telemetry_expected == 1");
+    expect(absenceRule).toContain("tahili_faro_process_start_time_seconds > 900");
+    expect(absenceRule).toContain("tahili_faro_last_forwarded_timestamp_seconds > 900");
+    expect(absenceRule).not.toMatch(/route|user|session|ip|request_id|trace_id/i);
+  });
 });

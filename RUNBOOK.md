@@ -35,7 +35,7 @@ Faro is disabled unless the server runtime environment has `FARO_ENABLED=true`. 
 
 Grafana dashboard UID `tahili-frontend-observability` shows receiver health, sanitized signal kinds, error levels, LCP, normalized routes, and export counters. For a frontend incident, confirm Alloy target `up`, then inspect the dashboard's sanitized Loki panel by time window; never search raw identifiers. `FARO_ENABLED=false` disables collection safely and suppresses the absence alert through its aggregate gauge.
 
-The adapter now exports aggregate `tahili_faro_*` metrics to Prometheus only through the Docker network. Confirm `tahili_faro_enabled` first; telemetry absence is meaningful only after the 15-minute warm-up from `tahili_faro_process_start_time_seconds`. Counters reset after app restart. Diagnose error-rate, LCP, rejection, and forwarding alerts from aggregate counters only; never attempt to reconstruct payloads or user activity.
+The adapter now exports aggregate `tahili_faro_*` metrics to Prometheus only through the Docker network. Confirm `tahili_faro_enabled` first; telemetry absence is meaningful only when the label-free `tahili_faro_telemetry_expected` gauge is `1` and after the 15-minute warm-up from `tahili_faro_process_start_time_seconds`. Synthetic envelopes do not change that policy gauge. Counters reset after app restart. Diagnose error-rate, LCP, rejection, and forwarding alerts from aggregate counters only; never attempt to reconstruct payloads or user activity.
 
 ## Tempo traces (development, Stages 7A–7B)
 

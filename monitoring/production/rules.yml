@@ -76,7 +76,7 @@ groups:
         labels: { severity: warning, environment: production, service: tahili-frontend }
         annotations: { summary: "Frontend telemetry export is retrying", summary_ar: "إرسال إشارات الواجهة يعيد المحاولة" }
       - alert: TahiliFrontendTelemetryAbsent
-        expr: tahili_faro_enabled == 1 and (time() - tahili_faro_process_start_time_seconds > 900) and (time() - tahili_faro_last_forwarded_timestamp_seconds > 900)
+        expr: tahili_faro_enabled == 1 and tahili_faro_telemetry_expected == 1 and (time() - tahili_faro_process_start_time_seconds > 900) and (time() - tahili_faro_last_forwarded_timestamp_seconds > 900)
         for: 5m
         labels: { severity: warning, environment: production, service: tahili-frontend }
         annotations: { summary: "Frontend telemetry absent after adapter warm-up", summary_ar: "لا توجد إشارات واجهة بعد فترة إحماء المهايئ" }

@@ -37,7 +37,7 @@ Stage 7C adds no image or package. Alloy creates bounded local spanmetrics and s
 
 The provisioned frontend dashboard is `monitoring/grafana/provisioning/dashboards/json/frontend-observability.json` (UID `tahili-frontend-observability`). It uses only the existing local Grafana, Loki, Prometheus, and Alloy images; no additional image or external endpoint is required offline.
 
-Stage 6C.1 adds no image or package. Prometheus scrapes the aggregate-only adapter endpoint over the existing Docker network. `tahili_faro_*` counters are in-memory and reset when the app restarts; use the process-start and last-forwarded timestamps when diagnosing warm-up. `FARO_ENABLED=false` exports `tahili_faro_enabled 0` and deliberately suppresses the telemetry-absence alert.
+Stage 6C.1 adds no image or package. Prometheus scrapes the aggregate-only adapter endpoint over the existing Docker network. `tahili_faro_*` counters are in-memory and reset when the app restarts; use the process-start and last-forwarded timestamps when diagnosing warm-up. `FARO_ENABLED=false` exports `tahili_faro_enabled 0`; the label-free `tahili_faro_telemetry_expected` gauge remains `0` while the approved instrumentation list is empty, so synthetic envelopes alone never enable the telemetry-absence alert.
 
 ## حفظ ونقل الصورة
 

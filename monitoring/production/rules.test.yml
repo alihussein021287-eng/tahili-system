@@ -1,0 +1,82 @@
+rule_files:
+  - rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: enabled with no expected automatic telemetry stays inactive when stale
+    interval: 1m
+    input_series:
+      - series: tahili_faro_enabled
+        values: 1x30
+      - series: tahili_faro_telemetry_expected
+        values: 0x30
+      - series: tahili_faro_process_start_time_seconds
+        values: 0x30
+      - series: tahili_faro_last_forwarded_timestamp_seconds
+        values: 0x30
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: TahiliFrontendTelemetryAbsent
+        exp_alerts: []
+
+  - name: enabled expected stale telemetry becomes pending then firing
+    interval: 1m
+    input_series:
+      - series: tahili_faro_enabled
+        values: 1x30
+      - series: tahili_faro_telemetry_expected
+        values: 1x30
+      - series: tahili_faro_process_start_time_seconds
+        values: 0x30
+      - series: tahili_faro_last_forwarded_timestamp_seconds
+        values: 0x30
+    promql_expr_test:
+      - expr: ALERTS{alertname="TahiliFrontendTelemetryAbsent",alertstate="pending"}
+        eval_time: 18m
+        exp_samples:
+          - labels: ALERTS{alertname="TahiliFrontendTelemetryAbsent",alertstate="pending",environment="production",service="tahili-frontend",severity="warning"}
+            value: 1
+    alert_rule_test:
+      - eval_time: 22m
+        alertname: TahiliFrontendTelemetryAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              environment: production
+              service: tahili-frontend
+            exp_annotations:
+              summary: Frontend telemetry absent after adapter warm-up
+              summary_ar: لا توجد إشارات واجهة بعد فترة إحماء المهايئ
+
+  - name: enabled expected fresh telemetry stays inactive
+    interval: 1m
+    input_series:
+      - series: tahili_faro_enabled
+        values: 1x30
+      - series: tahili_faro_telemetry_expected
+        values: 1x30
+      - series: tahili_faro_process_start_time_seconds
+        values: 0x30
+      - series: tahili_faro_last_forwarded_timestamp_seconds
+        values: 1200x30
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: TahiliFrontendTelemetryAbsent
+        exp_alerts: []
+
+  - name: disabled Faro stays inactive
+    interval: 1m
+    input_series:
+      - series: tahili_faro_enabled
+        values: 0x30
+      - series: tahili_faro_telemetry_expected
+        values: 1x30
+      - series: tahili_faro_process_start_time_seconds
+        values: 0x30
+      - series: tahili_faro_last_forwarded_timestamp_seconds
+        values: 0x30
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: TahiliFrontendTelemetryAbsent
+        exp_alerts: []

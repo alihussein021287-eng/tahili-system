@@ -60,12 +60,14 @@ describe("observability summary privacy contract", () => {
     expect(summary.services.slice(0, 4).every((service) => service.state === "security_na")).toBe(true);
     expect(Object.values(summary.resources).every((reading) => reading.state === "security_na")).toBe(true);
     expect(summary.smoke).toMatchObject({ state: "healthy", passedChecks: 17, totalChecks: 17 });
+    expect(summary.faro.automaticTelemetryExpected).toEqual({ value: false, state: "security_na" });
     expect(summary.faro.errorsPerMinute).toEqual({ value: 0, state: "healthy" });
     expect(summary.faro.forwardFailures).toEqual({ value: 0, state: "healthy" });
     expect(summary.faro.lcpP95Ms).toEqual({ value: null, state: "waiting" });
     expect(summary.tracing.tracesPerMinute).toEqual({ value: null, state: "waiting" });
     expect(summary.tracing.server5xxPercent).toEqual({ value: null, state: "waiting" });
     expect(summary.tracing.exportFailures).toEqual({ value: 0, state: "healthy" });
+    expect(summary.state).toBe("healthy");
   });
 
   it("marks a failed required monitoring source as actually unavailable", async () => {

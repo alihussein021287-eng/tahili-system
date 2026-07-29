@@ -25,6 +25,7 @@ export type ObservabilitySummary = {
   resources: { cpu: MetricReading; memory: MetricReading; disk: MetricReading };
   faro: {
     enabled: BooleanReading;
+    automaticTelemetryExpected: BooleanReading;
     signals: MetricReading;
     errorsPerMinute: MetricReading;
     lcpP95Ms: MetricReading;
@@ -67,6 +68,7 @@ export const OBSERVABILITY_QUERIES = {
   targets: "up",
   alloyHealth: "up{job=\"alloy\"}",
   faroEnabled: "tahili_faro_enabled",
+  faroTelemetryExpected: "tahili_faro_telemetry_expected",
   faroSignals: "sum(tahili_faro_accepted_envelopes_total)",
   faroErrors: "sum(rate(tahili_faro_frontend_logs_total{level=\"error\"}[5m])) * 60",
   faroLcpSamples: "sum(increase(tahili_faro_lcp_milliseconds_count[10m]))",
@@ -219,6 +221,11 @@ function booleanReading(reading: MetricReading): BooleanReading {
   return { value: reading.value === 1, state: reading.value === 1 ? "healthy" : "attention" };
 }
 
+function expectedTelemetryReading(reading: MetricReading): BooleanReading {
+  if (reading.value === null) return { value: null, state: reading.state === "waiting" ? "unavailable" : reading.state };
+  return { value: reading.value === 1, state: reading.value === 1 ? "healthy" : "security_na" };
+}
+
 export async function getObservabilitySummary(fetcher: FetchLike = fetch): Promise<ObservabilitySummary> {
   const entries = Object.entries(OBSERVABILITY_QUERIES);
   const [promisedQueries, alertsPayload, alertmanagerReady, tempoReady, lokiReady, smokePayload] = await Promise.all([
@@ -272,6 +279,7 @@ export async function getObservabilitySummary(fetcher: FetchLike = fetch): Promi
     : { state: "unavailable", passedChecks: null, totalChecks: null, lastRunAt: null, durationSeconds: null };
 
   const faroEnabled = booleanReading(metricReading("faroEnabled", queryResult, "unavailable"));
+  const faroTelemetryExpected = expectedTelemetryReading(metricReading("faroTelemetryExpected", queryResult, "unavailable"));
   const faroSignals = metricReading("faroSignals", queryResult);
   const faroSignalsDisplay = faroSignals.value === 0 ? { value: null, state: "waiting" as const } : faroSignals;
   const faroLcpSamples = metricReading("faroLcpSamples", queryResult);
@@ -291,6 +299,7 @@ export async function getObservabilitySummary(fetcher: FetchLike = fetch): Promi
     alerts.state,
     smoke.state,
     faroEnabled.state,
+    faroTelemetryExpected.state,
     faroErrors.state,
     faroLcp.state,
     faroFailures.state,
@@ -317,6 +326,7 @@ export async function getObservabilitySummary(fetcher: FetchLike = fetch): Promi
     },
     faro: {
       enabled: faroEnabled,
+      automaticTelemetryExpected: faroTelemetryExpected,
       signals: faroSignalsDisplay,
       errorsPerMinute: withAttention(faroErrors, (value) => value > 0),
       lcpP95Ms: withAttention(faroLcp, (value) => value > 4_000),

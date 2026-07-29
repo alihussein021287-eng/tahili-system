@@ -9,6 +9,7 @@ export const KNOWN_PROM_QUERIES = new Set([
   "up",
   "up{job=\"alloy\"}",
   "tahili_faro_enabled",
+  "tahili_faro_telemetry_expected",
   "sum(tahili_faro_accepted_envelopes_total)",
   "sum(rate(tahili_faro_frontend_logs_total{level=\"error\"}[5m])) * 60",
   "sum(increase(tahili_faro_lcp_milliseconds_count[10m]))",

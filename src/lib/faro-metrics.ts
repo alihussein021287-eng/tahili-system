@@ -1,3 +1,5 @@
+import { FARO_TELEMETRY_EXPECTED } from "@/lib/faro-telemetry-policy";
+
 export const FARO_REJECTION_REASONS = ["disabled", "method", "content_type", "malformed", "oversize", "origin", "rate_limit", "empty"] as const;
 export const FARO_SIGNAL_KINDS = ["event", "log", "measurement"] as const;
 export const FARO_LOG_LEVELS = ["debug", "info", "warn", "error", "log"] as const;
@@ -39,6 +41,7 @@ export function recordFaroForwardFailure(reason: ForwardFailure) { counters.forw
 
 export function renderFaroMetrics(enabled: boolean) {
   let output = gauge("tahili_faro_enabled", "Faro adapter enabled by runtime configuration") + line("tahili_faro_enabled", enabled ? 1 : 0);
+  output += gauge("tahili_faro_telemetry_expected", "Automatic periodic Faro telemetry expected from approved instrumentations") + line("tahili_faro_telemetry_expected", FARO_TELEMETRY_EXPECTED ? 1 : 0);
   output += counter("tahili_faro_adapter_requests_total", "Faro adapter requests") + line("tahili_faro_adapter_requests_total", counters.requests);
   output += counter("tahili_faro_accepted_envelopes_total", "Accepted sanitized Faro envelopes") + line("tahili_faro_accepted_envelopes_total", counters.accepted);
   output += counter("tahili_faro_forwarded_envelopes_total", "Faro envelopes forwarded to Alloy") + line("tahili_faro_forwarded_envelopes_total", counters.forwarded);

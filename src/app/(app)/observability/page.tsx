@@ -109,13 +109,22 @@ export default async function ObservabilityPage() {
         </div>
       </Section>
 
-      <Section title="مراقبة الواجهة Faro" detail="مؤشرات مجمعة ومنقحة فقط؛ غياب عينة LCP ليس عطلاً.">
+      <Section title="مراقبة الواجهة Faro" detail="مؤشرات مجمعة ومنقحة فقط؛ غياب عينة LCP ليس عطلاً، والـsynthetic لا يعني وجود مراقبة دورية.">
         <div className="grid grid-cols-2 gap-2">
           <Metric label="مفعّل" state={summary.faro.enabled.state} value={summary.faro.enabled.value === null ? "غير متاح فعلياً" : summary.faro.enabled.value ? "نعم" : "لا"} />
+          <Metric
+            label="Faro forwarding"
+            state={summary.faro.forwardFailures.state}
+            value={summary.faro.forwardFailures.value === 0 ? "سليم — لا توجد إخفاقات" : displayReading(summary.faro.forwardFailures)}
+          />
+          <Metric
+            label="المراقبة التلقائية الدورية"
+            state={summary.faro.automaticTelemetryExpected.state}
+            value={summary.faro.automaticTelemetryExpected.value === null ? "غير متاح فعلياً" : summary.faro.automaticTelemetryExpected.value ? "مفعلة" : "غير مفعلة حالياً — N/A مقصود"}
+          />
           <Metric label="الإشارات المستلمة" state={summary.faro.signals.state} value={displayReading(summary.faro.signals)} />
           <Metric label="أخطاء/دقيقة" state={summary.faro.errorsPerMinute.state} value={displayReading(summary.faro.errorsPerMinute, "", "لا توجد أخطاء")} />
           <Metric label="LCP p95" state={summary.faro.lcpP95Ms.state} value={displayReading(summary.faro.lcpP95Ms, " ms")} />
-          <Metric label="فشل الإرسال" state={summary.faro.forwardFailures.state} value={displayReading(summary.faro.forwardFailures, "", "لا توجد إخفاقات")} />
         </div>
       </Section>
 
