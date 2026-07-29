@@ -1,0 +1,94 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+  external_labels = { service = "tahili-frontend", environment = "production" }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls { insecure = true }
+  }
+}
+
+prometheus.remote_write "local" {
+  endpoint {
+    url            = "http://prometheus:9090/api/v1/write"
+    send_exemplars = false
+  }
+}
+
+
+otelcol.exporter.prometheus "spanmetrics" {
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+otelcol.connector.spanmetrics "server" {
+  namespace                       = "tahili_server"
+  aggregation_cardinality_limit   = 500
+  metrics_flush_interval          = "30s"
+  metrics_expiration              = "15m"
+  resource_metrics_key_attributes = ["service.name", "deployment.environment.name"]
+  exclude_dimensions              = ["span.name", "span.kind", "status.code"]
+  histogram {
+    explicit {
+      buckets = ["10ms", "25ms", "50ms", "100ms", "250ms", "500ms", "1s", "2s", "5s", "10s"]
+    }
+  }
+  dimension { name = "deployment.environment.name" }
+  dimension { name = "tahili.route_template" }
+  dimension { name = "http.request.method" }
+  dimension { name = "tahili.status_class" }
+  output { metrics = [otelcol.exporter.prometheus.spanmetrics.input] }
+}
+
+otelcol.processor.transform "spanmetrics_privacy" {
+  error_mode = "ignore"
+  trace_statements {
+    context = "span"
+    statements = [
+      `keep_keys(attributes, ["http.request.method", "http.route", "http.response.status_code", "tahili.route_template", "tahili.status_class", "error.type"])`,
+    ]
+  }
+  trace_statements {
+    context = "resource"
+    statements = [`keep_keys(attributes, ["service.name", "deployment.environment.name"])`]
+  }
+  output { traces = [otelcol.connector.spanmetrics.server.input] }
+}
+
+otelcol.processor.transform "trace_privacy" {
+  error_mode = "ignore"
+  trace_statements {
+    context = "span"
+    statements = [
+      `keep_keys(attributes, ["http.request.method", "http.route", "http.response.status_code", "tahili.route_template", "tahili.status_class", "error.type"])`,
+    ]
+  }
+  trace_statements {
+    context = "resource"
+    statements = [`keep_keys(attributes, ["service.name", "deployment.environment.name", "service.version"])`]
+  }
+  output { traces = [otelcol.exporter.otlp.tempo.input, otelcol.processor.transform.spanmetrics_privacy.input] }
+}
+
+otelcol.receiver.otlp "internal" {
+  grpc {}
+  http {}
+  output { traces = [otelcol.processor.transform.trace_privacy.input] }
+}
+
+faro.receiver "local" {
+  server {
+    listen_address = "0.0.0.0"
+    listen_port    = 12347
+    cors_allowed_origins = []
+  }
+  output { logs = [loki.write.local.receiver] }
+}

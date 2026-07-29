@@ -1,0 +1,13 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /positions/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+# Docker socket discovery is deliberately disabled. Enable a scrape only after
+# an approved, sanitized, read-only log source is available for production.
+scrape_configs: []

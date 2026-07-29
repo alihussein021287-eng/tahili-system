@@ -1,0 +1,139 @@
+groups:
+  - name: tahili-availability
+    rules:
+      - alert: TahiliTargetDown
+        expr: up == 0
+        for: 2m
+        labels: { severity: critical, environment: production, service: "{{ $labels.job }}" }
+        annotations: { summary: "Tahili monitoring target is down" }
+      - alert: TahiliHttpProbeFailure
+        expr: probe_success == 0
+        for: 2m
+        labels: { severity: critical, environment: production, service: "{{ $labels.job }}" }
+        annotations: { summary: "Tahili internal HTTP/TCP probe failed" }
+      - alert: TahiliContainerRestarting
+        expr: changes(container_start_time_seconds[15m]) > 0
+        for: 5m
+        labels: { severity: warning, environment: production, service: docker }
+        annotations: { summary: "Tahili container restarted" }
+      - alert: TahiliHighCpu
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 15m
+        labels: { severity: warning, environment: production, service: host }
+        annotations: { summary: "Host CPU remains high" }
+      - alert: TahiliHighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 10m
+        labels: { severity: warning, environment: production, service: host }
+        annotations: { summary: "Host memory remains high" }
+      - alert: TahiliHighSwap
+        expr: (1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 > 50
+        for: 10m
+        labels: { severity: warning, environment: production, service: host }
+        annotations: { summary: "Host swap use remains high" }
+      - alert: TahiliDiskWarning
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 15m
+        labels: { severity: warning, environment: production, service: host }
+        annotations: { summary: "Host disk is above warning threshold" }
+      - alert: TahiliDiskCritical
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 95
+        for: 10m
+        labels: { severity: critical, environment: production, service: host }
+        annotations: { summary: "Host disk is above critical threshold" }
+      - alert: TahiliInodesWarning
+        expr: (1 - (node_filesystem_files_free{fstype!~"tmpfs|overlay"} / node_filesystem_files{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 15m
+        labels: { severity: warning, environment: production, service: host }
+        annotations: { summary: "Host inode use is high" }
+  - name: tahili-smoke
+    rules:
+      - alert: TahiliSmokeFailedTwice
+        expr: tahili_smoke_success == 0 and (time() - tahili_smoke_last_run_timestamp) < 3900
+        for: 30m
+        labels: { severity: warning, environment: production, service: smoke }
+        annotations: { summary: "Tahili read-only smoke has remained failed for two scheduled intervals" }
+      - alert: TahiliSmokeStale
+        expr: time() - tahili_smoke_last_run_timestamp > 4500
+        for: 10m
+        labels: { severity: warning, environment: production, service: smoke }
+        annotations: { summary: "Tahili read-only smoke result is stale" }
+  - name: tahili-frontend-observability
+    rules:
+      - alert: TahiliAlloyReceiverUnavailable
+        expr: up{job="alloy"} == 0
+        for: 2m
+        labels: { severity: critical, environment: production, service: tahili-frontend }
+        annotations: { summary: "Faro/Alloy receiver unavailable", summary_ar: "مستقبل Faro/Alloy غير متاح محلياً" }
+      - alert: TahiliFrontendTelemetryDropped
+        expr: sum(loki_write_dropped_entries_total{component_id="loki.write.local"}) > 0
+        for: 2m
+        labels: { severity: warning, environment: production, service: tahili-frontend }
+        annotations: { summary: "Frontend telemetry entries were dropped", summary_ar: "تم إسقاط إشارات واجهة المتصفح" }
+      - alert: TahiliFrontendTelemetryExportRetry
+        expr: sum(loki_write_batch_retries_total{component_id="loki.write.local"}) > 0
+        for: 5m
+        labels: { severity: warning, environment: production, service: tahili-frontend }
+        annotations: { summary: "Frontend telemetry export is retrying", summary_ar: "إرسال إشارات الواجهة يعيد المحاولة" }
+      - alert: TahiliFrontendTelemetryAbsent
+        expr: tahili_faro_enabled == 1 and (time() - tahili_faro_process_start_time_seconds > 900) and (time() - tahili_faro_last_forwarded_timestamp_seconds > 900)
+        for: 5m
+        labels: { severity: warning, environment: production, service: tahili-frontend }
+        annotations: { summary: "Frontend telemetry absent after adapter warm-up", summary_ar: "لا توجد إشارات واجهة بعد فترة إحماء المهايئ" }
+      - alert: TahiliFrontendErrorRateHigh
+        expr: sum(rate(tahili_faro_frontend_logs_total{level="error"}[10m])) > 0.2
+        for: 10m
+        labels: { severity: warning, environment: production, service: tahili-frontend }
+        annotations: { summary: "Frontend error log rate is high", summary_ar: "معدل أخطاء واجهة المتصفح مرتفع" }
+      - alert: TahiliFrontendLcpHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(tahili_faro_lcp_milliseconds_bucket[10m]))) > 4000
+        for: 10m
+        labels: { severity: warning, environment: production, service: tahili-frontend }
+        annotations: { summary: "Frontend LCP p95 remains high", summary_ar: "مؤشر LCP للواجهة مرتفع باستمرار" }
+      - alert: TahiliFaroAdapterRejectionsHigh
+        expr: sum(rate(tahili_faro_rejected_total[5m])) > 0.5
+        for: 10m
+        labels: { severity: warning, environment: production, service: tahili-frontend }
+        annotations: { summary: "Faro adapter rejection rate is high", summary_ar: "معدل رفض مهايئ Faro مرتفع" }
+      - alert: TahiliFaroAdapterForwardFailures
+        expr: sum(rate(tahili_faro_forward_failures_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning, environment: production, service: tahili-frontend }
+        annotations: { summary: "Faro adapter forwarding is failing", summary_ar: "إرسال مهايئ Faro يفشل" }
+  - name: tahili-trace-observability
+    rules:
+      - alert: TahiliTempoUnavailable
+        expr: up{job="tempo"} == 0
+        for: 2m
+        labels: { severity: critical, environment: production, service: tempo }
+        annotations: { summary: "Tempo trace store is unavailable" }
+      - alert: TahiliTracePipelineUnavailable
+        expr: up{job="alloy"} == 0 or up{job="tempo"} == 0
+        for: 2m
+        labels: { severity: critical, environment: production, service: tracing }
+        annotations: { summary: "Local trace pipeline is unavailable" }
+      - alert: TahiliTraceExportFailures
+        expr: sum(increase(otelcol_exporter_send_failed_spans_total[5m])) > 0 or increase(tahili_otel_export_failures_total[5m]) > 0
+        for: 5m
+        labels: { severity: warning, environment: production, service: tracing }
+        annotations: { summary: "Trace export failures detected" }
+      - alert: TahiliTraceDrops
+        expr: sum(increase(otelcol_processor_dropped_spans_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning, environment: production, service: tracing }
+        annotations: { summary: "Trace spans were dropped" }
+      - alert: TahiliServerLatencyP95High
+        expr: histogram_quantile(0.95, sum by (le) (rate(tahili_server_duration_milliseconds_bucket[10m]))) > 1000
+        for: 10m
+        labels: { severity: warning, environment: production, service: tahili-app }
+        annotations: { summary: "Server trace p95 latency remains high" }
+      - alert: TahiliServer5xxRateHigh
+        expr: sum(rate(tahili_server_calls_total{tahili_status_class="5xx"}[10m])) / clamp_min(sum(rate(tahili_server_calls_total[10m])), 0.001) > 0.05
+        for: 10m
+        labels: { severity: warning, environment: production, service: tahili-app }
+        annotations: { summary: "Server 5xx trace rate remains high" }
+      - alert: TahiliTracesAbsent
+        expr: tahili_otel_enabled == 1 and (time() - tahili_otel_process_start_time_seconds > 900) and increase(otelcol_receiver_accepted_spans_total[15m]) == 0
+        for: 5m
+        labels: { severity: warning, environment: production, service: tahili-app }
+        annotations: { summary: "No trace exports after OTEL warm-up" }

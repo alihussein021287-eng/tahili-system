@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.secrets/
 
 # Dependencies and Next.js build output
 node_modules/

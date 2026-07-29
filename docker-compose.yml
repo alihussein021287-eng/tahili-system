@@ -72,9 +72,18 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
       - "${TAHILI_LAN_IP:?set TAHILI_LAN_IP in .env}:3000:3000"
+    networks:
+      default: {}
+      observability:
+        ipv4_address: 172.30.255.2
 
 volumes:
   pgdata:
   miniodata:
   clamavdata:
   uploads:
+
+networks:
+  observability:
+    external: true
+    name: tahili-observability
