@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "stage11-final-20260729",
+  "status": "complete",
+  "operationalRelease": "0aa4582700e296bb89919cec2dd8b68dd8b62514",
+  "applicationRevision": "2790a7f30b2baa35c8e40bd9acb00ff37e2840b3",
+  "revisionRelationship": {
+    "intentional": true,
+    "reason": "The application revision is the last commit that changed the built application source. The operational release adds the reviewed Stage 11 production configuration and smoke publication without changing application source."
+  },
+  "application": {
+    "imageId": "sha256:9fd6792d25ed01ead7da77e0beb14da3072dfaabab11b1b75f22166602f9b7af",
+    "developmentTag": "tahili-system-app:2790a7f30b2baa35c8e40bd9acb00ff37e2840b3",
+    "productionTag": "tahili-system-app:2790a7f30b2baa35c8e40bd9acb00ff37e2840b3",
+    "developmentRuntimeMatch": true,
+    "productionRuntimeMatch": true
+  },
+  "rollback": {
+    "development": {
+      "tag": "tahili-system-app:rollback-698dcf7",
+      "imageId": "sha256:bdf96a71ba2c89372db4c421ef4296f8c6ef83fc5f62dea654b5ed802d377223"
+    },
+    "production": {
+      "tag": "tahili-system-app:rollback-8110db56f0c4a7044daaf82cacec530d762d4307",
+      "imageId": "sha256:4879df0ee075addbf85b16d7585319956010d957fa9a24668603478f2e08ec74"
+    }
+  },
+  "monitoringImages": [
+    {
+      "component": "grafana",
+      "digest": "sha256:079600c9517b678c10cda6006b4487d3174512fd4c6cface37df7822756ed7a5"
+    },
+    {
+      "component": "loki",
+      "digest": "sha256:6ca6e2cd3b6f45e0eb298da2920610fde63ecd8ab6c595d9c941c8559d1d9407"
+    },
+    {
+      "component": "promtail",
+      "digest": "sha256:c0e57ee03512475e982893622544d76da4e3c3671a72425c670ccfc0024a4187"
+    },
+    {
+      "component": "tempo",
+      "digest": "sha256:3ecdaa1af90b3068e77e4fb4b11d9f26201c3a57d5740d34965a323173a4f1aa"
+    },
+    {
+      "component": "alloy",
+      "digest": "sha256:32913cbfac652d15fa84d256a74e5ee3f71575961bb19d34796ce3838bfba693"
+    },
+    {
+      "component": "observability-gateway",
+      "digest": "sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293"
+    },
+    {
+      "component": "prometheus",
+      "digest": "sha256:f6639335d34a77d9d9db382b92eeb7fc00934be8eae81dbc03b31cfe90411a94"
+    },
+    {
+      "component": "alertmanager",
+      "digest": "sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5"
+    },
+    {
+      "component": "node-exporter-offline",
+      "digest": "sha256:4032c6d5bfd752342c3e631c2f1de93ba6b86c41db6b167b9a35372c139e7706"
+    },
+    {
+      "component": "cadvisor-offline",
+      "digest": "sha256:3cde6faf0791ebf7b41d6f8ae7145466fed712ea6f252c935294d2608b1af388"
+    },
+    {
+      "component": "postgres-exporter-offline",
+      "digest": "sha256:386b12d19eab2a37d7cd8ca8b4c7491cc7a830d9581f49af6c98a393da9605e6"
+    },
+    {
+      "component": "blackbox-exporter-offline",
+      "digest": "sha256:b04a9fef4fa086a02fc7fcd8dcdbc4b7b35cc30cdee860fdc6a19dd8b208d63e"
+    }
+  ],
+  "configuration": {
+    "productionComposeSha256": "d574058f017c6a0641d07540f2780b4e820b9b0b1d7d4b922185102bd08c0173",
+    "prometheusRulesSha256": "14f2f831fdad82b84d711b2ddc054a3a54d9f8647896a212c8af211de5990777",
+    "productionConfigManifestSha256": "990446a479100c0872f6b17ecf888c21a6b801a0606c15084b2512361279c085",
+    "productionConfigManifestMembers": 32,
+    "debugCollectorSha256": "576797f39115e44fad64d0923e1a0ca49af5c9f11285063faac2901531732154",
+    "housekeepingRunnerSha256": "864585e752b8aac70c713ddaee767a952022feb74a52cbe474f7c4845f44b65f",
+    "finalBackupRunnerSha256": "5a82acb0021bdfe736e5f96da8ba3854607fb6a2cf00859138b5ff0cf226a622",
+    "smokeRunnerSha256": "303dba9d102d08668194baa89c5ab946f2a8200032b6c2e42483ad99295f9b01",
+    "smokeServiceSha256": "6e993a750f7f1f53df6ef6a639009ca76dac2c81b30aa99f3399c5d21a3a67a2",
+    "smokeTimerSha256": "47a4945965d982b88d3f813c6b4b967eb144cad04569ce094af04af6f8345fbd"
+  },
+  "offlineArchives": {
+    "applicationSha256": "1f3fa035c25d5b25721cb8aa094be053af08d16ba0bf882ef0c7aab0bdc28884",
+    "configurationSha256": "386b857aff69eb6c5ba5ad8128b04762d4ab11da43993ea212c8fb3c60242cac",
+    "configurationMembersManifestSha256": "bccb41473141d289ed517af9b7040aa8ce8c37b9d95e7ce1785f200fc4c302f2",
+    "retainedDevelopmentPackages": [
+      "/var/tmp/tahili-stage11-production-0aa4582700e296bb89919cec2dd8b68dd8b62514-app-2790a7f30b2baa35c8e40bd9acb00ff37e2840b3",
+      "/var/tmp/tahili-stage11-production-377d6a9d662ed469d12280b10a0586b8a7bf46f4",
+      "/var/tmp/tahili-stage11-production-4c6cde9116c943173752cb4d2a208e5a7b118f91"
+    ]
+  },
+  "environments": {
+    "development": {
+      "tahiliEnvironment": "development",
+      "faroEnabled": true,
+      "otelEnabled": true,
+      "forceSample": false
+    },
+    "production": {
+      "tahiliEnvironment": "production",
+      "faroEnabled": true,
+      "otelEnabled": true,
+      "forceSample": false
+    }
+  },
+  "retention": {
+    "prometheus": "7d",
+    "loki": "168h",
+    "tempo": "72h"
+  },
+  "acceptance": {
+    "loginHttpStatus": 200,
+    "adminObservabilityHealthy": true,
+    "productionNonAdminBoundary": "manual-pass-reported-by-user",
+    "smoke": "17/17",
+    "prometheusTargets": "7/7",
+    "activeAlerts": 0,
+    "faroAccepted": 1,
+    "faroForwarded": 1,
+    "faroForwardFailures": 0,
+    "faroTelemetryExpected": 0,
+    "developmentOtelSent": 1503,
+    "productionOtelSent": 153,
+    "otelFailed": 0,
+    "otelDropped": 0,
+    "grafanaDatasources": 3,
+    "grafanaDashboards": 7,
+    "developmentRunningServices": "25/25",
+    "productionRunningServices": "13/13",
+    "migrationsApplied": 16,
+    "migrationsPending": 0,
+    "recentHttp500": 0,
+    "recentPrismaBlockers": 0,
+    "recentServerActionBlockers": 0,
+    "recentNextAuthBlockers": 0
+  },
+  "productionBusinessCountBaseline": {
+    "patients": 0,
+    "visits": 0,
+    "appointments": 0,
+    "therapySessions": 0,
+    "collaborationFiles": 0,
+    "users": 26
+  },
+  "securityReview": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0
+  },
+  "evidence": {
+    "developmentAuditRevision": "2790a7f30b2baa35c8e40bd9acb00ff37e2840b3",
+    "developmentAuditSha256": "6570e6690d2c00ca51b814fd3953f5d4c5c403f228495799b0f6e6d4c179501e",
+    "developmentAuditResult": "PASS",
+    "developmentAuditUnclassifiedPages": 0,
+    "productionDebugBundlePath": "/var/lib/tahili-stage11/debug/tahili-production-monitoring-debug-20260729T185321Z.tar.gz",
+    "productionDebugBundleSha256": "43a1c0afb8d2a3ee1488bfcdfe1b1bc2f36c3fa3274f3e6ed5dd6c1dbf3b875a",
+    "productionDebugBundleSidecarSha256": "cf47b64f169e2b09b72fffa42f612e142525b98e9fbac6a905e524e4bbb5783c",
+    "productionAlertAcceptancePath": "/var/lib/tahili-stage11/alert-acceptance"
+  },
+  "backups": {
+    "developmentApprovedDataBackup": "/var/backups/tahili/stage10-20260728T224154Z-131270",
+    "productionApprovedDataBackup": "/var/backups/tahili/final-release-20260729T202804Z",
+    "productionApprovedDataBackupSha256SumsSha256": "3212ab1f89520b26fa3f1cd6f9327d432cce7fd25d3c0ef798dfe82f4b36c662",
+    "productionApprovedDataBackupAggregates": {
+      "migrations": 16,
+      "tables": 88,
+      "foreignKeys": 155,
+      "minioRegularFiles": 27,
+      "minioBytes": 201902,
+      "uploadsRegularFiles": 10,
+      "uploadsBytes": 2726443
+    },
+    "productionComposeBackup": "/var/backups/tahili-stage11-production/20260729T165840Z-377d6a9/docker-compose.yml"
+  },
+  "cleanup": {
+    "status": "complete",
+    "removed": {
+      "developmentWorktrees": [
+        "/tmp/tahili-stage11-8110db56",
+        "/tmp/tahili-stage11-build-377d6a9",
+        "/var/tmp/tahili-build-2790a7f30b2baa35c8e40bd9acb00ff37e2840b3",
+        "/var/tmp/tahili-config-0aa4582700e296bb89919cec2dd8b68dd8b62514"
+      ],
+      "developmentPaths": [
+        "/var/tmp/tahili-offline-runtime-2790a7f30b2baa35c8e40bd9acb00ff37e2840b3",
+        "/tmp/tahili-stage11-ops-src",
+        "/tmp/tahili-housekeeping-reconcile.sh",
+        "/tmp/tahili-final-release-backup.sh"
+      ],
+      "productionPaths": [
+        "/var/tmp/tahili-stage11-production-0aa4582700e296bb89919cec2dd8b68dd8b62514-app-2790a7f30b2baa35c8e40bd9acb00ff37e2840b3",
+        "/var/tmp/tahili-stage11-production-377d6a9d662ed469d12280b10a0586b8a7bf46f4",
+        "/var/tmp/tahili-stage11-production-4c6cde9116c943173752cb4d2a208e5a7b118f91",
+        "/tmp/tahili-housekeeping-reconcile.sh",
+        "/tmp/tahili-final-release-backup.sh",
+        "/run/lock/tahili-final-release-backup.lock"
+      ],
+      "developmentImageTags": [
+        "tahili-app:stage7b-diagnostic-fix",
+        "tahili-app:stage7b-debug2",
+        "tahili-app:stage7b-candidate",
+        "tahili-app:stage7b-finaltest",
+        "tahili-app:stage7b-debug",
+        "tahili-stage3-clean-app:latest",
+        "tahili-system-app:943292a26c70",
+        "tahili-system-app:377d6a9d662ed469d12280b10a0586b8a7bf46f4"
+      ],
+      "productionImageTags": [
+        "tahili-system-app:943292a26c70",
+        "tahili-system-app:377d6a9d662ed469d12280b10a0586b8a7bf46f4",
+        "tahili-system-app:latest",
+        "tahili-system-app:21258d6",
+        "tahili-system-app:release-6abbc9b",
+        "tahili-system-app:8110db5"
+      ],
+      "developmentImageIds": [
+        "sha256:028d14b2b0c277ec77ba96727a2f08dc72e700437db98b7c1404c728561ee5ff",
+        "sha256:211d4735e8485b4868f3ad4ea8d71ecf5b8edc6d9ac33194ef3942575e1b7ae1",
+        "sha256:4bf8cc67acb575873b5eba0cdac50cb7a323faa0def6b474fb73fa04e814c1c0",
+        "sha256:e7cb8cb771a5f7a8feb636f27b0abdd3872467da87ac870c065917096946f035",
+        "sha256:fb4a1cfc12e104a8f53d8b744a124cc9ca6a48d0c67d27a1f35bb86264be6180",
+        "sha256:f9851192f1ddc7d24868db8bd189983e5f53c9be8ad00f7b1a73ca50ebd8b077",
+        "sha256:450e50d820f727c753deb7814ecb93634d211a550a40e9e111910cfc65f66e6e",
+        "sha256:609e73cfad8d04d383f71667b00f2a336067e3e89c1cc78e2abb5486075d5aaa"
+      ],
+      "productionImageIds": [
+        "sha256:450e50d820f727c753deb7814ecb93634d211a550a40e9e111910cfc65f66e6e",
+        "sha256:609e73cfad8d04d383f71667b00f2a336067e3e89c1cc78e2abb5486075d5aaa",
+        "sha256:9227ec8fba6c85d3b7c73a9a9152e985ac37a5c2ccead5ac28b1af165a930427"
+      ]
+    },
+    "pathBytesRemoved": {
+      "development": 1380212670,
+      "production": 2379733697
+    },
+    "filesystem": {
+      "development": {
+        "totalBytes": 527295578112,
+        "usedBeforeBytes": 171159801856,
+        "usedAfterBytes": 155685519360,
+        "availableBeforeBytes": 329275453440,
+        "availableAfterBytes": 344749735936,
+        "usedPercentBefore": 35,
+        "usedPercentAfter": 32,
+        "reclaimedBytes": 15474282496
+      },
+      "production": {
+        "totalBytes": 51460472832,
+        "usedBeforeBytes": 29347811328,
+        "usedAfterBytes": 21995298816,
+        "availableBeforeBytes": 19465428992,
+        "availableAfterBytes": 26817941504,
+        "usedPercentBefore": 61,
+        "usedPercentAfter": 46,
+        "reclaimedBytes": 7352512512
+      }
+    },
+    "retainedByPolicy": {
+      "developmentVolumeCount": 17,
+      "productionVolumeCount": 27,
+      "productionAnonymousVolumeCount": 13,
+      "reason": "All Docker volumes remain protected; no volume cleanup or prune was performed."
+    }
+  },
+  "git": {
+    "headMatchesOriginMain": true
+  }
+}

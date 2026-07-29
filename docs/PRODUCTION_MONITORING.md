@@ -1,5 +1,9 @@
 # Production monitoring compose
 
+The reconciled Stage 11 release identity, pinned image digests, configuration
+hashes, retention contract, rollback references, and approved backup evidence
+are recorded in `docs/STAGE11_FINAL_RELEASE_MANIFEST.json`.
+
 `docker-compose.production-monitoring.yml` is a standalone, pinned monitoring
 stack. It is intentionally separate from the development-only compose files.
 It has no LAN-published monitoring ports: Grafana (`127.0.0.1:13002`) and

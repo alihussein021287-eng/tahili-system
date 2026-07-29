@@ -41,10 +41,17 @@ Stage 6C.1 adds no image or package. Prometheus scrapes the aggregate-only adapt
 
 ## حفظ ونقل الصورة
 
-حالة development المعتمدة بعد Stage 10: احتفظ محلياً فقط بـ`tahili-system-app:latest` (image `7ae316e8…`, revision التطبيق `af4bd33…`) وبـ`tahili-system-app:943292a26c70` كـrollback واحد. commits التشغيلية `53c45ae` و`6dc9410` لا تتطلب image جديدة. لا تستخدم cache أو tags قديمة كمرجع offline.
+حالة Stage 11 النهائية موثقة في
+`docs/STAGE11_FINAL_RELEASE_MANIFEST.json`. الصورة الوظيفية في التطوير
+والإنتاج هي image `sha256:9fd6792d…` عند application revision
+`2790a7f…`، بينما operational release هو `0aa4582…` لأن commits التشغيلية
+اللاحقة لم تغيّر مصدر التطبيق. احتفظ بصورة التطبيق العاملة وبصورة rollback
+الواحدة المحددة لكل بيئة في الـmanifest؛ لا تستخدم cache أو tags قديمة كمرجع
+offline، ولا تبنِ صورة فقط لمعادلة الرقمين.
 
 ```bash
-docker save tahili-system-app:latest -o /tmp/tahili-system-app.tar
+APP_TAG=tahili-system-app:2790a7f30b2baa35c8e40bd9acb00ff37e2840b3
+docker save "$APP_TAG" -o /tmp/tahili-system-app.tar
 scp /tmp/tahili-system-app.tar prod:/tmp/
 ```
 
@@ -54,7 +61,7 @@ scp /tmp/tahili-system-app.tar prod:/tmp/
 
 ```bash
 docker load -i /tmp/tahili-system-app.tar
-docker image inspect tahili-system-app:latest --format '{{.Id}} {{.Created}}'
+docker image inspect tahili-system-app:2790a7f30b2baa35c8e40bd9acb00ff37e2840b3 --format '{{.Id}} {{.Created}}'
 ```
 
 إذا كان compose يستخدم tag محدداً، حدّث tag خدمة `app` فقط. لا تغيّر PostgreSQL أو MinIO أو Caddy أو DNS.
