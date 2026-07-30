@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tahili Mobile Offline"
+  short_description: "Build Tahili mobile safely for offline local use"
+  default_prompt: "Use $tahili-mobile-offline to plan or implement a secure local-first Tahili mobile change."
