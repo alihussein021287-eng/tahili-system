@@ -69,6 +69,30 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
 
+  checks:
+    image: tahili-saif-checks:local
+    build:
+      context: .
+      target: builder
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_URL_INTERNAL: http://localhost:3000
+      NEXTAUTH_ALLOW_HTTP_LOGIN: "true"
+      AUTH_TRUST_HOST: "true"
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_ACCESS_KEY: ${MINIO_USER}
+      MINIO_SECRET_KEY: ${MINIO_PASSWORD}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      TZ: Asia/Baghdad
+      REMINDER_KEY: ${REMINDER_KEY}
+    profiles:
+      - checks
+
 volumes:
   saif_pgdata:
   saif_miniodata:
