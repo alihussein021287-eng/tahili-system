@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - saif_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55432:5432"
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    volumes:
+      - saif_miniodata:/data
+    ports:
+      - "127.0.0.1:59000:9000"
+      - "127.0.0.1:59001:9001"
+
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "true"
+    volumes:
+      - saif_clamavdata:/var/lib/clamav
+
+  app:
+    build:
+      context: .
+      args:
+        GIT_REVISION: ${GIT_REVISION:-saif-local}
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - minio
+      - clamav
+    environment:
+      TAHILI_ENVIRONMENT: development
+      FARO_ENABLED: "false"
+      OTEL_ENABLED: "false"
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_URL_INTERNAL: http://localhost:3000
+      NEXTAUTH_ALLOW_HTTP_LOGIN: "true"
+      AUTH_TRUST_HOST: "true"
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD}
+      ALLOW_INITIAL_SETUP: "false"
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_ACCESS_KEY: ${MINIO_USER}
+      MINIO_SECRET_KEY: ${MINIO_PASSWORD}
+      COLLABORATION_MINIO_BUCKET: tahili-saif-collaboration
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      UPLOAD_DIR: /app/uploads
+      TZ: Asia/Baghdad
+      REMINDER_KEY: ${REMINDER_KEY}
+    volumes:
+      - saif_uploads:/app/uploads
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  saif_pgdata:
+  saif_miniodata:
+  saif_clamavdata:
+  saif_uploads:
