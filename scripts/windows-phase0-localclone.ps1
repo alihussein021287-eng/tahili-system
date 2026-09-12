@@ -65,23 +65,50 @@ function Get-VolumeName {
 function Get-VolumeStats {
     param([Parameter(Mandatory = $true)][string]$Volume)
 
-    $script = 'f=$(find /source -type f | wc -l | tr -d " "); b=$(find /source -type f -exec wc -c {} + 2>/dev/null | awk ''{s+=$1} END {print s+0}''); printf "%s|%s\n" "$f" "$b"'
-    $text = Get-DockerText @(
+    # Do not pass shell snippets through Windows PowerShell. Docker receives each
+    # find/stat argument directly, which avoids native quoting corruption.
+    $fileArgs = @(
         "run", "--rm",
         "-v", "${Volume}:/source:ro",
-        "--entrypoint", "sh",
+        "--entrypoint", "find",
         "postgres:16-alpine",
-        "-ceu", $script
+        "/source", "-type", "f"
+    )
+    $fileOutput = & docker @fileArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to count files in volume $Volume`n$($fileOutput | Out-String)"
+    }
+    $fileLines = @(
+        $fileOutput | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     )
 
-    $parts = $text -split '\|'
-    if ($parts.Count -ne 2) {
-        throw "Unexpected volume statistics output for $Volume : $text"
+    $sizeArgs = @(
+        "run", "--rm",
+        "-v", "${Volume}:/source:ro",
+        "--entrypoint", "find",
+        "postgres:16-alpine",
+        "/source", "-type", "f",
+        "-exec", "stat", "-c", "%s", "{}", ";"
+    )
+    $sizeOutput = & docker @sizeArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to measure files in volume $Volume`n$($sizeOutput | Out-String)"
+    }
+
+    [int64]$bytes = 0
+    foreach ($line in @($sizeOutput)) {
+        $text = ([string]$line).Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        [int64]$size = 0
+        if (-not [int64]::TryParse($text, [ref]$size)) {
+            throw "Unexpected file-size output for volume $Volume : $text"
+        }
+        $bytes += $size
     }
 
     return @{
-        Files = [int64]$parts[0]
-        Bytes = [int64]$parts[1]
+        Files = [int64]$fileLines.Count
+        Bytes = $bytes
     }
 }
 
