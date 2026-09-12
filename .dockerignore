@@ -47,7 +47,6 @@ pnpm-debug.log*
 
 # OS / editor / VCS
 .git
-.gitignore
 .vscode
 .idea
 .DS_Store
