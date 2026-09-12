@@ -1,16 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const compose = readFileSync("docker-compose.production-monitoring.yml", "utf8");
-const baseCompose = readFileSync("docker-compose.yml", "utf8");
-const promtail = readFileSync("monitoring/production/promtail.yml", "utf8");
-const prometheus = readFileSync("monitoring/production/prometheus.yml", "utf8");
-const loki = readFileSync("monitoring/production/loki.yml", "utf8");
-const alloy = readFileSync("monitoring/production/alloy.config.alloy", "utf8");
-const rules = readFileSync("monitoring/production/rules.yml", "utf8");
-const gateway = readFileSync("monitoring/production/gateway.mjs", "utf8");
-const gatewayPolicy = readFileSync("monitoring/production/gateway-policy.mjs", "utf8");
-const traceDashboard = JSON.parse(readFileSync("monitoring/grafana/provisioning/dashboards/json/trace-observability.json", "utf8"));
+const text = (file: string) => readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+
+const compose = text("docker-compose.production-monitoring.yml");
+const baseCompose = text("docker-compose.yml");
+const promtail = text("monitoring/production/promtail.yml");
+const prometheus = text("monitoring/production/prometheus.yml");
+const loki = text("monitoring/production/loki.yml");
+const alloy = text("monitoring/production/alloy.config.alloy");
+const rules = text("monitoring/production/rules.yml");
+const gateway = text("monitoring/production/gateway.mjs");
+const gatewayPolicy = text("monitoring/production/gateway-policy.mjs");
+const traceDashboard = JSON.parse(text("monitoring/grafana/provisioning/dashboards/json/trace-observability.json"));
 
 const pinnedImages = [
   "grafana/grafana:11.1.0@sha256:079600c9517b678c10cda6006b4487d3174512fd4c6cface37df7822756ed7a5",
