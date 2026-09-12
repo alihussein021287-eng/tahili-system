@@ -64,7 +64,42 @@ function firstHeaderValue(value: string | null) {
   return value?.split(",", 1)[0]?.trim().toLowerCase() || null;
 }
 
+function resolveIsolatedLocalDevelopment(headers: HeaderReader, env: Environment): EnvironmentAccess | null | undefined {
+  const localMode =
+    env.TAHILI_ENVIRONMENT === "development" &&
+    env.NEXTAUTH_URL === "http://localhost:3000" &&
+    env.NEXTAUTH_URL_INTERNAL === "http://localhost:3000";
+
+  if (!localMode) return undefined;
+
+  if (env.NEXTAUTH_ALLOW_HTTP_LOGIN !== "true") {
+    throw new EnvironmentAccessConfigError("NEXTAUTH_ALLOW_HTTP_LOGIN must be true for local development");
+  }
+  if (env.AUTH_TRUST_HOST !== "true") {
+    throw new EnvironmentAccessConfigError("AUTH_TRUST_HOST must be true for local development");
+  }
+
+  const rawHost = firstHeaderValue(headers.get("host"));
+  const forwardedHost = firstHeaderValue(headers.get("x-forwarded-host"));
+  const forwardedProto = firstHeaderValue(headers.get("x-forwarded-proto"));
+
+  if (rawHost !== "localhost:3000") return null;
+  if (forwardedHost && forwardedHost !== rawHost) return null;
+  if (forwardedProto && forwardedProto !== "http") return null;
+
+  return {
+    environment: "development",
+    origin: "http://localhost:3000",
+    host: "localhost:3000",
+    secure: false,
+    sessionCookieName: LOCAL_SESSION_COOKIE,
+  };
+}
+
 export function resolveEnvironmentAccess(headers: HeaderReader, env: Environment = process.env): EnvironmentAccess | null {
+  const localDevelopment = resolveIsolatedLocalDevelopment(headers, env);
+  if (localDevelopment !== undefined) return localDevelopment;
+
   const selected = configuredEnvironment(env);
   const rawHost = firstHeaderValue(headers.get("host"));
   const forwardedHost = firstHeaderValue(headers.get("x-forwarded-host"));
