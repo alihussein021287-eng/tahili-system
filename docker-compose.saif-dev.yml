@@ -12,7 +12,7 @@ services:
       - "127.0.0.1:55432:5432"
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/aistor/minio:RELEASE.2026-08-07T18-34-35Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
