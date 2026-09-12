@@ -31,23 +31,21 @@ Set-Location $ProjectRoot
 function Refresh-Path {
   $machine = [Environment]::GetEnvironmentVariable('Path','Machine')
   $user = [Environment]::GetEnvironmentVariable('Path','User')
-  $env:Path = "$machine;$user"
+  $extra = @(
+    "$env:LOCALAPPDATA\Microsoft\WindowsApps",
+    'C:\Program Files\Docker\Docker\resources\bin',
+    "$env:LOCALAPPDATA\Programs\DockerDesktop\resources\bin"
+  ) -join ';'
+  $env:Path = "$machine;$user;$extra"
 }
 
-function Ensure-WingetPackage([string]$Id, [string]$Name) {
-  $present = $false
-  try {
-    winget list --id $Id -e --accept-source-agreements 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { $present = $true }
-  } catch {}
-  if ($present) {
-    Write-Host "$Name already installed."
-    return
-  }
-  Write-Host "Installing $Name..."
-  winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements --silent
-  if ($LASTEXITCODE -ne 0) { throw "$Name installation failed with code $LASTEXITCODE" }
-  Refresh-Path
+function Get-GitExe {
+  $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  $candidates = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop\app-*\resources\app\git\cmd\git.exe" -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending
+  if ($candidates.Count -gt 0) { return $candidates[0].FullName }
+  return $null
 }
 
 function New-SafeSecret([int]$Bytes = 24) {
@@ -56,62 +54,95 @@ function New-SafeSecret([int]$Bytes = 24) {
   return ([Convert]::ToHexString($buffer)).ToLowerInvariant()
 }
 
-Write-Step "Windows prerequisites"
-if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
-  throw "winget is not available. Install Microsoft App Installer, then run this script again."
+function Ensure-DockerDesktop {
+  Refresh-Path
+  $desktopCandidates = @(
+    'C:\Program Files\Docker\Docker\Docker Desktop.exe',
+    "$env:LOCALAPPDATA\Programs\DockerDesktop\Docker Desktop.exe"
+  )
+  foreach ($candidate in $desktopCandidates) {
+    if (Test-Path $candidate) { return $candidate }
+  }
+
+  Write-Step "Install Docker Desktop directly from Docker"
+  $installer = Join-Path $env:TEMP 'DockerDesktopInstaller.exe'
+  $url = 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe'
+  Write-Host "Downloading Docker Desktop..."
+  Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+  if (-not (Test-Path $installer) -or (Get-Item $installer).Length -lt 1MB) {
+    throw "Docker Desktop installer download failed."
+  }
+
+  Write-Host "Installing Docker Desktop with WSL2 backend..."
+  $proc = Start-Process $installer -Wait -PassThru -ArgumentList @('install','--quiet','--accept-license','--backend=wsl-2')
+  if ($proc.ExitCode -ne 0) {
+    throw "Docker Desktop installation failed with code $($proc.ExitCode)"
+  }
+  Remove-Item $installer -Force -ErrorAction SilentlyContinue
+  Refresh-Path
+
+  foreach ($candidate in $desktopCandidates) {
+    if (Test-Path $candidate) { return $candidate }
+  }
+  throw "Docker Desktop installation completed but executable was not found."
 }
+
+Write-Step "Windows prerequisites"
+Refresh-Path
+$win = Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, OsArchitecture
+$win | Format-List | Out-Host
 
 $wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
 $vmFeature = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
 $rebootMayBeRequired = $false
 
 if ($wslFeature.State -ne 'Enabled') {
+  Write-Host "Enabling Windows Subsystem for Linux..."
   Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -All -NoRestart | Out-Null
   $rebootMayBeRequired = $true
 }
 if ($vmFeature.State -ne 'Enabled') {
+  Write-Host "Enabling Virtual Machine Platform..."
   Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart | Out-Null
   $rebootMayBeRequired = $true
 }
 
-try { wsl.exe --update | Out-Host } catch {}
+try { wsl.exe --update --web-download | Out-Host } catch {
+  try { wsl.exe --update | Out-Host } catch {}
+}
 try { wsl.exe --set-default-version 2 | Out-Host } catch {}
 
-Ensure-WingetPackage 'Git.Git' 'Git'
-Ensure-WingetPackage 'OpenJS.NodeJS.LTS' 'Node.js LTS'
-Ensure-WingetPackage 'Docker.DockerDesktop' 'Docker Desktop'
-Refresh-Path
+$dockerDesktop = Ensure-DockerDesktop
 
-Write-Step "Tool versions"
-try { git --version } catch {}
-try { node --version } catch {}
-try { npm --version } catch {}
-try { docker --version } catch {}
-
-Write-Step "Starting Docker Desktop"
-$dockerDesktop = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
-if (Test-Path $dockerDesktop) {
-  $running = Get-Process 'Docker Desktop' -ErrorAction SilentlyContinue
-  if (-not $running) { Start-Process $dockerDesktop | Out-Null }
+if ($rebootMayBeRequired) {
+  Write-Host "`nWSL2/VirtualMachinePlatform were enabled successfully." -ForegroundColor Yellow
+  Write-Host "A Windows restart is required once before Docker can start." -ForegroundColor Yellow
+  Write-Host "Restart Windows, then run the SAME script again:" -ForegroundColor Yellow
+  Write-Host "powershell -ExecutionPolicy Bypass -File `"$ProjectRoot\scripts\windows-saif-bootstrap.ps1`"" -ForegroundColor White
+  exit 3010
 }
 
+Write-Step "Tool discovery"
+$gitExe = Get-GitExe
+if ($gitExe) { & $gitExe --version | Out-Host } else { Write-Host "Git CLI not found; continuing because the working copy already exists." -ForegroundColor Yellow }
+Refresh-Path
+try { docker --version | Out-Host } catch { throw "Docker CLI was not found after installation." }
+try { wsl.exe --version | Out-Host } catch {}
+
+Write-Step "Starting Docker Desktop"
+$running = Get-Process 'Docker Desktop' -ErrorAction SilentlyContinue
+if (-not $running) { Start-Process $dockerDesktop | Out-Null }
+
 $dockerReady = $false
-for ($i = 0; $i -lt 90; $i++) {
+for ($i = 0; $i -lt 120; $i++) {
   try {
     docker info *> $null
     if ($LASTEXITCODE -eq 0) { $dockerReady = $true; break }
   } catch {}
   Start-Sleep -Seconds 4
 }
-
 if (-not $dockerReady) {
-  if ($rebootMayBeRequired) {
-    Write-Host "`nWindows enabled WSL2/VirtualMachinePlatform but Docker is not ready yet." -ForegroundColor Yellow
-    Write-Host "Restart Windows once, then run this SAME script again:" -ForegroundColor Yellow
-    Write-Host "powershell -ExecutionPolicy Bypass -File `"$ProjectRoot\scripts\windows-saif-bootstrap.ps1`"" -ForegroundColor White
-    exit 3010
-  }
-  throw "Docker Desktop did not become ready. Open Docker Desktop once and rerun this script."
+  throw "Docker Desktop did not become ready within 8 minutes. Open Docker Desktop once, wait until Engine is running, then rerun this script."
 }
 
 Write-Step "Create isolated local environment"
@@ -129,7 +160,9 @@ if (-not (Test-Path $envFile)) {
   $reminderKey = New-SafeSecret 24
   $adminPassword = 'SaifDev!' + (New-SafeSecret 10)
   $gitRevision = 'saif-local'
-  try { $gitRevision = (git rev-parse HEAD).Trim() } catch {}
+  if ($gitExe) {
+    try { $gitRevision = (& $gitExe rev-parse HEAD).Trim() } catch {}
+  }
 
   @"
 DB_USER=tahili_saif
@@ -194,6 +227,7 @@ $compose = @('compose','-p','tahili-saif-dev','--env-file',$envFile,'-f',$compos
 Write-Step "Build application image"
 & docker @compose build app
 if ($LASTEXITCODE -ne 0) { throw "Docker app build failed." }
+$buildExit = 0
 
 Write-Step "Start PostgreSQL, MinIO and ClamAV"
 & docker @compose up -d postgres minio clamav
@@ -220,26 +254,24 @@ Write-Step "Start Tahili app"
 & docker @compose up -d app
 if ($LASTEXITCODE -ne 0) { throw "Application startup failed." }
 
-Write-Step "Install host dependencies for checks"
-npm ci --legacy-peer-deps
-if ($LASTEXITCODE -ne 0) { throw "npm ci failed." }
-
-Write-Step "Prisma generate"
-npx prisma generate
-if ($LASTEXITCODE -ne 0) { throw "prisma generate failed." }
-
 $checks = [ordered]@{}
-Write-Step "TypeScript check"
-npx tsc --noEmit
-$checks['typecheck'] = $LASTEXITCODE
+$checks['build'] = $buildExit
 
-Write-Step "Unit/integration tests"
-npm test
-$checks['tests'] = $LASTEXITCODE
+Write-Step "Build isolated verification image"
+& docker @compose --profile checks build checks
+if ($LASTEXITCODE -ne 0) {
+  $checks['checks-image'] = $LASTEXITCODE
+} else {
+  $checks['checks-image'] = 0
 
-Write-Step "Production build check"
-npm run build
-$checks['build'] = $LASTEXITCODE
+  Write-Step "TypeScript check inside Docker"
+  & docker @compose --profile checks run --rm --no-deps checks npx tsc --noEmit
+  $checks['typecheck'] = $LASTEXITCODE
+
+  Write-Step "Unit/integration tests inside Docker"
+  & docker @compose --profile checks run --rm --no-deps checks npm test
+  $checks['tests'] = $LASTEXITCODE
+}
 
 Write-Step "Application health check"
 $appReady = $false
@@ -265,9 +297,10 @@ Compose project: tahili-saif-dev
 Application: http://localhost:3000
 MinIO Console: http://localhost:59001
 PostgreSQL: localhost:55432
+Build exit: $($checks['build'])
+Checks image exit: $($checks['checks-image'])
 Typecheck exit: $($checks['typecheck'])
 Tests exit: $($checks['tests'])
-Build exit: $($checks['build'])
 HTTP exit: $($checks['http'])
 Credentials: $accessFile
 "@ | Set-Content -Encoding UTF8 $report
