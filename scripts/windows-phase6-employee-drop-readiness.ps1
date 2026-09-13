@@ -151,8 +151,16 @@ if ($schemaLegacyEmployeeId -lt 1) { throw "Expected legacyEmployeeId compatibil
 
 Write-Host ""
 Write-Host "=== PRISMA MIGRATION STATUS ==="
-$migrateStatus = & docker @($Compose + @("--profile","checks","run","--rm","--no-deps","checks","npx","prisma","migrate","status")) 2>&1
-if ($LASTEXITCODE -ne 0) { throw "Prisma migrate status failed.`n$($migrateStatus | Out-String)" }
+$previousErrorActionPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = "Continue"
+    $migrateStatus = & docker @($Compose + @("--profile","checks","run","--rm","--no-deps","checks","npx","prisma","migrate","status")) 2>&1
+    $migrateExitCode = $LASTEXITCODE
+}
+finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
+if ($migrateExitCode -ne 0) { throw "Prisma migrate status failed.`n$($migrateStatus | Out-String)" }
 $migrateText=($migrateStatus | Out-String).Trim()
 Write-Host $migrateText
 if ($migrateText -notmatch 'Database schema is up to date!') { throw "Database schema is not reported up to date. Drop is blocked." }
