@@ -15,12 +15,13 @@ function Invoke-ChildScript {
     $old=$ErrorActionPreference
     try {
         $ErrorActionPreference="Continue"
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $path
-        $code=$LASTEXITCODE
+        $childOutput=@(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $path 2>&1)
+        $code=[int]$LASTEXITCODE
     } finally {
         $ErrorActionPreference=$old
     }
-    return $code
+    if ($childOutput.Count -gt 0) { $childOutput | Out-Host }
+    return [int]$code
 }
 
 function Invoke-NativeCapture {
