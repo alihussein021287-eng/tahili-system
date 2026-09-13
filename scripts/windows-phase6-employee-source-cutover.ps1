@@ -120,7 +120,7 @@ ORDER BY 1;
 '@
 $countsBefore = Invoke-PsqlText $preSql
 Write-Host $countsBefore
-if (($countsBefore -split "`r?`n" | Where-Object { $_ -eq 'employee_total|0' }).Count -ne 1) { throw "Employee table is no longer empty. Stop before source cutover." }
+if (@($countsBefore -split "`r?`n" | Where-Object { $_ -eq 'employee_total|0' }).Count -ne 1) { throw "Employee table is no longer empty. Stop before source cutover." }
 
 $targets = @(
     "src\lib\lookups.ts",
