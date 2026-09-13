@@ -82,8 +82,12 @@ $guardBefore = Get-SourceGuard $targets
 $cats = Read-Utf8 "src\app\(app)\maintenance\cats.ts"
 $page = Read-Utf8 "src\app\(app)\maintenance\page.tsx"
 
-$oldCat='  attendance: { label: "الحضور والموظفون", tables: [''"public"."Attendance"'', ''"public"."Employee"''] },'
-$newCat='  attendance: { label: "الحضور", tables: [''"public"."Attendance"''], note: "يمسح سجلات الحضور فقط؛ ملفات الموظفين تبقى محفوظة." },'
+# Keep this PowerShell file ASCII-only for Windows PowerShell 5.1.
+# TypeScript \u escapes render the Arabic label correctly at runtime.
+$attendanceLines = @($cats -split "`n" | Where-Object { $_ -match '^\s*attendance:\s*\{' -and $_ -match '"public"\."Employee"' })
+if ($attendanceLines.Count -ne 1) { throw "Expected exactly one maintenance attendance line containing the Employee table literal." }
+$oldCat = $attendanceLines[0]
+$newCat='  attendance: { label: "\u0627\u0644\u062d\u0636\u0648\u0631", tables: [''"public"."Attendance"''] },'
 $oldCard='    { key: "attendance", count: c[12] + c[13] },'
 $newCard='    { key: "attendance", count: c[12] },'
 
