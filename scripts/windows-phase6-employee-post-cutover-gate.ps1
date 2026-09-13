@@ -61,6 +61,10 @@ function Find-SourceMatches {
     }
     return $rows.ToArray()
 }
+function Get-UniqueMatchFiles {
+    param([object[]]$Rows)
+    return @($Rows | ForEach-Object { $_.File } | Sort-Object -Unique)
+}
 
 Write-Host ""
 Write-Host "=== PHASE 6A EMPLOYEE POST-CUTOVER GATE ==="
@@ -116,10 +120,15 @@ $literalEmployeeTable = @(Find-SourceMatches '["'']Employee["'']' 'EMPLOYEE_TABL
 $getEmployees = @(Find-SourceMatches '\bgetEmployees\b' 'GET_EMPLOYEES')
 $legacyEmployeeId = @(Find-SourceMatches '\blegacyEmployeeId\b' 'LEGACY_EMPLOYEE_ID')
 
-Write-Host "PRISMA_EMPLOYEE|files=$(@($prismaEmployee.File | Sort-Object -Unique).Count)|hits=$($prismaEmployee.Count)"
-Write-Host "EMPLOYEE_TABLE_LITERAL|files=$(@($literalEmployeeTable.File | Sort-Object -Unique).Count)|hits=$($literalEmployeeTable.Count)"
-Write-Host "GET_EMPLOYEES|files=$(@($getEmployees.File | Sort-Object -Unique).Count)|hits=$($getEmployees.Count)"
-Write-Host "LEGACY_EMPLOYEE_ID|files=$(@($legacyEmployeeId.File | Sort-Object -Unique).Count)|hits=$($legacyEmployeeId.Count)"
+$prismaEmployeeFiles = @(Get-UniqueMatchFiles $prismaEmployee)
+$literalEmployeeFiles = @(Get-UniqueMatchFiles $literalEmployeeTable)
+$getEmployeeFiles = @(Get-UniqueMatchFiles $getEmployees)
+$legacyEmployeeIdFiles = @(Get-UniqueMatchFiles $legacyEmployeeId)
+
+Write-Host "PRISMA_EMPLOYEE|files=$($prismaEmployeeFiles.Count)|hits=$($prismaEmployee.Count)"
+Write-Host "EMPLOYEE_TABLE_LITERAL|files=$($literalEmployeeFiles.Count)|hits=$($literalEmployeeTable.Count)"
+Write-Host "GET_EMPLOYEES|files=$($getEmployeeFiles.Count)|hits=$($getEmployees.Count)"
+Write-Host "LEGACY_EMPLOYEE_ID|files=$($legacyEmployeeIdFiles.Count)|hits=$($legacyEmployeeId.Count)"
 
 if ($prismaEmployee.Count -ne 0) { throw "Operational prisma.employee references remain under src/." }
 
@@ -144,10 +153,6 @@ $csvPath=Join-Path $auditDir "42-PHASE6-EMPLOYEE-POST-CUTOVER-SOURCE.csv"
 $allRows=@($prismaEmployee + $literalEmployeeTable + $getEmployees + $legacyEmployeeId)
 $allRows | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
 
-$remainingLiteralFiles=@($literalEmployeeTable.File | Sort-Object -Unique)
-$remainingGetEmployeeFiles=@($getEmployees.File | Sort-Object -Unique)
-$remainingLegacyIdFiles=@($legacyEmployeeId.File | Sort-Object -Unique)
-
 $reportPath=Join-Path $auditDir "42-PHASE6-EMPLOYEE-POST-CUTOVER-GATE.md"
 $report=@"
 # Phase 6A - Employee Post-Cutover Gate
@@ -161,10 +166,10 @@ Database:
 $dbCounts
 
 Source summary:
-- PRISMA_EMPLOYEE: files=$(@($prismaEmployee.File | Sort-Object -Unique).Count), hits=$($prismaEmployee.Count)
-- EMPLOYEE_TABLE_LITERAL: files=$($remainingLiteralFiles.Count), hits=$($literalEmployeeTable.Count)
-- GET_EMPLOYEES: files=$($remainingGetEmployeeFiles.Count), hits=$($getEmployees.Count)
-- LEGACY_EMPLOYEE_ID: files=$($remainingLegacyIdFiles.Count), hits=$($legacyEmployeeId.Count)
+- PRISMA_EMPLOYEE: files=$($prismaEmployeeFiles.Count), hits=$($prismaEmployee.Count)
+- EMPLOYEE_TABLE_LITERAL: files=$($literalEmployeeFiles.Count), hits=$($literalEmployeeTable.Count)
+- GET_EMPLOYEES: files=$($getEmployeeFiles.Count), hits=$($getEmployees.Count)
+- LEGACY_EMPLOYEE_ID: files=$($legacyEmployeeIdFiles.Count), hits=$($legacyEmployeeId.Count)
 - SCHEMA_EMPLOYEE_MODEL: $schemaEmployeeModel
 - SCHEMA_LEGACY_EMPLOYEE_ID: $schemaLegacyEmployeeId
 
