@@ -59,7 +59,7 @@ function Find-SourceMatches {
             }
         }
     }
-    return @($rows)
+    return $rows.ToArray()
 }
 
 Write-Host ""
@@ -111,10 +111,10 @@ if (@($dbLines | Where-Object { $_ -eq 'employee_table_present|1' }).Count -ne 1
 if (@($dbLines | Where-Object { $_ -eq 'employee_total|0' }).Count -ne 1) { throw "Employee table is not empty. Destructive cleanup is blocked." }
 if (@($dbLines | Where-Object { $_ -eq 'employee_fk_inbound|0' }).Count -ne 1) { throw "Inbound Employee foreign keys remain. Destructive cleanup is blocked." }
 
-$prismaEmployee = Find-SourceMatches 'prisma\.employee\b' 'PRISMA_EMPLOYEE'
-$literalEmployeeTable = Find-SourceMatches '["'']Employee["'']' 'EMPLOYEE_TABLE_LITERAL'
-$getEmployees = Find-SourceMatches '\bgetEmployees\b' 'GET_EMPLOYEES'
-$legacyEmployeeId = Find-SourceMatches '\blegacyEmployeeId\b' 'LEGACY_EMPLOYEE_ID'
+$prismaEmployee = @(Find-SourceMatches 'prisma\.employee\b' 'PRISMA_EMPLOYEE')
+$literalEmployeeTable = @(Find-SourceMatches '["'']Employee["'']' 'EMPLOYEE_TABLE_LITERAL')
+$getEmployees = @(Find-SourceMatches '\bgetEmployees\b' 'GET_EMPLOYEES')
+$legacyEmployeeId = @(Find-SourceMatches '\blegacyEmployeeId\b' 'LEGACY_EMPLOYEE_ID')
 
 Write-Host "PRISMA_EMPLOYEE|files=$(@($prismaEmployee.File | Sort-Object -Unique).Count)|hits=$($prismaEmployee.Count)"
 Write-Host "EMPLOYEE_TABLE_LITERAL|files=$(@($literalEmployeeTable.File | Sort-Object -Unique).Count)|hits=$($literalEmployeeTable.Count)"
