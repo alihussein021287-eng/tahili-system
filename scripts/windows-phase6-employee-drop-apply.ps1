@@ -165,7 +165,9 @@ $preTableLine=@($preLines | Where-Object { $_ -like 'public_table_count|*' })
 if ($preTableLine.Count -ne 1) { throw "Could not capture public table count." }
 $preTableCount=[int](($preTableLine[0] -split '\|')[1])
 
-$appliedSql="SELECT count(*) FROM \"_prisma_migrations\" WHERE migration_name = '$migrationName' AND finished_at IS NOT NULL AND rolled_back_at IS NULL;"
+$appliedSql=@"
+SELECT count(*) FROM "_prisma_migrations" WHERE migration_name = '$migrationName' AND finished_at IS NOT NULL AND rolled_back_at IS NULL;
+"@
 $appliedBefore=Invoke-PsqlText $script:dbName $appliedSql
 if ($appliedBefore.Trim() -ne '0') { throw "Prepared migration is already recorded as applied. Stop for review." }
 
