@@ -168,7 +168,7 @@ $detailCsv = Join-Path $auditDir "55-PHASE6-CARESTAGE-CUTOVER-DETAIL.csv"
 $workItemCsv = Join-Path $auditDir "55-PHASE6-WORKITEM-CANDIDATE-FILES.csv"
 $fileSummary | Sort-Object File | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $summaryCsv
 $records | Sort-Object File,Line,Category | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $detailCsv
-$globalWorkItemFiles | Sort-Object Hits -Descending,File | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $workItemCsv
+$globalWorkItemFiles | Sort-Object -Property @{Expression='Hits';Descending=$true},File | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $workItemCsv
 
 $reportPath = Join-Path $auditDir "55-PHASE6-CARESTAGE-OPERATIONAL-CUTOVER-DETAIL.md"
 $sb = New-Object System.Text.StringBuilder
@@ -197,9 +197,9 @@ foreach ($r in ($records | Sort-Object File,Line,Category)) {
     [void]$sb.AppendLine("")
     [void]$sb.AppendLine("## $($r.File):$($r.Line) [$($r.Category)] $($r.Operation)")
     [void]$sb.AppendLine("WorkItem nearby: $($r.WorkItemNearby)")
-    [void]$sb.AppendLine("```")
+    [void]$sb.AppendLine('```')
     [void]$sb.AppendLine($r.Context)
-    [void]$sb.AppendLine("```")
+    [void]$sb.AppendLine('```')
 }
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("Safety decision:")
