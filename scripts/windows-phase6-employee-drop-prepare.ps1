@@ -153,7 +153,7 @@ try {
     Write-Utf8NoBom $schemaPath $schemaAfter
 
     New-Item -ItemType Directory -Force -Path $migrationDir | Out-Null
-    $migrationSql="-- Phase 6A: remove empty legacy Employee table after StaffMember cutover.`nDROP TABLE \"Employee\";`n"
+    $migrationSql='-- Phase 6A: remove empty legacy Employee table after StaffMember cutover.' + "`n" + 'DROP TABLE "Employee";' + "`n"
     Write-Utf8NoBom (Join-Path $migrationDir "migration.sql") $migrationSql
     Write-Host "Prepared migration: $migrationName"
 
