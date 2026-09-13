@@ -30,6 +30,31 @@ function Invoke-ComposeCapture {
     return Invoke-NativeCapture "docker" @($Compose + $Arguments)
 }
 
+function Invoke-PsqlText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Sql,
+        [Parameter(Mandatory = $true)][string]$DbUser,
+        [Parameter(Mandatory = $true)][string]$DbName
+    )
+    $args = $Compose + @(
+        "exec", "-T", "postgres",
+        "psql", "-X", "-v", "ON_ERROR_STOP=1",
+        "-U", $DbUser,
+        "-d", $DbName,
+        "-Atq"
+    )
+    $old = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $out = $Sql | & docker @args 2>&1
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $old
+    }
+    if ($code -ne 0) { throw "psql failed with exit code $code.`n$($out | Out-String)" }
+    return (($out | Out-String).Trim())
+}
+
 function Test-PassReport {
     param([string]$RelativePath,[string]$Label)
     $path = Join-Path $Project $RelativePath
@@ -126,8 +151,7 @@ UNION ALL SELECT 'staff_members_active|' || count(*) FROM "staff_members" WHERE 
 UNION ALL SELECT 'staff_legacy_linked|' || count(*) FROM "staff_members" WHERE "legacyEmployeeId" IS NOT NULL
 ORDER BY 1;
 '@
-$dbArgs = $Compose + @("exec","-T","postgres","psql","-X","-v","ON_ERROR_STOP=1","-U",$dbUser,"-d",$dbName,"-Atq","-c",$dbSql)
-$dbBefore = Invoke-NativeCapture "docker" $dbArgs
+$dbBefore = Invoke-PsqlText $dbSql $dbUser $dbName
 Write-Host $dbBefore
 $dbLines=@($dbBefore -split "`r?`n")
 if (@($dbLines | Where-Object { $_ -eq 'employee_table_present|1' }).Count -ne 1) { throw "Employee table is not present before runtime cutover." }
@@ -170,7 +194,7 @@ try {
     Write-Host $status
     if ($status -notmatch 'Database schema is up to date!') { throw "New app container does not report an up-to-date Prisma schema." }
 
-    $dbAfter=Invoke-NativeCapture "docker" $dbArgs
+    $dbAfter=Invoke-PsqlText $dbSql $dbUser $dbName
     if ($dbAfter.Trim() -ne $dbBefore.Trim()) { throw "Database Employee/Staff counts changed during runtime cutover." }
     Write-Host "Database write guard: PASS"
 
