@@ -137,7 +137,7 @@ SELECT
 FROM pg_constraint c
 WHERE c.contype='f'
   AND (c.confrelid='"CareStage"'::regclass OR c.conrelid='"CareStage"'::regclass)
-ORDER BY 1,2,3;
+ORDER BY 1;
 '@
 $fkRows=Invoke-PsqlText $script:dbName $fkSql
 Write-Host ""
