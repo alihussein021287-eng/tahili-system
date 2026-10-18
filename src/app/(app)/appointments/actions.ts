@@ -2,11 +2,18 @@
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
+import { assertPatientActionScope } from "@/lib/patient-guard";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { parseOrThrow, appointmentCreateSchema, appointmentStatusSchema } from "@/lib/validate";
 import { getAdminConfig } from "@/lib/admin-config";
 import { assertCenterHallById } from "@/lib/center-halls";
+
+async function assertAppointmentPatientScope(id: string) {
+  const row = await prisma.appointment.findUnique({ where: { id }, select: { patientId: true } });
+  if (!row) throw new Error("الموعد غير موجود");
+  await assertPatientActionScope(row.patientId, "record");
+}
 
 function normalizeDateTime(value: Date) {
   const d = new Date(value);
@@ -72,6 +79,7 @@ async function linkedPlan(id: string) {
 
 export async function createAppointment(fd: FormData) {
   await assertPerm("appointments.create");
+  await assertPatientActionScope(fd.get("patientId")?.toString() || "", "record");
   const v = parseOrThrow(appointmentCreateSchema, {
     patientId: fd.get("patientId")?.toString() || "",
     scheduledAt: fd.get("scheduledAt")?.toString() || "",
@@ -110,6 +118,7 @@ export async function createAppointment(fd: FormData) {
 
 export async function updateAppointmentCenterHall(id: string, fd: FormData) {
   await assertPerm("appointments.edit");
+  await assertAppointmentPatientScope(id);
   const current = await prisma.appointment.findUnique({ where: { id }, select: { sessionId: true, patientId: true, assignedTo: true, scheduledAt: true } });
   if (!current) redirect(withSaved("/appointments", "الموعد غير موجود"));
   if (current.sessionId) redirect(withSaved("/appointments", "موعد الجلسة مرتبط بالخطة العلاجية"));
@@ -132,18 +141,22 @@ export async function updateAppointmentCenterHall(id: string, fd: FormData) {
 
 export async function setAppointmentStatus(id: string, status: string) {
   await assertPerm("appointments.edit");
+  await assertAppointmentPatientScope(id);
   const validStatus = parseOrThrow(appointmentStatusSchema, status);
   const linked = await linkedPlan(id);
   if (linked?.session?.treatmentPlanId && validStatus === "COMPLETED") await assertPerm("therapy.admin.override");
   if (linked?.session?.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
-  await prisma.appointment.update({ where: { id }, data: { status: validStatus as any } });
-  await logAudit({ action: "UPDATE", tableName: "appointments", recordId: id, newValue: { status } });
+  // Conditional update: repeating the current status is a no-op and writes no audit entry, even when requests race.
+  const changed = await prisma.appointment.updateMany({ where: { id, status: { not: validStatus as any } }, data: { status: validStatus as any } });
+  if (changed.count === 1) await logAudit({ action: "UPDATE", tableName: "appointments", recordId: id, newValue: { status: validStatus } });
+  else if (!(await prisma.appointment.count({ where: { id } }))) throw new Error("الموعد غير موجود");
   revalidatePath("/appointments"); revalidatePath("/appointments/calendar"); revalidatePath("/");
 }
 
 export async function deleteAppointment(id: string) {
   await assertAdminDelete();
   await assertPerm("appointments.delete");
+  await assertAppointmentPatientScope(id);
   await prisma.appointment.delete({ where: { id } });
   await logAudit({ action: "DELETE", tableName: "appointments", recordId: id });
   revalidatePath("/appointments"); revalidatePath("/appointments/calendar"); revalidatePath("/");
@@ -151,6 +164,7 @@ export async function deleteAppointment(id: string) {
 
 export async function rescheduleAppointment(id: string, fd: FormData) {
   await assertPerm("appointments.edit");
+  await assertAppointmentPatientScope(id);
   const t = fd.get("scheduledAt")?.toString();
   if (!t) return;
   if (Number.isNaN(Date.parse(t))) throw new Error("تاريخ/وقت غير صحيح");

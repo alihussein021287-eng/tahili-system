@@ -1,4 +1,5 @@
 import { requirePerm } from "@/lib/access";
+import { requirePatientPageScope } from "@/lib/patient-guard";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
 import { notFound } from "next/navigation";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function EditPatient({ params }: { params: Promise<{ id: string }> }) {
   await requirePerm("patients.edit");
   const { id } = await params;
+  await requirePatientPageScope(id, "administrative");
   const [patient, lookups] = await Promise.all([
     prisma.patient.findUnique({ where: { id } }),
     getLookups(),

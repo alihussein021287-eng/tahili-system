@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
 
-const prisma = new PrismaClient();
+// Created on first use, so importing the lists does not open a database connection.
+let client: PrismaClient | undefined;
+const db = () => (client ??= new PrismaClient());
 
 export const COMMON_MEDICATIONS = [
   ["باراسيتامول 500 ملغ - Paracetamol", "شريط", 20],
@@ -48,7 +50,7 @@ export const COMMON_MEDICATIONS = [
 
 export async function seedCommonMedications() {
   for (const [name, unit, minQuantity] of COMMON_MEDICATIONS) {
-    await prisma.medication.upsert({
+    await db().medication.upsert({
       where: { name }, update: {}, create: { name, unit, minQuantity, quantity: 0 },
     });
   }
@@ -56,5 +58,5 @@ export async function seedCommonMedications() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  seedCommonMedications().finally(() => prisma.$disconnect());
+  seedCommonMedications().finally(() => db().$disconnect());
 }

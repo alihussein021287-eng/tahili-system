@@ -1,5 +1,6 @@
 "use server";
 import { prisma } from "@/lib/db";
+import { assertOptionalPatientScope } from "@/lib/patient-guard";
 import { logAudit } from "@/lib/audit";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { revalidatePath } from "next/cache";
@@ -8,6 +9,7 @@ import { redirect } from "next/navigation";
 export async function addMedDose(fd: FormData) {
   await assertPerm("meds.manage");
   const patientId = fd.get("patientId")?.toString();
+  await assertOptionalPatientScope(patientId);
   const drug = fd.get("drug")?.toString().trim();
   const timeLabel = fd.get("timeLabel")?.toString().trim();
   if (!patientId || !drug || !timeLabel) redirect("/meds?saved=" + encodeURIComponent("أكمل: المريض والدواء والوقت"));

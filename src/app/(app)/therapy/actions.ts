@@ -1,10 +1,12 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { withSerializableRetry } from "@/lib/serializable-retry";
 import { assertPerm, requireSession } from "@/lib/access";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { boundedSessionDates, expectedTreatmentEnd, positiveInt, recoveryPercent } from "@/lib/therapy-plan-rules";
+import { handOverInTransaction } from "@/lib/handoff-service";
 
 const DAY_MS = 86400000;
 
@@ -54,7 +56,7 @@ export async function createPhysicalTherapyPlan(patientId: string, fd: FormData)
   const expectedEndDate = expectedTreatmentEnd(startDate, treatmentDays);
   const dates = boundedSessionDates(startDate, expectedEndDate, weekdays, plannedSessions, sessionTime);
 
-  const plan = await prisma.$transaction(async (tx) => {
+  const plan = await withSerializableRetry(() => prisma.$transaction(async (tx) => {
     const existing = await tx.treatmentPlan.findUnique({ where: { referralRequestId } });
     if (existing) return existing;
     const referral = await tx.referralRequest.findFirst({ where: { id: referralRequestId, patientId, status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { destinationCenter: true } });
@@ -86,13 +88,17 @@ export async function createPhysicalTherapyPlan(patientId: string, fd: FormData)
       treatmentPlan: created.title, totalSessions: plannedSessions, actualSessions: 0, startDate, endDate: expectedEndDate,
       weekdays: created.weekdays, sessionTime, hallId, hall: hall.name, therapistId, therapist: therapist.fullName, scheduledById: who.id,
     } });
-    await tx.appointment.createMany({ data: dates.map((scheduledAt) => ({ patientId, scheduledAt, type: "جلسة علاج طبيعي", therapyType: created.therapyType, assignedToId: therapistId, assignedTo: therapist.fullName, sessionId: session.id, status: "SCHEDULED", notes: `القاعة: ${hall.name}` })) });
+    await tx.appointment.createMany({ data: dates.map((scheduledAt, index) => ({ patientId, scheduledAt, type: `جلسة علاج طبيعي ${index + 1} من ${dates.length}`, therapyType: created.therapyType, assignedToId: therapistId, assignedTo: therapist.fullName, sessionId: session.id, status: "SCHEDULED", notes: `القاعة: ${hall.name}` })) });
     await tx.auditLog.create({ data: { userId: who.id, action: "CREATE", tableName: "TreatmentPlan", recordId: created.id, newValue: { referralRequestId, therapistId, hallId, plannedSessions, scheduled: dates.length } } });
-    await tx.notification.create({ data: { targetUserId: therapistId, title: "برنامج علاج طبيعي جديد", body: "راجع جدول جلساتك اليومية.", link: "/therapy/today" } });
+    // The patient now belongs to the therapist: one handoff, so the file, the list and the care board all agree.
+    await handOverInTransaction(tx as any, {
+      patientId, actorId: who.id, actorRole: who.role as any, toRole: "THERAPIST", toUserId: therapistId, toCenterId: centerId,
+      note: `برنامج علاج طبيعي: ${dates.length} جلسة تبدأ ${dates[0]?.toLocaleDateString("ar-IQ") ?? ""} — راجع «جلساتي اليوم»`,
+    });
     return created;
-  }, { isolationLevel: "Serializable" });
+  }, { isolationLevel: "Serializable" }));
   revalidatePath(`/patients/${patientId}`); revalidatePath("/therapy"); revalidatePath("/therapy/today"); revalidatePath("/workload"); revalidatePath("/appointments");
-  redirect(`/patients/${patientId}?therapyPlan=${plan.id}`);
+  redirect(`/patients/${patientId}?tab=therapyProgram&therapyPlan=${plan.id}`);
 }
 
 export async function updatePhysicalTherapyPlan(planId: string, fd: FormData) {
@@ -132,7 +138,7 @@ export async function addPeriodicTherapyEvaluation(planId: string, fd: FormData)
 export async function recordTherapyAppointment(appointmentId: string, fd: FormData) {
   const who = await actor("therapy.session.record");
   const completed = fd.get("status")?.toString() === "COMPLETED";
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await withSerializableRetry(() => prisma.$transaction(async (tx) => {
     const appointment = await tx.appointment.findUnique({ where: { id: appointmentId }, include: { session: { include: { plan: true } } } });
     if (!appointment?.session || appointment.assignedToId !== who.id) throw new Error("المعالج المسند فقط يستطيع تسجيل الجلسة");
     if (appointment.session.centerId && who.role !== "ADMIN") {
@@ -162,7 +168,7 @@ export async function recordTherapyAppointment(appointmentId: string, fd: FormDa
     }
     await tx.auditLog.create({ data: { userId: who.id, action: "UPDATE", tableName: "therapy_session_logs", recordId: existing?.id || appointmentId, newValue: { appointmentId, status: data.status, attended: data.attended } } });
     return { patientId: appointment.patientId, repeated: false };
-  }, { isolationLevel: "Serializable" });
+  }, { isolationLevel: "Serializable" }));
   revalidatePath("/therapy/today"); revalidatePath("/appointments"); revalidatePath(`/patients/${result.patientId}`); revalidatePath("/workload");
 }
 
@@ -187,7 +193,7 @@ export async function finalizeTherapyPlan(planId: string, fd: FormData) {
       const dates = sessionDates(extensionStart, weekdays, extendedCount, plan.sessionTime || "10:00");
       const conflict = await tx.appointment.findFirst({ where: { scheduledAt: { in: dates }, status: "SCHEDULED", OR: [{ patientId: plan.patientId }, { assignedToId: plan.therapistId }, { session: { is: { hallId: plan.hallId } } }] } });
       if (conflict) throw new Error("تعارض في جدولة جلسات التمديد");
-      await tx.appointment.createMany({ data: dates.map((scheduledAt) => ({ patientId: plan.patientId, scheduledAt, type: "جلسة علاج طبيعي، تمديد", therapyType: plan.therapyType, assignedToId: plan.therapistId, assignedTo: plan.therapist?.fullName, sessionId: program.id, status: "SCHEDULED", notes: plan.hall ? `القاعة: ${plan.hall.name}` : null })) });
+      await tx.appointment.createMany({ data: dates.map((scheduledAt, index) => ({ patientId: plan.patientId, scheduledAt, type: `جلسة علاج طبيعي ${(program.totalSessions || 0) + index + 1} من ${(program.totalSessions || 0) + dates.length} (تمديد)`, therapyType: plan.therapyType, assignedToId: plan.therapistId, assignedTo: plan.therapist?.fullName, sessionId: program.id, status: "SCHEDULED", notes: plan.hall ? `القاعة: ${plan.hall.name}` : null })) });
       extendedEnd = dates.at(-1) || extendedEnd;
       await tx.therapySession.update({ where: { id: program.id }, data: { totalSessions: { increment: extendedCount }, endDate: extendedEnd } });
     }
@@ -200,11 +206,55 @@ export async function finalizeTherapyPlan(planId: string, fd: FormData) {
       plannedSessions: decision === "EXTEND" ? { increment: extendedCount } : undefined, expectedEndDate: extendedEnd,
     } });
     if (decision === "END") {
-      const last = await tx.careStage.aggregate({ where: { patientId: plan.patientId }, _max: { sequence: true } });
-      await tx.careStage.create({ data: { patientId: plan.patientId, station: "الاستشارية", responsibleRole: "DOCTOR", sequence: (last._max.sequence ?? -1) + 1, note: nextAppointment ? `متابعة مرتبطة بموعد ${nextAppointment.scheduledAt.toISOString()}` : "متابعة بعد إنهاء برنامج العلاج الطبيعي", createdById: who.id } });
-      await tx.notification.create({ data: { targetRole: "DOCTOR", title: "تقييم علاج طبيعي نهائي", body: "انتهى البرنامج وأضيفت متابعة في محطة الاستشارية.", link: `/patients/${plan.patientId}` } });
+      // Back to the specialist who owns the case, as a handoff (not the old station list).
+      if (plan.specialistDoctorId) {
+        await handOverInTransaction(tx as any, {
+          patientId: plan.patientId, actorId: who.id, actorRole: who.role as any, toRole: "DOCTOR", toUserId: plan.specialistDoctorId, toCenterId: null,
+          note: nextAppointment ? `انتهى برنامج العلاج الطبيعي — متابعة بموعد ${nextAppointment.scheduledAt.toLocaleDateString("ar-IQ")}` : "انتهى برنامج العلاج الطبيعي — للمتابعة",
+        });
+      } else {
+        await tx.notification.create({ data: { targetRole: "DOCTOR", title: "تقييم علاج طبيعي نهائي", body: "انتهى البرنامج ويحتاج متابعة طبيب الاختصاص.", link: `/patients/${plan.patientId}` } });
+      }
     }
     await tx.auditLog.create({ data: { userId: who.id, action: "UPDATE", tableName: "TreatmentPlan", recordId: planId, newValue: { evaluated: true, finalDecision: decision, extensionSessions: extendedCount, followUpAppointmentId: nextAppointment?.id } } });
   });
   revalidatePath("/therapy"); revalidatePath(`/therapy/plans/${planId}/final`);
+}
+
+/**
+ * Move one therapy session to another day or time. The assigned therapist can move their own
+ * session; the head therapist of the centre can move any. Same clash rules as scheduling.
+ */
+export async function rescheduleTherapyAppointment(appointmentId: string, fd: FormData) {
+  const session = await requireSession();
+  const who = { id: (session.user as any).id as string, role: (session.user as any).role as string, name: session.user?.name || "" };
+  const when = new Date(fd.get("scheduledAt")?.toString() || "");
+  if (Number.isNaN(when.getTime())) throw new Error("حدد اليوم والوقت الجديد");
+  if (when.getTime() < Date.now() - 60_000) throw new Error("الموعد الجديد لازم يكون بالمستقبل");
+  const reason = fd.get("reason")?.toString().trim() || null;
+  const result = await withSerializableRetry(() => prisma.$transaction(async (tx) => {
+    const appointment = await tx.appointment.findUnique({ where: { id: appointmentId }, include: { session: { include: { plan: true } } } });
+    if (!appointment?.session) throw new Error("الموعد غير مرتبط ببرنامج علاج");
+    if (!["SCHEDULED", "NOSHOW"].includes(appointment.status)) throw new Error("يُنقل الموعد المجدول أو الغياب فقط");
+    if (appointment.session.plan?.status === "COMPLETED") throw new Error("الخطة مغلقة");
+    const ownTherapist = appointment.assignedToId === who.id;
+    if (ownTherapist) await assertPerm("therapy.session.record");
+    else {
+      await assertPerm("therapy.schedule.reschedule");
+      if (appointment.session.centerId) await assertCenterManager(tx, who, appointment.session.centerId);
+    }
+    const clash = await tx.appointment.findFirst({ where: {
+      id: { not: appointmentId }, scheduledAt: when, status: "SCHEDULED",
+      OR: [{ patientId: appointment.patientId }, ...(appointment.assignedToId ? [{ assignedToId: appointment.assignedToId }] : []), ...(appointment.session.hallId ? [{ session: { is: { hallId: appointment.session.hallId } } }] : [])],
+    }, include: { patient: { select: { fullName: true } } } });
+    if (clash) throw new Error(`تعارض بنفس الوقت مع ${clash.patient.fullName}`);
+    const before = appointment.scheduledAt;
+    await tx.appointment.update({ where: { id: appointmentId }, data: { scheduledAt: when, status: "SCHEDULED" } });
+    await tx.auditLog.create({ data: { userId: who.id, action: "UPDATE", tableName: "appointments", recordId: appointmentId, oldValue: { scheduledAt: before, status: appointment.status }, newValue: { scheduledAt: when, status: "SCHEDULED", reason } } });
+    if (!ownTherapist && appointment.assignedToId) {
+      await tx.notification.create({ data: { targetUserId: appointment.assignedToId, title: "نُقل موعد جلسة", body: `${appointment.type ?? "جلسة"}: ${when.toLocaleString("ar-IQ")}`, link: "/therapy/today" } });
+    }
+    return appointment.patientId;
+  }, { isolationLevel: "Serializable" }));
+  revalidatePath("/therapy/today"); revalidatePath("/appointments"); revalidatePath(`/patients/${result}`); revalidatePath("/therapy");
 }

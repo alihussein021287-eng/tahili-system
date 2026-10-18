@@ -69,7 +69,7 @@ export async function proxy(request: NextRequest) {
     }
 
     const headers = new Headers(request.headers);
-    headers.set("cookie", serializedCookieHeader(downstreamCookiesForLocalSession(request.cookies.getAll())));
+    headers.set("cookie", serializedCookieHeader(downstreamCookiesForLocalSession(request.cookies.getAll(), access.sessionCookieName)));
     headers.delete("x-request-id"); headers.delete("x-tahili-request-id"); headers.delete("x-tahili-request-id-source");
     headers.set("x-tahili-request-id", id); headers.set("x-tahili-request-id-source", "proxy");
     const response = NextResponse.next({ request: { headers } });

@@ -11,6 +11,10 @@ async function tab(page: Page, name: string) {
   const button = page.locator("button").filter({ hasText: name }).last();
   await expect(button).toBeVisible({ timeout: 10_000 });
   await button.click();
+  // Add forms in the patient file are folded behind "+ إضافة"; open them for the steps below.
+  // the tab content renders after the click: wait for the folded forms before opening them
+  await page.locator("details.patient-add-form").first().waitFor({ state: "attached", timeout: 10_000 }).catch(() => undefined);
+  await page.locator("details.patient-add-form").evaluateAll((items) => items.forEach((item) => item.setAttribute("open", "")));
 }
 
 async function bodyIncludesOnTab(page: Page, tabName: string, text: string) {
@@ -45,16 +49,20 @@ async function diagnosis(browser: Browser, patientId: string, label: string) {
 async function createRx(browser: Browser, patientId: string, medicationId: number, type: "INTERNAL" | "EXTERNAL", label: string) {
   const actor = await pageFor(browser, "DOCTOR");
   await actor.page.goto(`/patients/${patientId}`);
-  await tab(actor.page, "الوصفات والتجهيز");
+  await tab(actor.page, "الوصفات");
   const form = actor.page.locator('form:has(input[name="prescriptionType"])');
-  await pickCombo(form, 0, type === "INTERNAL" ? "داخلية من صيدلية المجمع" : "خارجية للطباعة");
+  if (type === "INTERNAL") {
+    const branch = await prisma.branch.findUniqueOrThrow({ where: { id: Number(process.env.ACCEPTANCE_BRANCH_ID) } });
+    await pickCombo(form, 0, branch.name);
+  }
+  await pickCombo(form, 1, type === "INTERNAL" ? "داخلية من صيدلية المجمع" : "خارجية للطباعة");
   const medication = await prisma.medication.findUniqueOrThrow({ where: { id: medicationId } });
-  await pickCombo(form, 1, medication.name);
+  await pickCombo(form, 2, medication.name);
   await form.locator('input[name="usage"]').fill("مرة يومياً");
   await form.locator('input[name="quantity"]').fill("4");
   await form.locator('input[name="duration"]').fill("4 أيام");
   await form.locator('input[name="doctor"]').fill("ACCEPTANCE-20260713 DOCTOR");
-  await submitServerAction({ name: `rx-${label}`, role: "DOCTOR", browser, context: actor.context, page: actor.page, submit: form.getByRole("button", { name: "إضافة" }), dbExpectation: async () => Boolean(await prisma.prescription.findFirst({ where: { patientId, medicationId, prescriptionType: type } })), confirmation: async p => bodyIncludesOnTab(p, "الوصفات والتجهيز", medication.name), recoveryUrl: `/patients/${patientId}?tab=rx`, roleState: statePath(credential("DOCTOR")) });
+  await submitServerAction({ name: `rx-${label}`, role: "DOCTOR", browser, context: actor.context, page: actor.page, submit: form.getByRole("button", { name: "إضافة" }), dbExpectation: async () => Boolean(await prisma.prescription.findFirst({ where: { patientId, medicationId, prescriptionType: type } })), confirmation: async p => bodyIncludesOnTab(p, "الوصفات", medication.name), recoveryUrl: `/patients/${patientId}?tab=rx`, roleState: statePath(credential("DOCTOR")) });
   return prisma.prescription.findFirstOrThrow({ where: { patientId, medicationId, prescriptionType: type } });
 }
 
@@ -72,7 +80,7 @@ test("الوصفة الداخلية: الأهلية والطابور والصر�
   await submitServerAction({ name: "dispense-internal", role: "PHARMACIST", browser, context: pharmacist.context, page: pharmacist.page, submit: dispense.getByRole("button", { name: "تجهيز كامل" }), dbExpectation: async () => (await prisma.prescription.findUnique({ where: { id: rx.id } }))?.status === "DISPENSED", confirmation: async p => !(await p.locator("body").innerText()).includes(patient.fullName), recoveryUrl: "/pharmacy", roleState: statePath(credential("PHARMACIST")) });
   const saved = await prisma.prescription.findUniqueOrThrow({ where: { id: rx.id } });
   expect(saved.isDispensed).toBe(true); expect(saved.dispensedQty).toBe(4); expect(await prisma.stockMovement.count({ where: { prescriptionId: rx.id, type: "DISPENSE" } })).toBe(1);
-  const locked = await pageFor(browser, "DOCTOR"); await locked.page.goto(`/patients/${patient.id}`); await tab(locked.page, "الوصفات والتجهيز");
+  const locked = await pageFor(browser, "DOCTOR"); await locked.page.goto(`/patients/${patient.id}`); await tab(locked.page, "الوصفات");
   await expect(locked.page.getByText(/ج.*ه.*زت/)).toBeVisible(); await expect(locked.page.locator(`tr:has-text("${medication.name}") input[name="prescriptionType"]`)).toHaveCount(0); await locked.context.close();
   expect(await prisma.stockMovement.aggregate({ where: { prescriptionId: rx.id }, _sum: { quantity: true } })).toMatchObject({ _sum: { quantity: 4 } });
   const evidence = await pageFor(browser, "PHARMACIST"); await evidence.page.goto("/pharmacy"); await screenshot(evidence.page, "clinical-internal-rx"); await evidence.context.close();

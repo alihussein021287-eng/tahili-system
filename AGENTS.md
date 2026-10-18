@@ -52,3 +52,31 @@ Allowed work is presentation-only: layout, navigation organization, shared UI co
 Run `node scripts/audit-project.mjs` after adding or removing routes, actions, components, roles, permissions, models, or migrations. The inventory must report zero unclassified pages before commit.
 
 For VM cleanup or resource checks, use `tahili-environment-hygiene`: dry-run first, protect all volumes/databases/uploads/backups/credentials and active images, and keep development and production completely separate.
+
+<!-- ai-mission:begin -->
+## AI Mission: rules for Codex
+
+This project runs an autonomous build loop (`ai-mission`). Codex implements ONE task at a time;
+Claude plans and judges; the gates in `.ai/verify.json` decide pass or fail.
+
+Work rules:
+- Implement only the given task. No unrelated refactors.
+- Every acceptance criterion gets a test that fails without your change.
+- Run the gate commands you are given before you finish, and fix your own failures.
+- Never delete, skip, weaken or mock away a test. Never edit anything under `.ai/` (except `.ai/workshop/setup.sh`) and never
+  touch `.env` or secret files.
+- Do not commit and do not push. The controller commits after the gates pass.
+- Creating files, installing dependencies, running tests and fixing your own errors are all
+  pre-authorized. Carry the task to completion without stopping for confirmation.
+
+Autonomy policy (the same in CLAUDE.md): for anything technical, choose the reasonable option,
+keep going, and list it under `assumptions` in your final JSON. Stop only for:
+1. a real business decision that changes what gets built,
+2. missing credentials, keys or accounts,
+3. a destructive or irreversible action,
+4. anything touching production or real money.
+To stop, fill `needs_human` in your final JSON. Do not ask questions in any other way.
+
+If the task splits into independent parts, delegate them to subagents in parallel when that
+saves time.
+<!-- ai-mission:end -->

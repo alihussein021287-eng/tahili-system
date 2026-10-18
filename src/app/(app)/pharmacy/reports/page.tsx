@@ -1,7 +1,12 @@
 import { prisma } from "@/lib/db";
+import { maskOutOfScopeMovements } from "@/lib/pharmacy-scope";
+import { currentStockViewer, batchViewWhere, movementViewWhere, orderViewWhere, visibleQuantities } from "@/lib/pharmacy-stock";
 import { PageHeader } from "@/components/PageHeader";
-import { PharmacyNav } from "@/components/PharmacyNav";
-import { requirePerm } from "@/lib/access";
+import { HubTabs } from "@/components/hub/HubTabs";
+import { currentPerms, getSession } from "@/lib/access";
+import { redirect } from "next/navigation";
+import { PHARMACY_NAV } from "@/lib/hub-nav";
+import { EXPIRY_BADGE, EXPIRY_LABEL, EXPIRY_ROW, expiryLevel } from "@/lib/pharmacy-expiry";
 import { fmtDate } from "@/lib/labels";
 import Link from "next/link";
 
@@ -10,8 +15,20 @@ export const dynamic = "force-dynamic";
 const AR_MONTHS = ["كانون2", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين1", "تشرين2", "كانون1"];
 
 export default async function PharmacyReports({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; patient?: string; med?: string }> }) {
-  await requirePerm("pharmacy.view");
+  if (!(await getSession())) redirect("/login");
+  const perms = await currentPerms();
+  const canStock = perms.has("pharmacy.view") || perms.has("inventory.view");
+  const canPurchase = perms.has("pharmacy.purchase.view");
+  if (!canStock && !canPurchase) redirect("/");
   const sp = await searchParams;
+  const header = <>
+    <PageHeader title="تقارير الصيدلية" subtitle="الصرف والاستهلاك والصلاحية والشراء" icon="📊">
+      {perms.has("datacenter.view") && perms.has("datacenter.export.pharmacy") ? <a className="btn-ghost" href="/data-center?tab=export">🗄 تصدير مخزون الصيدلية</a> : null}
+    </PageHeader>
+    <HubTabs nav={PHARMACY_NAV} active="reports" label="تبويبات الصيدلية والمخزون" perms={perms} />
+  </>;
+  const purchases = canPurchase ? <PurchaseSummary showPrices={perms.has("pharmacy.purchase.prices")} /> : null;
+  if (!canStock) return <div className="space-y-5">{header}{purchases}</div>;
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -20,24 +37,28 @@ export default async function PharmacyReports({ searchParams }: { searchParams: 
   const from = sp.from ? new Date(sp.from + "T00:00:00") : monthStart;
   const to = sp.to ? new Date(sp.to + "T23:59:59") : now;
   const medId = sp.med ? Number(sp.med) : null;
-  const dispenseWhere: any = { type: "DISPENSE", createdAt: { gte: from, lte: to } };
+  // Independent branch pharmacies: every figure is the viewer's own branch (ADMIN: all branches).
+  const viewer = await currentStockViewer();
+  const mv = movementViewWhere(viewer);
+  const dispenseWhere: any = { type: "DISPENSE", createdAt: { gte: from, lte: to }, ...mv };
   if (sp.patient) dispenseWhere.patientName = { contains: sp.patient, mode: "insensitive" };
   if (medId && !Number.isNaN(medId)) dispenseWhere.medicationId = medId;
 
   const [topMonth, topAll, lowMeds, allMeds, soonBatches, monthlyRaw, movements, meds] = await Promise.all([
-    prisma.stockMovement.groupBy({ by: ["medicationId"], where: { type: "DISPENSE", createdAt: { gte: monthStart } }, _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 10 }),
-    prisma.stockMovement.groupBy({ by: ["medicationId"], where: { type: "DISPENSE" }, _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 10 }),
+    prisma.stockMovement.groupBy({ by: ["medicationId"], where: { type: "DISPENSE", createdAt: { gte: monthStart }, ...mv }, _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 10 }),
+    prisma.stockMovement.groupBy({ by: ["medicationId"], where: { type: "DISPENSE", ...mv }, _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 10 }),
     prisma.medication.findMany({ orderBy: { name: "asc" } }),
-    prisma.medication.aggregate({ _sum: { quantity: true }, _count: true }),
-    prisma.medicationBatch.findMany({ where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: d90 } }, include: { medication: true, supplier: true }, orderBy: { expiryDate: "asc" }, take: 30 }),
-    prisma.stockMovement.findMany({ where: { type: "DISPENSE", createdAt: { gte: sixMonthsAgo } }, select: { createdAt: true, quantity: true } }),
-    prisma.stockMovement.findMany({ where: dispenseWhere, include: { medication: true }, orderBy: { createdAt: "desc" }, take: 200 }),
+    visibleQuantities(viewer),
+    prisma.medicationBatch.findMany({ where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: d90 }, ...batchViewWhere(viewer) }, include: { medication: true, supplier: true }, orderBy: { expiryDate: "asc" }, take: 30 }),
+    prisma.stockMovement.findMany({ where: { type: "DISPENSE", createdAt: { gte: sixMonthsAgo }, ...mv }, select: { createdAt: true, quantity: true } }),
+    prisma.stockMovement.findMany({ where: dispenseWhere, include: { medication: true }, orderBy: { createdAt: "desc" }, take: 200 }).then((rows) => maskOutOfScopeMovements(rows, Boolean(sp.patient))),
     prisma.medication.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
-  const medMap = new Map(lowMeds.map((m) => [m.id, m]));
-  const low = lowMeds.filter((m) => m.quantity <= m.minQuantity);
-  const totalUnits = allMeds._sum.quantity ?? 0;
+  const lowMedsBranch = lowMeds.map((m) => ({ ...m, quantity: allMeds.get(m.id) ?? 0 }));
+  const medMap = new Map(lowMedsBranch.map((m) => [m.id, m]));
+  const low = lowMedsBranch.filter((m) => m.quantity <= m.minQuantity);
+  const totalUnits = [...allMeds.values()].reduce((a, b) => a + b, 0);
   const periodTotal = movements.reduce((sum, m) => sum + m.quantity, 0);
   const byPatient = Array.from(movements.reduce((map, m) => {
     const key = m.patientName || "غير محدد";
@@ -84,8 +105,7 @@ export default async function PharmacyReports({ searchParams }: { searchParams: 
 
   return (
     <div className="space-y-5">
-      <PageHeader title="تقارير الصيدلية" subtitle="الصرف والاستهلاك والنفاذية" icon="📊" />
-      <PharmacyNav />
+      {header}
 
       <form action="/pharmacy/reports" className="card flex flex-wrap items-end gap-2 p-4">
         <div><label className="label">من</label><input name="from" type="date" className="input" defaultValue={sp.from ?? `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}-01`} /></div>
@@ -98,7 +118,7 @@ export default async function PharmacyReports({ searchParams }: { searchParams: 
 
       {/* بطاقات ملخّص */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[["إجمالي الوحدات", totalUnits], ["صرف الفترة", periodTotal], ["تحت حد التنبيه", low.length], ["دفعات قريبة النفاذ", soonBatches.length]].map(([l, v]) => (
+        {[["إجمالي الوحدات", totalUnits], ["صرف الفترة", periodTotal], ["تحت حد التنبيه", low.length], ["دفعات منتهية/عاجلة/قريبة", soonBatches.length]].map(([l, v]) => (
           <div key={l as string} className="card p-4 text-center">
             <div className="text-2xl font-bold text-gray-800">{v as number}</div>
             <div className="text-xs text-gray-400">{l}</div>
@@ -156,15 +176,15 @@ export default async function PharmacyReports({ searchParams }: { searchParams: 
           <thead><tr><th className="th">المادة</th><th className="th">الدفعة</th><th className="th">المورد</th><th className="th">النفاذية</th><th className="th">الحالة</th><th className="th">المتبقّي</th></tr></thead>
           <tbody>
             {soonBatches.map((b) => {
-              const expired = b.expiryDate && new Date(b.expiryDate) < now;
-              const within60 = b.expiryDate && new Date(b.expiryDate).getTime() <= now.getTime() + 60 * 86400000;
+              const level = expiryLevel(b.expiryDate, now);
+              const expired = level === "expired";
               return (
-                <tr key={b.id} className={`hover:bg-gray-50 ${expired ? "bg-red-50/40" : ""}`}>
+                <tr key={b.id} className={`hover:bg-gray-50 ${EXPIRY_ROW[level]}`}>
                   <td className="td font-medium">{b.medication.name}</td>
                   <td className="td">{b.batchNo || "—"}</td>
                   <td className="td">{b.supplier?.name || "—"}</td>
                   <td className={`td ${expired ? "font-bold text-red-700" : ""}`}>{fmtDate(b.expiryDate)}{expired ? " ⚠" : ""}</td>
-                  <td className="td">{expired ? <span className="badge-danger">منتهية</span> : within60 ? <span className="badge-warning">قريبة</span> : <span className="badge-neutral">جيدة</span>}</td>
+                  <td className="td"><span className={`badge ${EXPIRY_BADGE[level]}`}>{EXPIRY_LABEL[level]}</span></td>
                   <td className="td font-bold">{b.quantity}</td>
                 </tr>
               );
@@ -191,6 +211,7 @@ export default async function PharmacyReports({ searchParams }: { searchParams: 
           </tbody>
         </table>
       </div>
+      {purchases}
     </div>
   );
 }
@@ -211,5 +232,44 @@ function Breakdown({ title, rows }: { title: string; rows: [string, number][] })
         ))}
       </div>
     </div>
+  );
+}
+
+const PURCHASE_STATUS: Record<string, string> = { DRAFT: "مسودة", PENDING_APPROVAL: "بانتظار الاعتماد", APPROVED: "معتمد", ORDERED: "مطلوب من المورد", PARTIALLY_RECEIVED: "مستلم جزئياً", FULLY_RECEIVED: "مستلم بالكامل", CANCELLED: "ملغى" };
+
+/** Purchasing and receiving totals, for anyone who can see purchase orders. */
+async function PurchaseSummary({ showPrices }: { showPrices: boolean }) {
+  const now = new Date();
+  const ow = orderViewWhere(await currentStockViewer());
+  const [statuses, receipts, items, overdue] = await Promise.all([
+    prisma.purchaseOrder.groupBy({ by: ["status"], where: ow, _count: { _all: true }, orderBy: { status: "asc" } }),
+    prisma.purchaseReceipt.count({ where: { purchaseOrder: ow } }),
+    prisma.purchaseOrderItem.aggregate({ where: { purchaseOrder: ow }, _sum: { orderedQuantity: true, receivedQuantity: true, rejectedQuantity: true, damagedQuantity: true, ...(showPrices ? { unitPrice: true } : {}) } }),
+    prisma.purchaseOrder.count({ where: { ...ow, expectedDeliveryDate: { lt: now }, status: { notIn: ["FULLY_RECEIVED", "CANCELLED"] } } }),
+  ]);
+  const n = (value: unknown) => new Intl.NumberFormat("ar-IQ").format(Number(value ?? 0));
+  const cells: [string, string][] = [
+    ["عمليات الاستلام", n(receipts)],
+    ["الكمية المطلوبة", n(items._sum.orderedQuantity)],
+    ["الكمية المستلمة", n(items._sum.receivedQuantity)],
+    ["المرفوض", n(items._sum.rejectedQuantity)],
+    ["التالف", n(items._sum.damagedQuantity)],
+    ["أوامر متأخرة", n(overdue)],
+    ...(showPrices ? [["إجمالي أسعار الوحدات", `${n((items._sum as any).unitPrice)} د.ع`] as [string, string]] : []),
+  ];
+  return (
+    <section className="card space-y-4 p-4">
+      <h2 className="font-semibold text-gray-700">الشراء والاستلام</h2>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {cells.map(([label, value]) => <div key={label} className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-center"><div className="text-xl font-bold text-gray-800">{value}</div><div className="text-xs text-gray-500">{label}</div></div>)}
+      </div>
+      <table className="w-full text-sm">
+        <thead><tr><th className="th">حالة الأمر</th><th className="th">العدد</th></tr></thead>
+        <tbody>
+          {statuses.map((row) => <tr key={row.status}><td className="td">{PURCHASE_STATUS[row.status] ?? row.status}</td><td className="td font-bold">{n(row._count._all)}</td></tr>)}
+          {statuses.length === 0 ? <tr><td colSpan={2} className="td text-center text-gray-400">لا توجد أوامر شراء بعد.</td></tr> : null}
+        </tbody>
+      </table>
+    </section>
   );
 }

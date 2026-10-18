@@ -41,8 +41,15 @@ export async function GET() {
     time: new Intl.DateTimeFormat("ar-IQ", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Baghdad" }).format(entry.createdAt),
   });
   const calledCutoff = new Date(now.getTime() - device.callDisplaySeconds * 1000);
-  const currentCall = numbered.filter(({ entry }) => entry.status === "CALLED" && entry.calledAt && entry.calledAt >= calledCutoff).sort((a, b) => (b.entry.calledAt?.getTime() ?? 0) - (a.entry.calledAt?.getTime() ?? 0))[0];
+  const activeCalls = numbered
+    .filter(({ entry }) => entry.status === "CALLED" && entry.calledAt && entry.calledAt >= calledCutoff)
+    .sort((a, b) => (b.entry.calledAt?.getTime() ?? 0) - (a.entry.calledAt?.getTime() ?? 0));
+  const currentCall = activeCalls[0];
   const called = currentCall ? { ...item(currentCall), eventId: `${currentCall.entry.id}:${currentCall.entry.calledAt!.toISOString()}` } : null;
+  const recentCalls = activeCalls.slice(0, 3).map(({ entry, queueNumber }) => ({
+    ...item({ entry, queueNumber }),
+    eventId: `${entry.id}:${entry.calledAt!.toISOString()}`,
+  }));
   const inSessionEntries = numbered.filter(({ entry }) => entry.status === "IN_SESSION");
   const waitingEntries = numbered.filter(({ entry }) => entry.status === "WAITING");
   // The display rotates compact pages. Keep enough items for several pages without sending an unbounded daily queue.
@@ -51,6 +58,6 @@ export async function GET() {
   if (!device.lastSeenAt || now.getTime() - device.lastSeenAt.getTime() >= 30_000) await prisma.displayDevice.update({ where: { id: device.id }, data: { lastSeenAt: now } });
   return NextResponse.json({
     device: { id: device.id, name: device.name, centerName: device.center?.name ?? "المجمع التأهيلي الطبي", callDisplaySeconds: device.callDisplaySeconds },
-    called, inSession, waiting, inSessionTotal, waitingTotal, updatedAt: now.toISOString(),
+    called, activeCalls: recentCalls, inSession, waiting, inSessionTotal, waitingTotal, updatedAt: now.toISOString(),
   }, { headers: { "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate" } });
 }

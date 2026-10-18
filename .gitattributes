@@ -1,0 +1,3 @@
+# Same line endings on every computer (Windows included): LF, as on the servers.
+# Without this, a Windows checkout turns files into CRLF and tests that read them fail.
+* text=auto eol=lf

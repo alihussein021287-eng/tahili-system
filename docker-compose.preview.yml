@@ -1,0 +1,38 @@
+# Clean-preview runtime (NOT started). Additive overlay for the rehearsal stack: a second app container on its own port
+# against the separate `tahili_preview` database. The QA database and the application on 3101 are untouched.
+# Usage (after owner approval):
+#   docker compose -p tahili-clean-rehearsal --env-file <temp env with REHEARSAL_* values> \
+#     -f docker-compose.rehearsal.yml -f docker-compose.preview.yml up -d --no-deps app-preview
+# Stop: docker compose -p tahili-clean-rehearsal -f docker-compose.rehearsal.yml -f docker-compose.preview.yml stop app-preview
+services:
+  app-preview:
+    image: tahili-clean-rehearsal:${REHEARSAL_RELEASE_TAG:?required}
+    command: ["npx", "next", "start", "-p", "3102", "-H", "0.0.0.0"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      TAHILI_ENVIRONMENT: development
+      TAHILI_LOCAL_ACCESS: "true"
+      TAHILI_LOCAL_PORT: "3102"
+      NEXTAUTH_URL: http://localhost:3102
+      NEXTAUTH_URL_INTERNAL: http://localhost:3102
+      NEXTAUTH_ALLOW_HTTP_LOGIN: "true"
+      AUTH_TRUST_HOST: "true"
+      ALLOW_INITIAL_SETUP: "false"
+      DATABASE_URL: postgresql://${REHEARSAL_DB_USER:?required}:${REHEARSAL_DB_PASSWORD:?required}@postgres:5432/tahili_preview
+      NEXTAUTH_SECRET: ${REHEARSAL_NEXTAUTH_SECRET:?required}
+      REMINDER_KEY: ${REHEARSAL_REMINDER_KEY:?required}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_ACCESS_KEY: ${REHEARSAL_MINIO_USER:?required}
+      MINIO_SECRET_KEY: ${REHEARSAL_MINIO_PASSWORD:?required}
+      COLLABORATION_MINIO_BUCKET: tahili-clean-rehearsal-preview
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      UPLOAD_DIR: /app/uploads
+      TZ: Asia/Baghdad
+    ports:
+      - "127.0.0.1:3102:3102"
+    networks: [rehearsal, edge]

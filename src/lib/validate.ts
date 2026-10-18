@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const ROLES = ["ADMIN", "MANAGER", "DOCTOR", "THERAPIST", "ACCOUNTANT", "VIEWER", "PHARMACIST", "RECEPTION", "LAB", "RADIOLOGY", "DRESSING", "PROSTHETICS", "HEAD_THERAPIST", "DATA_ENTRY", "RESIDENT"] as const;
+export const ROLES = ["ADMIN", "MANAGER", "DOCTOR", "THERAPIST", "ACCOUNTANT", "VIEWER", "PHARMACIST", "RECEPTION", "SECRETARY", "LAB", "RADIOLOGY", "DRESSING", "PROSTHETICS", "HEAD_THERAPIST", "DATA_ENTRY", "RESIDENT"] as const;
 
 // نموذج إنشاء مستخدم
 export const userCreateSchema = z.object({

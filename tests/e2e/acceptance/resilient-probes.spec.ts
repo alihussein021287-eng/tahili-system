@@ -17,7 +17,7 @@ test("probe 1: reception submit, DB persistence, fresh UI", async ({ browser }) 
   await form.locator('select[name="destination"]').selectOption({ label: "الأشعة" });
   await submitServerAction({
     name: "probe-reception", role: "RECEPTION", browser, context: actor.context, page: actor.page,
-    submit: form.getByRole("button", { name: /تسجيل زيارة/ }),
+    submit: form.getByRole("button", { name: "تسجيل الحضور والتوجيه", exact: true }),
     dbExpectation: async () => Boolean(await prisma.careStage.findFirst({ where: { patientId: patient.id, station: "الأشعة", createdAt: { gte: started } } })),
     confirmation: async (page) => page.getByText("حاضر", { exact: true }).isVisible().catch(() => false),
     recoveryUrl: `/visits?q=${encodeURIComponent(patient.fullName)}`,

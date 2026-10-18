@@ -1,86 +1,56 @@
-# نظام إدارة المجمع التأهيلي الطبي
+# نظام إدارة المجمع التأهيلي الطبي — m096
 
-نظام ويب لإدارة المراجعين عبر مساراتهم العلاجية، يشتغل داخلياً (شبكة محلية) وعلى الإنترنت.
+مصدر Next.js 16 وReact 19 وPrisma 6 وPostgreSQL 16 وMinIO وClamAV. كود التطبيق والاختبارات والهجرات مطابق لمصدر m096 المعتمد؛ تغييرات تجهيز المستودع تقتصر على التوثيق واستبعاد الآثار الخاصة. لا يحتوي المستودع قاعدة بيانات أو مرفقات مستخدمين أو إعدادات حقيقية.
 
-**الستاك:** Next.js 16 + React 19 + Prisma 6 + PostgreSQL 16 + MinIO + Docker.
+## إعادة البناء
 
----
+يلزم Docker مع Compose والإنترنت لتنزيل الصور والحزم عند البناء الأول. يستخدم `Dockerfile` العادي صورة Node العامة و`npm ci --legacy-peer-deps` من `package-lock.json`، ولا يحتاج صور rehearsal المحلية.
 
-## التشغيل (محلياً للتطوير)
-
-```bash
-# 1) انسخ الإعدادات وعدّلها (لا تلتزم بملف .env في Git)
-cp .env.example .env
-#   عيّن كلمات سر ومفاتيح جديدة وقوية، خصوصاً القيم المطلوبة أدناه
-
-# 2) شغّل قاعدة البيانات والتخزين
-docker compose up -d postgres minio
-
-# 3) ثبّت الحزم
-npm install --legacy-peer-deps
-
-# 4) أنشئ الجداول في قاعدة البيانات
-npx prisma db push
-
-# 5) أدخل البيانات الأولية (مستخدم admin + القوائم)
-npm run db:seed
-
-# 6) شغّل التطبيق
-npm run dev    # ثم افتح http://localhost:3000
+```powershell
+docker build -t tahili-source:m096 .
 ```
 
-يتطلب التشغيل Node.js 20 أو أحدث وnpm وDocker مع Docker Compose. للتشغيل المباشر خارج Docker، يجب أن تكون PostgreSQL وMinIO متاحين وأن يطابق `DATABASE_URL` وبيانات MinIO إعداداتهما.
+`Dockerfile.rehearsal` مسار محلي بديل يحتاج صور builder/runtime محتجزة؛ ليس مسار البناء من مستودع فارغ. لم تثبت قابلية البناء دون إنترنت؛ لا تحذف الصور الأساسية أو الكاش لهذا الغرض.
 
-### متغيرات البيئة
+## تثبيت QA جديد على جهاز فارغ فقط
 
-المتغيرات المطلوبة:
+الخطوات التالية لإنشاء بيئة جديدة مستقلة بلا بيانات مرضى، وليست لتغيير QA الحالي أو نقل بياناته. إن كانت 3101 مستخدمة، اتبع دليل البيئة القائمة ولا تشغل مشروعاً آخر على المنفذ نفسه. لا تستخدم هذه الخطوات على Ubuntu الإنتاج.
 
-- `DB_USER` و`DB_PASSWORD` و`DB_NAME`: إعدادات PostgreSQL المستخدمة بواسطة Docker Compose.
-- `DATABASE_URL`: رابط PostgreSQL المستخدم بواسطة Prisma عند التشغيل المباشر.
-- `NEXTAUTH_SECRET`: مفتاح عشوائي طويل لجلسات المصادقة.
-- `NEXTAUTH_URL`: عنوان التطبيق الكامل.
-- `ADMIN_INITIAL_PASSWORD`: كلمة مرور أولية قوية (12 محرفاً على الأقل) تُستخدم فقط لإنشاء المدير أول مرة.
-- `REMINDER_KEY`: مفتاح عشوائي لحماية واجهة التذكيرات.
-- `MINIO_USER` و`MINIO_PASSWORD`: حساب MinIO المستخدم بواسطة Docker Compose.
-- `UPLOAD_DIR`: مسار تخزين المرفقات عند التشغيل المباشر.
+1. انسخ `.env.local.example` إلى ملف خاص خارج المستودع، وعيّن `APP_PORT=3101` و`TAHILI_LOCAL_ACCESS=true` وأسراراً عشوائية جديدة لجميع القيم `change-me-*`. لا تنشر الملف الحقيقي. أبقِ الأسرار مستقلة لكل بيئة.
+2. من مجلد المصدر، استخدم اسم مشروع مستقل وملف Compose المحلي وحده:
 
-متغيرات اختيارية بحسب طريقة التشغيل:
-
-- `MINIO_ENDPOINT` و`MINIO_ACCESS_KEY` و`MINIO_SECRET_KEY`: اتصال MinIO عند التشغيل المباشر؛ يضبطها Docker Compose تلقائياً داخل الحاوية.
-- `PGADMIN_EMAIL` و`PGADMIN_PASSWORD` و`GRAFANA_PASSWORD`: مطلوبة فقط عند تشغيل طبقة المراقبة.
-- `E2E_BASE_URL` و`E2E_USERNAME` و`E2E_PASSWORD`: حساب وعنوان اختبارات Playwright؛ لا تستخدم حساب إنتاج حقيقياً.
-
-لا تضع أسراراً حقيقية في `.env.example`. أنشئ القيم السرية محلياً أو في مدير أسرار منصة النشر، ولا ترفع `.env` أو قواعد البيانات أو النسخ الاحتياطية أو المرفقات.
-
-### التهيئة الأولى
-
-مسار `/setup` مغلق افتراضياً. يمرر Docker Compose المتغير إلى حاوية التطبيق بقيمة افتراضية `false`. لتهيئة تثبيت جديد فقط، اضبط `ALLOW_INITIAL_SETUP=true` مؤقتاً، أكمل إنشاء المدير الأول، ثم أعد القيمة فوراً إلى `false` وأعد تشغيل التطبيق. أي قيمة غير `true` بالحروف الصغيرة تبقي التهيئة مغلقة.
-
-**أول دخول:** المستخدم `admin` / كلمة السر من `ADMIN_INITIAL_PASSWORD` داخل `.env` — **غيّرها فوراً**.
-
----
-
-## النشر على السيرفر (Ubuntu)
-
-```bash
-# على السيرفر
-git clone <repo> && cd tahili-system
-cp .env.example .env   # اضبط NEXTAUTH_URL على الدومين، وكلمات سر قوية، وADMIN_INITIAL_PASSWORD
-docker compose up -d --build
-docker compose exec app npx prisma db push
-docker compose exec app npm run db:seed
+```powershell
+$qaEnvPath = 'C:\TahiliPrivate\qa-source.env'
+docker compose -p tahili-source-qa --env-file $qaEnvPath -f docker-compose.local.yml up -d postgres minio clamav
+docker compose -p tahili-source-qa --env-file $qaEnvPath -f docker-compose.local.yml build app
+docker compose -p tahili-source-qa --env-file $qaEnvPath -f docker-compose.local.yml run --rm app npx prisma migrate deploy
+docker compose -p tahili-source-qa --env-file $qaEnvPath -f docker-compose.local.yml up -d app
 ```
 
-**للوصول الداخلي + الإنترنت معاً:** Nginx أمام التطبيق يستمع على IP الشبكة المحلية وعلى الدومين العام، مع SSL (Let's Encrypt) للإنترنت.
+3. انتظر جاهزية الخدمات، وافتح `http://localhost:3101/setup` لإنشاء المدير الأول على قاعدة جديدة فقط مع `ALLOW_INITIAL_SETUP=true`. بعد إتمام الإعداد عيّنها `false` وأعد تطبيق ملف Compose. الدخول بعدها من `http://localhost:3101/login`. لا تستخدم `prisma db push` أو seed عشوائياً على قاعدة موجودة.
 
-**النسخ الاحتياطي اليومي (cron):**
+المنافذ مربوطة بـ127.0.0.1 فقط؛ قواعد PostgreSQL وMinIO وClamAV وuploads في volumes مستقلة للمشروع. يحتاج ClamAV تنزيل توقيعاته في التثبيت الأول. لا تستخدم `down -v` أو prune على بيئة ذات بيانات.
+
+## الاختبارات
+
 ```bash
-./backup.sh
+npm ci --legacy-peer-deps
+npx prisma generate
+npm run build
+npx tsc --noEmit
+npm test
+node scripts/audit-project.mjs
 ```
 
-تفاصيل مواقع الملفات، cron اليومي، والاستعادة الآمنة موجودة في `docs/BACKUP_OPERATIONS.md`.
+اختبارات التكامل تحتاج `AUTH_VERSION_INTEGRATION=1` وقاعدة PostgreSQL اختبارية منفصلة تماماً. عدد منها يتحقق من `127.0.0.1:55432`؛ لا توجهها إلى قاعدة QA أو preview أو الإنتاج ولا تغيّر حدود الأمان لاجتيازها. يمكن تشغيلها في حاوية اختبار تشارك namespace شبكة PostgreSQL مؤقتة تستمع على 55432 دون نشر أي منفذ للمضيف.
 
----
+داخل حاوية الاختبار المعزولة فقط، بعد تطبيق الهجرات على `app_test`، شغّل `scripts/seed-integration-prerequisites.cjs` مع `TAHILI_DISPOSABLE_TEST_DB=1`. ينشئ سجلاً اصطناعياً واحداً يتوقعه اختبار الإحالات القديم؛ يرفض قاعدة غير `app_test` أو اتصالاً خارج loopback:55432. لا يُشغّل تلقائياً ضمن التطبيق أو Dockerfile أو أي بيئة فعلية.
+
+## البيانات والأسرار والنشر
+
+قوالب البيئة تحمل قيماً مكانية فقط. استُبعدت `.env` الحقيقية والمفاتيح وuploads والنسخ وملفات البيانات والتصدير وrelease-evidence وrelease-package من المصدر المرشح للنشر. بيانات QA/preview والمرضى لا تنتمي إلى GitHub العام.
+
+النشر إلى GitHub أو الإنتاج إجراء منفصل يحتاج مراجعة وموافقة. راجع `ENVIRONMENTS.md` و`RUNBOOK.md` و`PRODUCTION_CHECKLIST.md` قبل أي إجراء تشغيلي؛ لا تعتبر وجود تعليمات تشغيل إذناً لتغيير الإنتاج.
 
 ## بنية المشروع
 
@@ -92,7 +62,7 @@ tahili-system/
 ├── src/                   # كود التطبيق (واجهات + API) — المراحل القادمة
 ├── docker-compose.yml     # postgres + minio + app
 ├── Dockerfile
-├── .env.example
+├── .env.local.example
 └── package.json
 ```
 

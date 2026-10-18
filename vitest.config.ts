@@ -8,6 +8,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include,
+    // Database integration files share one PostgreSQL and use Serializable transactions: run them one file at a time
+    // so serialization conflicts (P2034) between files cannot make assertions flaky.
+    fileParallelism: process.env.AUTH_VERSION_INTEGRATION === "1" ? false : true,
   },
   resolve: {
     alias: {

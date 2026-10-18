@@ -1,4 +1,4 @@
-import { requiredPermissionsForHref } from "@/lib/work-registry";
+import { WORK_REGISTRY, requiredPermissionsForHref } from "@/lib/work-registry";
 
 export type NotificationKind = "tasks" | "appointments" | "inventory" | "devices" | "referrals" | "collaboration" | "system";
 export type NotificationBucket = "urgent" | "action" | "info";
@@ -48,14 +48,7 @@ export function canonicalNotificationLink(link?: string | null) {
   if (!link) return null;
   const replacements: Record<string, string> = {
     "/tasks": "/staff?tab=tasks",
-    "/appointments": "/patients-care?tab=appointments",
-    "/queue": "/patients-care?tab=queue",
-    "/visits": "/patients-care?tab=visits",
-    "/referrals": "/patients-care?tab=referrals",
-    "/pharmacy": "/pharmacy-inventory?tab=dispense",
-    "/inventory": "/pharmacy-inventory?tab=stock",
-    "/finance": "/reports-finance?tab=finance",
-    "/approvals": "/reports-finance?tab=approvals",
+    "/inventory": "/pharmacy/stock",
   };
   return replacements[link] ?? link;
 }
@@ -91,9 +84,12 @@ function tabOf(link: string) {
 
 export function permissionsForLink(link?: string | null) {
   if (!link) return null;
-  const registered = requiredPermissionsForHref(link);
-  if (registered) return registered;
   const tab = tabOf(link);
+  // A hub tab link that is not itself a sidebar entry is judged by its tab below, not by the hub.
+  const exact = WORK_REGISTRY.find((entry) => entry.deepLink === link);
+  if (exact) return exact.requiredPermissions;
+  const registered = tab ? null : requiredPermissionsForHref(link);
+  if (registered) return registered;
   if (link.startsWith("/staff")) {
     if (tab === "tasks") return ["tasks.view"];
     if (tab === "attendance") return ["attendance.view"];

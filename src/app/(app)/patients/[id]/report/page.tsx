@@ -1,4 +1,5 @@
 import { requirePerm } from "@/lib/access";
+import { requirePatientPageScope } from "@/lib/patient-guard";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { ReportEditor } from "@/components/ReportEditor";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function Report({ params }: { params: Promise<{ id: string }> }) {
   await requirePerm("patients.print");
   const { id } = await params;
+  await requirePatientPageScope(id, "record");
   const p = await prisma.patient.findUnique({
     where: { id },
     include: {

@@ -2,7 +2,8 @@ import { getApiSession } from "@/lib/access";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
-import { GENDER, MARITAL, PATIENT_STATUS } from "@/lib/labels";
+import { patientScopeWhere } from "@/lib/patient-access";
+import { CASE_TYPE, GENDER, MARITAL, PATIENT_STATUS } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
     where.OR = [
       { fullName: { contains: q, mode: "insensitive" } },
       { phone: { contains: q } },
-      ...(!Number.isNaN(qNum) ? [{ fileNumber: qNum }] : []),
+      ...(Number.isInteger(qNum) && qNum > 0 && qNum <= 2147483647 ? [{ fileNumber: qNum }] : []),
     ];
   }
   if (name) where.fullName = { contains: name, mode: "insensitive" };
@@ -37,7 +38,21 @@ export async function GET(req: NextRequest) {
   if (sp.get("gov")) where.governorateId = Number(sp.get("gov"));
   if (sp.get("status")) where.status = sp.get("status");
   if (sp.get("injury")) where.injuryTypeId = Number(sp.get("injury"));
-  if (sp.get("branch")) where.branchId = Number(sp.get("branch"));
+  const branch = Number(sp.get("branch"));
+  if (sp.get("branch") && Number.isInteger(branch) && branch > 0) where.branchId = branch;
+  if (sp.get("district")) where.districtId = Number(sp.get("district"));
+  const caseType = sp.get("caseType");
+  if (caseType && caseType in CASE_TYPE) where.caseType = caseType;
+  const visitFrom = sp.get("lastVisitFrom") ? new Date(`${sp.get("lastVisitFrom")}T00:00:00`) : null;
+  const visitTo = sp.get("lastVisitTo") ? new Date(`${sp.get("lastVisitTo")}T00:00:00`) : null;
+  const validFrom = visitFrom && Number.isFinite(visitFrom.getTime()) ? visitFrom : null;
+  const validTo = visitTo && Number.isFinite(visitTo.getTime()) ? visitTo : null;
+  if (validFrom || validTo) {
+    where.visits = { some: { visitDate: {
+      ...(validFrom ? { gte: validFrom } : {}),
+      ...(validTo ? { lt: new Date(validTo.getTime() + 86_400_000) } : {}),
+    } } };
+  }
   if (sp.get("dataEntry")) where.dataEntryBy = { contains: sp.get("dataEntry")?.trim(), mode: "insensitive" };
   if (sp.get("from") || sp.get("to")) {
     where.registrationDate = {
@@ -48,6 +63,9 @@ export async function GET(req: NextRequest) {
   if (sp.get("archived")) where.archivedAt = { not: null };
   else where.archivedAt = null;
 
+  // Server-side scope before anything is serialized: an export never reaches beyond the viewer's record scope.
+  const scope = await patientScopeWhere(prisma, { userId: (session.user as any)?.id, role: (session.user as any)?.role, permissions: permission.permissions });
+  where.AND = [scope];
   const patients = await prisma.patient.findMany({
     where, include: { governorate: true, district: true, injuryType: true, formation: true, branch: true },
     orderBy: { fileNumber: "asc" }, take: 5000,

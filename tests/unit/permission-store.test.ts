@@ -46,6 +46,16 @@ describe("fail-closed permission loading", () => {
     expect(result.has("custom.permission")).toBe(true);
   });
 
+  it("never grants clinical journey permissions to a secretary through overrides", async () => {
+    const journey = ["journey.view", "journey.confirm", "journey.manage"];
+    const overrides = journey.map((permKey) => ({ permKey, allowed: true }));
+    const secretary = await loadPermissionsFromStore("secretary-1", "SECRETARY", store(async () => overrides, async () => overrides));
+    for (const key of journey) expect(secretary.has(key)).toBe(false);
+    expect(secretary.has("handoff.receive")).toBe(true);
+    const doctor = await loadPermissionsFromStore("doctor-1", "DOCTOR", store(async () => overrides));
+    for (const key of journey) expect(doctor.has(key)).toBe(true);
+  });
+
   it("throws the classified error when role permissions fail", async () => {
     await expect(loadPermissionsFromStore(
       "user-1",

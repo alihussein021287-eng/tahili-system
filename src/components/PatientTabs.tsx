@@ -10,19 +10,16 @@ import {
   addProgressMetric, deleteProgressMetric,
   addVitalSign, deleteVitalSign,
   addResidentReview, deleteResidentReview,
-  scheduleSessions,
   addTreatmentPlan, setTreatmentPlanStatus, deleteTreatmentPlan, addTherapySessionLog,
   addCareRecord, deleteCareRecord,
-  startPathway, addStage, confirmStage, setStageStatus, deleteStage,
   addOfficialDoc, deleteOfficialDoc,
   updateDiagnosis, updateSessionRecord, updateCorrespondence, updateOfficialDocText,
   addSickLeave, deleteSickLeave, approveSickLeave, unapproveSickLeave,
-  approveSickLeaveCommittee, unapproveSickLeaveCommittee, setNextCheckup, referToCenter,
+  approveSickLeaveCommittee, unapproveSickLeaveCommittee, setNextCheckup,
   getPatientTabData,
 } from "@/app/(app)/patients/actions";
 import { THERAPY, DIAGNOSIS, DIRECTION, APPT_STATUS, PLAN_STATUS, CARE_PERIOD, CARE_KIND, fmtDate, fmtDateTime, DOC_TYPE, DOC_DIRECTION } from "@/lib/labels";
 import { ROLE_LABELS } from "@/lib/permissions";
-import { CENTER_STATION_NAMES } from "@/lib/stations";
 import { TrendChart } from "@/components/TrendChart";
 import { CareSection } from "@/components/CareSection";
 import { Combobox } from "@/components/Combobox";
@@ -35,24 +32,24 @@ import { CenterHallSelect } from "@/components/CenterHallSelect";
 import { EmptyState, LoadingState, SectionCard, StatCard } from "@/components/Ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PATIENT_TABS } from "@/lib/patient-tab-policy";
+import { CurrentUserName } from "@/components/patient-file-context";
+import { PATIENT_NAV, PATIENT_NAV_GROUPS, patientNavFor } from "@/lib/patient-tab-policy";
+import { handoffParty, handoffStatusLabel, type PatientHandoffHistoryRow } from "@/lib/patient-handoff-presentation";
 
 const TABS = PATIENT_TABS.map((item) => ({ ...item, perms: item.permissions }));
-const TAB_GROUPS: Record<string, string> = {
-  followup: "المتابعة",
-  medical: "الملف الطبي",
-  therapy: "المسار العلاجي",
-  admin: "الملف الإداري",
-  system: "سجل الملف",
-};
+// The side menu's groups; each menu entry may open several sections (see PATIENT_NAV).
+const TAB_GROUPS: Record<string, string> = PATIENT_NAV_GROUPS;
 const TAB_DESCRIPTIONS: Record<string, string> = {
   overview: "ملخص عملي لأهم حالة وإجراء قادم ضمن صلاحياتك.",
-  timeline: "أحدث الأحداث الطبية والعلاجية والإدارية بترتيب زمني.",
+  timeline: "الأحداث بترتيب زمني، التحويلات ومحطات الرعاية، وسجل التعديلات.",
   journey: "المحطات المكتملة والحالية والقادمة في مسار المتابعة.",
+  rel: "البيانات الشخصية، بوابة المراجع، وذوو القربى والمرافقون.",
+  official: "الإجراءات الرسمية، الإجازات المرضية، المخاطبات، والمرفقات بمكان واحد.",
   diag: "التشخيصات والتقارير الطبية المعتمدة في الاستشارية.",
   resident: "مراجعات الطبيب المقيم والعلامات الحيوية وتقييم الجروح.",
   referrals: "طلبات الفحوص والإحالات ونتائجها وحالتها الحالية.",
   sessions: "جدولة الجلسات وسجل التنفيذ والتقدم.",
-  therapyProgram: "البرنامج المعتمد للعلاج الطبيعي وتقييماته.",
+  therapyProgram: "البرنامج المعتمد وتقييماته، الجلسات المجدولة وسجلها، والمقاييس.",
   centerPrograms: "برامج التأهيل المسندة ضمن المراكز.",
   plan: "أهداف الخطة العلاجية وحالتها ونسبة الإنجاز.",
   metrics: "قياسات التقدم التاريخية ومؤشرات التحسن.",
@@ -60,11 +57,9 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   expenses: "الصرفيات المرتبطة بالمراجع وفق صلاحية عرض المبالغ.",
   rx: "الوصفات الداخلية والخارجية وحالة التجهيز.",
   adm: "تاريخ الرقود والتخصيص والخروج.",
-  official: "الكتب والإجراءات الرسمية المؤرشفة.",
   sickleave: "الإجازات المرضية واعتماداتها ونماذجها.",
   corr: "المخاطبات الواردة والصادرة المرتبطة بالملف.",
   files: "المرفقات والوثائق المتاحة للقراءة.",
-  rel: "بيانات ذوي القربى والمرافقين المسجلين.",
   activity: "سجل آخر التغييرات المنفذة على ملف المراجع.",
 };
 const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -72,21 +67,24 @@ const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأر�
 // التبويبات التي تُحمّل بياناتها عند فتحها فقط (لتخفيف تحميل الصفحة)
 const LAZY_TABS = ["files", "metrics", "plan", "rel", "activity", "care", "resident", "referrals"];
 
-export function PatientTabs({ patient, editable, perms = [], role = "", slApprovals = [], centers = [], medications = [], rooms = [], halls = [], centerHalls = [], therapyDefaults, therapyStaff = [], expenseRows = [], staffNames = [], staffUsers = [] }: { patient: any; editable: boolean; perms?: string[]; role?: string; slApprovals?: any[]; centers?: any[]; medications?: any[]; rooms?: any[]; halls?: any[]; centerHalls?: any[]; therapyDefaults?: any; therapyStaff?: any[]; expenseRows?: any[]; staffNames?: string[]; staffUsers?: any[] }) {
+export function PatientTabs({ rxVisitIds = [], currentUserName = "", currentUserId = "", infoPanel, missingInfo = 0, patient, editable, perms = [], role = "", handoffHistory = [], slApprovals = [], centers = [], medications = [], rooms = [], halls = [], centerHalls = [], therapyDefaults, therapyStaff = [], expenseRows = [], staffNames = [], staffUsers = [] }: { currentUserName?: string; currentUserId?: string; infoPanel?: React.ReactNode; missingInfo?: number; patient: any; editable: boolean; perms?: string[]; role?: string; handoffHistory?: PatientHandoffHistoryRow[]; slApprovals?: any[]; centers?: any[]; medications?: any[]; rooms?: any[]; halls?: any[]; centerHalls?: any[]; therapyDefaults?: any; therapyStaff?: any[]; expenseRows?: any[]; staffNames?: string[]; staffUsers?: any[]; rxVisitIds?: string[] }) {
   const can = (k: string) => perms.includes(k);
   const canDel = role === "ADMIN";
-  const canSchedule = role === "HEAD_THERAPIST" || role === "ADMIN";
   const [lazy, setLazy] = useState<Record<string, any>>({});
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ followup: true });
   const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const id = patient.id;
   const visibleTabs = TABS.filter((item) => item.perms.some(can));
+  const visibleNav = PATIENT_NAV.filter((item) => item.sections.some((key) => visibleTabs.some((section) => section.key === key)) || (item.key === "rel" && !!infoPanel));
   const requestedTab = searchParams.get("tab");
-  const tab = visibleTabs.some((item) => item.key === requestedTab) ? requestedTab! : (visibleTabs[0]?.key ?? "overview");
-  const activeTab = visibleTabs.find((item) => item.key === tab) ?? visibleTabs[0];
+  const activeTab = visibleNav.find((item) => item.key === patientNavFor(requestedTab)?.key) ?? visibleNav[0];
+  const tab = activeTab?.key ?? "overview";
+  const shows = (key: string) => !!activeTab?.sections.includes(key as any) && visibleTabs.some((section) => section.key === key);
+  const shownSections = (activeTab?.sections ?? []).filter((key) => shows(key));
+  // In an entry that holds several sections, each section gets its own small heading.
+  const sub = (key: string, title: string) => shownSections.length > 1 && shows(key) ? <h3 className="mb-3 mt-8 border-b border-gray-100 pb-2 text-base font-semibold text-gray-800 first:mt-0">{title}</h3> : null;
 
   const loadTab = async (key: string) => {
     try {
@@ -110,21 +108,21 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
     router.push(`${pathname}?${next.toString()}`, { scroll: false });
   };
   useEffect(() => {
-    if (activeTab) setOpenGroups((current) => ({ ...current, [activeTab.group]: true }));
-    if (LAZY_TABS.includes(tab) && lazy[tab] === undefined) loadTab(tab);
+    for (const key of shownSections) if (LAZY_TABS.includes(key) && lazy[key] === undefined) loadTab(key);
     sectionHeadingRef.current?.focus();
   }, [tab]);
   // تُستدعى بعد أي إضافة/حذف داخل تبويب مؤجّل لإعادة جلب بياناته
   const reload = (key: string) => () => loadTab(key);
 
   return (
+    <CurrentUserName.Provider value={currentUserName}>
     <div className="patient-file card flex min-w-0 flex-col overflow-hidden md:flex-row">
       <div className="border-b border-gray-200 bg-gray-50/50 p-3 md:w-64 md:shrink-0 md:border-b-0 md:border-l">
         <select id="patient-tab-select" hidden aria-hidden="true" tabIndex={-1} value={tab} onChange={(event) => openTab(event.target.value)}>
-          {visibleTabs.map((item) => <option key={item.key} value={item.key}>{TAB_GROUPS[item.group]} - {item.label}</option>)}
+          {visibleNav.map((item) => <option key={item.key} value={item.key}>{TAB_GROUPS[item.group]} - {item.label}</option>)}
         </select>
         <nav className="patient-tabs-mobile md:hidden" aria-label="أقسام ملف المراجع">
-          {visibleTabs.map((item) => (
+          {visibleNav.map((item) => (
             <button
               key={item.key}
               type="button"
@@ -139,17 +137,15 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         </nav>
         <div className="hidden space-y-2 md:block">
           {Object.keys(TAB_GROUPS).map((group) => {
-            const items = visibleTabs.filter((item) => item.group === group);
+            const items = visibleNav.filter((item) => item.group === group);
             if (!items.length) return null;
-            const expanded = !!openGroups[group];
+            // Groups stay open: there are only a few entries, and a closed group hides what the file holds.
             return (
               <div key={group} className="rounded-lg border border-gray-200 bg-white p-1">
-                <button type="button" onClick={() => setOpenGroups((current) => ({ ...current, [group]: !expanded }))} className="flex w-full items-center justify-between rounded-md px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50" aria-expanded={expanded} aria-controls={`patient-tabs-${group}`}>
-                  <span>{TAB_GROUPS[group]}</span><span aria-hidden="true">{expanded ? "−" : "+"}</span>
-                </button>
-                {expanded ? <div id={`patient-tabs-${group}`} className="space-y-1 border-t border-gray-100 pt-1">
+                <div className="px-2 pb-1 pt-2 text-xs font-semibold text-gray-500">{TAB_GROUPS[group]}</div>
+                <div id={`patient-tabs-${group}`} className="space-y-1">
                   {items.map((item) => <button key={item.key} type="button" onClick={() => openTab(item.key)} aria-current={tab === item.key ? "page" : undefined} className={`flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-right text-sm transition ${tab === item.key ? "bg-brand-700 font-semibold text-white" : "text-gray-600 hover:bg-gray-100"}`}><span className="w-5 text-center" aria-hidden="true">{item.icon}</span><span>{item.label}</span></button>)}
-                </div> : null}
+                </div>
               </div>
             );
           })}
@@ -157,54 +153,54 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
       </div>
       <div className="patient-file-content min-w-0 flex-1 p-4 sm:p-5">
         {activeTab ? <div className="mb-5 border-b border-gray-100 pb-4"><h2 ref={sectionHeadingRef} tabIndex={-1} className="text-lg font-bold text-gray-900 outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">{activeTab.label}</h2><p className="mt-1 text-sm text-gray-500">{TAB_DESCRIPTIONS[activeTab.key]}</p></div> : null}
-        {tab === "overview" && <PatientOverview patient={patient} can={can} role={role} openTab={openTab} />}
-        {tab === "timeline" && <Timeline patient={patient} can={can} openTab={openTab} />}
-        {tab === "journey" && <Journey patient={patient} can={can} id={id} role={role} />}
-        {tab === "official" && <OfficialDocs patient={patient} can={can} id={id} role={role} />}
-        {tab === "sickleave" && <SickLeaves patient={patient} can={can} id={id} role={role} approvals={slApprovals} staff={staffNames} staffUsers={staffUsers} />}
-        {tab === "diag" && <SpecialistWorkspace patient={patient} can={can} canDel={canDel} patientId={id} openPrescriptions={() => openTab("rx")} />}
-        {tab === "therapyProgram" && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} doctors={staffUsers.filter((user: any) => user.role === "DOCTOR")} centerHalls={centerHalls} defaults={therapyDefaults} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} />}
-        {tab === "centerPrograms" && can("centers.view") && <PatientCenterPrograms programs={patient.centerPrograms || []} />}
-        {tab === "expenses" && can("expenses.view") && <PatientExpenses rows={expenseRows} showAmounts={can("expenses.amounts")} />}
-        {tab === "sessions" && canSchedule && (
-          <SchedulePlanner patientId={id} centers={centers} centerHalls={centerHalls} />
-        )}
-        {tab === "sessions" && (
-          <div className="space-y-4">
-          <Section rows={patient.therapySessions} editable={can("clinical.session")} canDel={canDel} del={deleteSession.bind(null, id)} action={addSession.bind(null, id)}
-            edit={(rid: string, fd: FormData) => updateSessionRecord(id, rid, fd)}
-            editFields={(r: any) => <>
-              <input name="treatmentPlan" className="input min-w-[200px]" defaultValue={r.treatmentPlan ?? ""} placeholder="الخطة العلاجية" />
-              <input name="totalSessions" type="number" className="input w-24" defaultValue={r.totalSessions ?? ""} placeholder="الكلي" />
-              <input name="actualSessions" type="number" className="input w-24" defaultValue={r.actualSessions ?? ""} placeholder="المنجز" />
-              <input name="therapist" className="input" defaultValue={r.therapist ?? ""} placeholder="المعالج" />
-              <input name="hall" className="input" defaultValue={r.hall ?? ""} placeholder="القاعة" />
-              <input name="notes" className="input min-w-[180px]" defaultValue={r.notes ?? ""} placeholder="ملاحظات المعالج" />
-            </>}
-            cols={[
-              ["المسار", (r: any) => THERAPY[r.therapyType as keyof typeof THERAPY]],
-              ["الخطة/الهدف", (r: any) => <div><div>{r.treatmentPlan || "—"}</div>{r.notes && <div className="mt-0.5 text-xs text-gray-400">{r.notes}</div>}</div>],
-              ["المعالج", (r: any) => r.therapist],
-              ["القاعة", (r: any) => r.hall],
-              ["الأيام", (r: any) => formatWeekdays(r.weekdays)],
-              ["التوقيت", (r: any) => r.sessionTime || "—"],
-              ["الفترة", (r: any) => `${fmtDate(r.startDate)} ← ${fmtDate(r.endDate)}`],
-              ["المنجز/المخطط", (r: any) => sessionProgressCell(r, patient.appointments || [])],
-            ]}
-            fields={<>
-              <Combobox name="therapyType" allowFree={false} options={Object.entries(THERAPY).map(([value,label]:any)=>({value,label}))} />
-              <Combobox name="centerId" allowFree={false} placeholder="المركز" options={centers.map((c:any)=>({value:String(c.id),label:c.name}))} />
-              <input name="treatmentPlan" className="input" placeholder="الخطة العلاجية" />
-              <input name="totalSessions" type="number" className="input w-28" placeholder="عدد الجلسات" />
-              <input name="therapist" className="input" placeholder="المعالج" />
-            </>} />
-            <TherapySessionLogs patient={patient} editable={can("clinical.session")} patientId={id} />
-          </div>
-        )}
-        {tab === "rx" && (
-          <Section rows={patient.prescriptions} editable={can("clinical.prescription")} canDel={canDel} del={deletePrescription.bind(null, id)} action={addPrescription.bind(null, id)}
+        {shows("overview") && <PatientOverview patient={patient} can={can} role={role} openTab={openTab} missingInfo={infoPanel ? missingInfo : 0} />}
+        {sub("timeline", "الأحداث")}
+        {shows("timeline") && <Timeline patient={patient} can={can} openTab={openTab} />}
+        {sub("journey", "سجل التحويلات")}
+        {shows("journey") && <div className="space-y-6"><HandoffHistory rows={handoffHistory} /></div>}
+        {sub("official", "الإجراءات الرسمية")}
+        {shows("official") && <OfficialDocs patient={patient} can={can} id={id} role={role} />}
+        {sub("sickleave", "الإجازات المرضية")}
+        {shows("sickleave") && <SickLeaves patient={patient} can={can} id={id} role={role} approvals={slApprovals} staff={staffNames} staffUsers={staffUsers} />}
+        {shows("diag") && <SpecialistWorkspace patient={patient} can={can} canDel={canDel} patientId={id} openPrescriptions={() => openTab("rx")} />}
+        {sub("therapyProgram", "البرنامج العلاجي")}
+        {shows("therapyProgram") && can("therapy.view") && <PatientTherapyProgram patientId={id} referrals={(patient.referralRequests || []).filter((r:any)=>!r.treatmentPlan)} plans={patient.treatmentPlans || []} therapists={therapyStaff} doctors={staffUsers.filter((user: any) => user.role === "DOCTOR")} centerHalls={centerHalls} defaults={therapyDefaults} canManage={can("therapy.plan.manage")} canFinalize={can("therapy.plan.finalize")} currentUserId={currentUserId} />}
+        {shows("centerPrograms") && can("centers.view") && <PatientCenterPrograms programs={patient.centerPrograms || []} />}
+        {shows("expenses") && can("expenses.view") && <PatientExpenses rows={expenseRows} showAmounts={can("expenses.amounts")} />}
+        {shows("sessions") && (() => {
+          // Therapy now runs through one flow: the programme above. Older records (before programmes) stay readable here only.
+          const legacySessions = (patient.therapySessions ?? []).filter((r: any) => !r.treatmentPlanId);
+          const legacyLogs = (patient.therapySessionLogs ?? []).filter((l: any) => !l.appointmentId);
+          if (!legacySessions.length && !legacyLogs.length) {
+            return shows("therapyProgram") && can("therapy.view") ? null : <EmptyState compact title="لا توجد جلسات قديمة" description="الجلسات تُنظّم من «برنامج العلاج الطبيعي» بعد قبول إحالة المركز." />;
+          }
+          return (
+            <details className="mt-8 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-gray-700">سجل قديم (قبل برنامج العلاج) — {legacySessions.length} جدولة، {legacyLogs.length} سجل جلسة</summary>
+              <p className="mt-2 text-xs text-gray-500">للاطلاع فقط. أي جلسات جديدة تُنشأ من البرنامج العلاجي فوك وتنزل تلقائياً بالمواعيد.</p>
+              <div className="mt-3 space-y-4">
+                {legacySessions.length > 0 && <Section rows={legacySessions} editable={false}
+                  cols={[
+                    ["المسار", (r: any) => THERAPY[r.therapyType as keyof typeof THERAPY]],
+                    ["الخطة/الهدف", (r: any) => <div><div>{r.treatmentPlan || "—"}</div>{r.notes && <div className="mt-0.5 text-xs text-gray-400">{r.notes}</div>}</div>],
+                    ["المعالج", (r: any) => r.therapist],
+                    ["القاعة", (r: any) => r.hall],
+                    ["الأيام", (r: any) => formatWeekdays(r.weekdays)],
+                    ["التوقيت", (r: any) => r.sessionTime || "—"],
+                    ["الفترة", (r: any) => `${fmtDate(r.startDate)} ← ${fmtDate(r.endDate)}`],
+                    ["المنجز/المخطط", (r: any) => sessionProgressCell(r, patient.appointments || [])],
+                  ]} />}
+                {legacyLogs.length > 0 && <TherapySessionLogs patient={{ ...patient, therapySessionLogs: legacyLogs }} editable={false} patientId={id} />}
+              </div>
+            </details>
+          );
+        })()}
+        {shows("rx") && (
+          <Section rows={patient.prescriptions ?? []} editable={can("clinical.prescription")} canDel={canDel} del={deletePrescription.bind(null, id)} action={addPrescription.bind(null, id)} addLabel="+ وصفة"
             cols={[["النوع", (r: any) => r.prescriptionType === "INTERNAL" ? "داخلية" : r.prescriptionType === "EXTERNAL" ? <a className="text-brand-700 hover:underline" href={`/pharmacy/rx/${r.id}`}>خارجية للطباعة</a> : "قديمة"], ["المادة/العلاج", (r: any) => r.medication?.name ?? r.materialName], ["الاستخدام", (r: any) => r.usage], ["الكمية", (r: any) => r.quantity], ["المدة", (r: any) => r.duration], ["الأهلية", (r: any) => ({ELIGIBLE:"مؤهل",NOT_ELIGIBLE:"غير مؤهل",DOCTOR_REVIEW:"قرار الطبيب"} as any)[r.eligibilityDecision] || "—"], ["التاريخ", (r: any) => fmtDate(r.prescribedAt)], ["التجهيز", (r: any) => rxStatusBadge(r)]]}
             fields={<>
+              <Combobox name="visitId" allowFree={false} placeholder="الزيارة (مطلوبة للوصفة الداخلية)" options={(patient.visits ?? []).filter((v: any) => rxVisitIds.includes(v.id)).map((v: any) => ({ value: v.id, label: `${fmtDate(v.visitDate)} — ${v.branch?.name ?? "فرع غير محدد"}` }))} />
+              {rxVisitIds.length === 0 && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">لا توجد زيارة قائمة صالحة لك كسياق للوصفة الداخلية (زيارة اليوم، أو مسؤولية سريرية قائمة بزيارة غير متجاوَزة): سجّل زيارة متابعة.</p>}
               <Combobox name="prescriptionType" allowFree={false} defaultValue="EXTERNAL" options={[{value:"INTERNAL",label:"داخلية من صيدلية المجمع"},{value:"EXTERNAL",label:"خارجية للطباعة"}]} />
               {(() => {
                 const low = medications.filter((m: any) => (m.quantity ?? 0) <= (m.minQuantity ?? 0));
@@ -212,7 +208,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
                 return (
                   <div className="flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
                     <span>⚠ {low.length} مادة منخفضة/نافذة بالمخزون</span>
-                    <a href="/pharmacy-inventory?tab=stock" className="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-700">راجع المخزون ←</a>
+                    <a href="/pharmacy/stock" className="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-700">راجع المخزون ←</a>
                   </div>
                 );
               })()}
@@ -221,16 +217,17 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
               <input name="usage" className="input" placeholder="الاستخدام" />
               <input name="quantity" className="input w-24" placeholder="الكمية" />
               <input name="duration" className="input w-24" placeholder="المدة" />
-              <input name="doctor" className="input" placeholder="الطبيب" />
+              <input name="doctor" className="input" placeholder="الطبيب" defaultValue={currentUserName} />
               <Combobox name="eligibilityDecision" allowFree={false} defaultValue="DOCTOR_REVIEW" options={[{value:"DOCTOR_REVIEW",label:"قرار الطبيب عند نقص البيانات"},{value:"ELIGIBLE",label:"مؤهل"},{value:"NOT_ELIGIBLE",label:"غير مؤهل"}]} />
               <input name="eligibilityReason" className="input min-w-[220px]" placeholder="سبب القرار عند نقص بيانات الأهلية…" />
             </>} />
         )}
-        {tab === "adm" && (
-          <SectionAdm rows={patient.admissions} editable={can("clinical.admission")} patientId={id} centers={centers} rooms={rooms} role={role} />
+        {shows("adm") && (
+          <SectionAdm rows={patient.admissions ?? []} editable={can("clinical.admission")} patientId={id} centers={centers} rooms={rooms} role={role} />
         )}
-        {tab === "corr" && (
-          <Section rows={patient.correspondence} editable={can("clinical.report")} canDel={canDel} del={deleteCorrespondence.bind(null, id)} action={addCorrespondence.bind(null, id)}
+        {sub("corr", "المخاطبات")}
+        {shows("corr") && (
+          <Section rows={patient.correspondence ?? []} editable={can("clinical.report")} canDel={canDel} del={deleteCorrespondence.bind(null, id)} action={addCorrespondence.bind(null, id)} addLabel="+ مخاطبة"
             edit={(rid: string, fd: FormData) => updateCorrespondence(id, rid, fd)}
             editFields={(r: any) => <>
               <input name="subject" className="input min-w-[220px]" defaultValue={r.subject ?? ""} placeholder="الموضوع" />
@@ -245,27 +242,34 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
               <input name="bookDate" type="date" className="input" />
             </>} />
         )}
-        {tab === "files" && (
+        {sub("files", "المرفقات")}
+        {shows("files") && (
           lazy.files === undefined ? <TabLoading /> :
-          <SectionFiles rows={lazy.files} officialDocs={can("officialdocs.view") ? (patient.officialDocuments ?? []) : []} editable={can("clinical.report")} patientId={id} afterMutate={reload("files")} />
+          <SectionFiles rows={lazy.files} officialDocs={[]} editable={can("clinical.report")} patientId={id} afterMutate={reload("files")} />
         )}
-        {tab === "metrics" && (
+        {sub("metrics", "المقاييس")}
+        {shows("metrics") && (
           lazy.metrics === undefined ? <TabLoading /> :
           <SectionMetrics rows={lazy.metrics} editable={can("clinical.metrics")} patientId={id} afterMutate={reload("metrics")} />
         )}
-        {tab === "plan" && (
-          lazy.plan === undefined ? <TabLoading /> :
-          <SectionPlan rows={lazy.plan} sessionsCount={completedTherapySessions(patient)} plannedCount={plannedTherapySessions(patient)} editable={can("clinical.plan")} patientId={id} afterMutate={reload("plan")} />
+        {shows("plan") && lazy.plan !== undefined && lazy.plan.length > 0 && (
+          <details className="mt-6 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-gray-700">أهداف الخطة القديمة ({lazy.plan.length}) — للاطلاع فقط</summary>
+            <div className="mt-3"><SectionPlan rows={lazy.plan} sessionsCount={completedTherapySessions(patient)} plannedCount={plannedTherapySessions(patient)} editable={false} patientId={id} afterMutate={reload("plan")} /></div>
+          </details>
         )}
-        {tab === "resident" && (lazy.resident === undefined ? <TabLoading /> : <ResidentWorkspace data={lazy.resident} wounds={patient.woundAssessments} can={can} patientId={id} role={role} afterMutate={reload("resident")} />)}
-        {tab === "referrals" && (lazy.referrals === undefined ? <TabLoading /> : <PatientReferralTab patientId={id} rows={lazy.referrals} canCreate={can("referrals.create")} centers={centers} reviewers={staffUsers.filter((user: any) => user.role === "DOCTOR")} residentReviews={patient.residentReviews || []} />)}
-        {tab === "activity" && (lazy.activity === undefined ? <TabLoading /> : <ActivityLog logs={lazy.activity} />)}
-        {tab === "care" && (lazy.care === undefined ? <TabLoading /> : <CareSection rows={lazy.care} editable={can("clinical.care")} patientId={id} medications={medications} afterMutate={reload("care")} />)}
-        {tab === "rel" && (
+        {shows("resident") && (lazy.resident === undefined ? <TabLoading /> : <ResidentWorkspace data={lazy.resident} wounds={patient.woundAssessments ?? []} can={can} patientId={id} role={role} afterMutate={reload("resident")} />)}
+        {shows("referrals") && (lazy.referrals === undefined ? <TabLoading /> : <PatientReferralTab patientId={id} rows={lazy.referrals} canCreate={can("referrals.create")} centers={centers} reviewers={staffUsers.filter((user: any) => user.role === "DOCTOR")} residentReviews={patient.residentReviews || []} therapists={staffUsers.filter((user: any) => user.role === "THERAPIST")} />)}
+        {sub("activity", "سجل التعديلات")}
+        {shows("activity") && (lazy.activity === undefined ? <TabLoading /> : <ActivityLog logs={lazy.activity} />)}
+        {shows("care") && (lazy.care === undefined ? <TabLoading /> : <CareSection rows={lazy.care} editable={can("clinical.care")} patientId={id} medications={medications} afterMutate={reload("care")} />)}
+        {tab === "rel" && infoPanel}
+        {tab === "rel" && shows("rel") && infoPanel ? <h3 className="mb-3 mt-8 border-b border-gray-100 pb-2 text-base font-semibold text-gray-800">ذوو القربى والمرافقون</h3> : null}
+        {shows("rel") && (
           lazy.rel === undefined ? <TabLoading /> :
           <Section rows={lazy.rel} editable={can("patients.edit")}
             del={(async (...a: any[]) => { await (deleteRelative as any)(id, ...a); reload("rel")(); })}
-            action={(async (fd: FormData) => { await addRelative(id, fd); reload("rel")(); })}
+            action={(async (fd: FormData) => { await addRelative(id, fd); reload("rel")(); })} addLabel="+ قريب أو مرافق"
             cols={[["الاسم", (r: any) => r.name], ["الوظيفة", (r: any) => r.job], ["مكان العمل", (r: any) => r.workplace], ["الحالة الاجتماعية", (r: any) => r.socialStatus]]}
             fields={<>
               <input name="name" className="input" placeholder="اسم القريب/الجريح/الشهيد" />
@@ -276,6 +280,7 @@ export function PatientTabs({ patient, editable, perms = [], role = "", slApprov
         )}
       </div>
     </div>
+    </CurrentUserName.Provider>
   );
 }
 
@@ -291,7 +296,7 @@ function rxStatusBadge(r: any) {
   return <span className={`badge ${cls}`}>{label}</span>;
 }
 
-function PatientOverview({ patient, can, role, openTab }: { patient: any; can: (key: string) => boolean; role: string; openTab: (key: string) => void }) {
+function PatientOverview({ patient, can, role, openTab, missingInfo = 0 }: { patient: any; can: (key: string) => boolean; role: string; openTab: (key: string) => void; missingInfo?: number }) {
   const now = new Date();
   const lastVisit = patient.visits?.[0];
   const upcomingAppointment = [...(patient.appointments || [])]
@@ -309,7 +314,6 @@ function PatientOverview({ patient, can, role, openTab }: { patient: any; can: (
   const pharmacy = can("clinical.prescription") || can("pharmacy.view");
   const admission = can("clinical.admission") || can("beds.view");
   const summary = [
-    { show: true, label: "حالة الملف", value: patient.archivedAt ? "مؤرشف" : "نشط", tone: patient.archivedAt ? "warning" : "success" },
     { show: true, label: "آخر زيارة", value: lastVisit ? fmtDate(lastVisit.visitDate) : "لا توجد", tone: "neutral" },
     { show: can("appointments.view"), label: "الموعد القادم", value: upcomingAppointment ? fmtDateTime(upcomingAppointment.scheduledAt) : "لا يوجد", tone: upcomingAppointment ? "info" : "neutral" },
     { show: therapy, label: "تقدم البرنامج", value: activePlan ? `${progress}%` : "لا توجد خطة نشطة", tone: activePlan ? "brand" : "neutral" },
@@ -322,12 +326,15 @@ function PatientOverview({ patient, can, role, openTab }: { patient: any; can: (
     { show: can("referrals.view"), key: "referrals", label: "متابعة الإحالات" },
     { show: therapy, key: "therapyProgram", label: "متابعة البرنامج العلاجي" },
     { show: pharmacy, key: "rx", label: "مراجعة الوصفات" },
-    { show: can("journey.view"), key: "journey", label: "فتح مسار المتابعة" },
+    { show: can("journey.view"), key: "journey", label: "سجل التحويلات" },
   ].filter((item) => item.show);
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {missingInfo > 0 ? <button type="button" onClick={() => openTab("rel")} className="flex w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-right text-sm text-amber-900 hover:bg-amber-100">
+        <span>بيانات المراجع ناقصة: {missingInfo} حقل</span><span className="font-medium">عرض وإكمال ←</span>
+      </button> : null}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {summary.map((item) => <StatCard key={item.label} label={item.label} value={item.value} tone={item.tone as any} />)}
       </div>
       {therapy && activePlan ? (
@@ -346,7 +353,6 @@ function PatientOverview({ patient, can, role, openTab }: { patient: any; can: (
         {nextActions.length ? <div className="flex flex-wrap gap-2">{nextActions.map((item, index) => <button key={item.key} type="button" className={index === 0 ? "btn-primary" : "btn-ghost"} onClick={() => openTab(item.key)}>{item.label}</button>)}</div> : <EmptyState compact title="لا توجد إجراءات متاحة" description="يمكنك قراءة بيانات الملف الأساسية فقط ضمن صلاحياتك الحالية." />}
       </SectionCard>
       {medical && patient.diagnoses?.[0] ? <div className="alert-info"><span aria-hidden="true">i</span><div><b>آخر تقييم طبي:</b> {patient.diagnoses[0].text || "تقييم مسجل"} <span className="text-xs">({fmtDate(patient.diagnoses[0].date)})</span></div></div> : null}
-      {can("appointments.view") && upcomingAppointment ? <div className="alert-success"><span aria-hidden="true">✓</span><div><b>الموعد القادم:</b> {fmtDateTime(upcomingAppointment.scheduledAt)}{upcomingAppointment.type ? ` - ${upcomingAppointment.type}` : ""}</div></div> : null}
     </div>
   );
 }
@@ -355,16 +361,16 @@ function TabLoading() {
   return <LoadingState />;
 }
 
-function Section({ rows, cols, editable, action, fields, del, canDel, edit, editFields }: any) {
+function Section({ rows, cols, editable, action, fields, del, canDel, edit, editFields, addLabel = "+ إضافة" }: any) {
   const extra = (editable && (edit || (canDel && del))) ? 1 : 0;
   return (
     <div className="space-y-4">
       {editable && (
-        <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">{addLabel}</summary><div className="mt-3"><form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
           {fields}<SubmitButton>إضافة</SubmitButton>
-        </form>
+        </form></div></details>
       )}
-      {rows.length === 0 ? <EmptyState compact title="لا توجد سجلات" description={editable ? "استخدم النموذج أعلاه لإضافة أول سجل." : "لم يُسجل أي عنصر في هذا القسم بعد."} /> : <div className="data-table-wrap"><table className="w-full">
+      {rows.length === 0 ? <EmptyState compact title="لا توجد سجلات" description={editable ? "اضغط «إضافة» فوك لتسجيل أول سجل." : "لم يُسجل أي عنصر في هذا القسم بعد."} /> : <div className="data-table-wrap"><table className="w-full">
         <thead><tr>{cols.map(([h]: any) => <th key={h} className="th">{h}</th>)}{extra ? <th className="th"></th> : null}</tr></thead>
         <tbody>
           {rows.map((r: any) => (
@@ -402,7 +408,7 @@ function SectionAdm({ rows, editable, patientId, centers = [], rooms = [], role 
   return (
     <div className="space-y-4">
       {editable && (
-        <form action={addAdmission.bind(null, patientId)} className="flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ تسجيل رقود</summary><div className="mt-3"><form action={addAdmission.bind(null, patientId)} className="flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
           <input name="admissionDate" type="date" className="input" />
           <input name="durationDays" type="number" min="1" className="input !w-32" placeholder="المدة (أيام)" />
           <Combobox name="centerId" allowFree={false} placeholder="المركز" options={centers.map((c:any)=>({value:String(c.id),label:c.name}))} />
@@ -412,7 +418,7 @@ function SectionAdm({ rows, editable, patientId, centers = [], rooms = [], role 
           <input name="admissionReason" className="input min-w-[200px]" placeholder="سبب الرقود" required />
           <input name="notes" className="input" placeholder="ملاحظات" />
           <button className="btn-primary" type="submit">تسجيل رقود</button>
-        </form>
+        </form></div></details>
       )}
       <table className="w-full">
         <thead><tr><th className="th">الدخول</th><th className="th">المدة</th><th className="th">ينتهي بتاريخ</th><th className="th">الخروج</th><th className="th">المركز</th><th className="th">الغرفة</th><th className="th">الحالة</th><th className="th">ملاحظات</th><th className="th"></th></tr></thead>
@@ -509,7 +515,7 @@ function TherapySessionLogs({ patient, editable, patientId, afterMutate }: any) 
       </div>
 
       {editable && (
-        <form action={w(addTherapySessionLog.bind(null, patientId))} className="grid gap-3 rounded-xl border border-gray-200 bg-white p-3 md:grid-cols-4">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ تسجيل جلسة</summary><div className="mt-3"><form action={w(addTherapySessionLog.bind(null, patientId))} className="grid gap-3 rounded-xl border border-gray-200 bg-white p-3 md:grid-cols-4">
           <div>
             <label className="label">المسار/الجدولة</label>
             <select name="sessionId" className="input">
@@ -533,7 +539,7 @@ function TherapySessionLogs({ patient, editable, patientId, afterMutate }: any) 
           <div className="md:col-span-2"><label className="label">ملاحظات المعالج</label><input name="notes" className="input" placeholder="ملاحظات مختصرة" /></div>
           <div className="md:col-span-4"><label className="label">توصية الجلسة القادمة</label><input name="nextRecommendation" className="input" placeholder="ما الذي يركز عليه المعالج في الجلسة القادمة؟" /></div>
           <div className="md:col-span-4"><button className="btn-primary" type="submit">تسجيل نتيجة الجلسة</button></div>
-        </form>
+        </form></div></details>
       )}
 
       {(recentExercise || recentRecommendation) && (
@@ -575,14 +581,14 @@ function SectionPlan({ rows, sessionsCount, plannedCount, editable, patientId, a
   return (
     <div className="space-y-5">
       {editable && (
-        <form action={w(addTreatmentPlan.bind(null, patientId))} className="grid gap-2 rounded-lg bg-gray-50 p-3 md:grid-cols-2">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ هدف جديد</summary><div className="mt-3"><form action={w(addTreatmentPlan.bind(null, patientId))} className="grid gap-2 rounded-lg bg-gray-50 p-3 md:grid-cols-2">
           <input name="title" className="input" placeholder="عنوان الخطة (مثل: تأهيل حركي للطرف السفلي)" />
           <input name="plannedSessions" type="number" min="1" className="input" placeholder="عدد الجلسات المخطّطة" />
           <input name="goals" className="input md:col-span-2" placeholder="هدف الخطة العلاجي" />
           <div><label className="label">تاريخ البدء</label><input name="startDate" type="date" className="input" /></div>
           <input name="notes" className="input" placeholder="ملاحظات المعالج" />
           <div className="md:col-span-2"><button className="btn-primary" type="submit">إضافة خطة</button></div>
-        </form>
+        </form></div></details>
       )}
       <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -669,13 +675,13 @@ function SectionMetrics({ rows, editable, patientId, afterMutate }: any) {
             </form>
           ))}
         </div>
-        <form action={w(addProgressMetric.bind(null, patientId))} className="flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ قياس جديد</summary><div className="mt-3"><form action={w(addProgressMetric.bind(null, patientId))} className="flex flex-wrap items-end gap-2 rounded-lg bg-gray-50 p-3">
           <input name="label" className="input !w-44" placeholder="اسم المقياس (مثل: مدى الحركة)" />
           <input name="value" type="number" step="any" className="input !w-28" placeholder="القيمة" />
           <input name="date" type="date" className="input" />
           <input name="notes" className="input flex-1 min-w-[140px]" placeholder="ملاحظات" />
           <button className="btn-primary" type="submit">إضافة قياس</button>
-        </form>
+        </form></div></details>
         </>
       )}
 
@@ -735,38 +741,23 @@ function WorkspaceSection({ title, description, children, id }: { title: string;
 }
 
 function SpecialistWorkspace({ patient, can, canDel, patientId, openPrescriptions }: any) {
+  const me = React.useContext(CurrentUserName);
   const diagnosisOptions = [{value:"PRELIMINARY",label:"أولي"},{value:"SPECIALIST",label:"اختصاص"},{value:"GENERAL",label:"عام"}];
   return (
     <div className="min-w-0 space-y-6">
-      <WorkspaceSection title="إجراءات الطبيب الاختصاص">
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-100 bg-brand-50/40 p-3">
-          {can("clinical.prescription") ? <button type="button" onClick={openPrescriptions} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700">💊 وصفة طبية</button> : null}
-          {can("clinical.diagnosis") ? (
-            <details className="min-w-0">
-              <summary className="cursor-pointer list-none rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white hover:bg-brand-700">↪ إحالة إلى مركز مختص</summary>
-              <form action={referToCenter.bind(null, patientId)} className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-100 bg-white p-2">
-                <div className="min-w-[200px] flex-1"><Combobox name="station" label="المركز أو الجهة" allowFree options={["مركز العلاج الطبيعي", "مركز التأهيل النفسي", "مركز العلاج الوظيفي", "مركز النقاء", "الأطراف الصناعية"]} placeholder="مثال: مركز العلاج الطبيعي" /></div>
-                <input name="note" className="input min-w-0 flex-1 !py-1 text-sm" placeholder="ملاحظة اختيارية" />
-                <button className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700" type="submit">إرسال الإحالة</button>
-              </form>
-            </details>
-          ) : null}
-          {can("clinical.report") ? <a href="#medical-reports" className="rounded-lg bg-gray-800 px-3 py-2 text-xs font-medium text-white hover:bg-gray-900">📋 تقرير طبي</a> : null}
-        </div>
-      </WorkspaceSection>
 
       <WorkspaceSection title="التشخيصات والاستشارات" description="نماذج وسجل تشخيصات الطبيب الاختصاص والاستشارات الطبية.">
-        <Section rows={patient.diagnoses} editable={can("clinical.diagnosis")} canDel={canDel} del={deleteDiagnosis.bind(null, patientId)} action={addDiagnosis.bind(null, patientId)}
+        <Section rows={patient.diagnoses ?? []} editable={can("clinical.diagnosis")} canDel={canDel} del={deleteDiagnosis.bind(null, patientId)} action={addDiagnosis.bind(null, patientId)} addLabel="+ تشخيص"
           edit={(rid: string, fd: FormData) => updateDiagnosis(patientId, rid, fd)}
           editFields={(r: any) => <><Combobox name="type" allowFree={false} defaultValue={r.type} options={diagnosisOptions} /><input name="text" className="input min-w-[220px]" defaultValue={r.text ?? ""} /><input name="doctor" className="input" defaultValue={r.doctor ?? ""} /></>}
           cols={[["النوع", (r: any) => DIAGNOSIS[r.type as keyof typeof DIAGNOSIS]], ["التشخيص", (r: any) => r.text], ["الطبيب", (r: any) => r.doctor], ["التاريخ", (r: any) => fmtDate(r.date)]]}
-          fields={<><Combobox name="type" allowFree={false} options={diagnosisOptions} /><input name="text" className="input" placeholder="نص التشخيص" /><input name="doctor" className="input" placeholder="الطبيب" /></>} />
+          fields={<><Combobox name="type" allowFree={false} options={diagnosisOptions} /><input name="text" className="input" placeholder="نص التشخيص" /><input name="doctor" className="input" placeholder="الطبيب" defaultValue={me} /></>} />
       </WorkspaceSection>
 
       <WorkspaceSection id="medical-reports" title="التقارير الطبية" description="أنشئ تقريراً أولياً أو نهائياً، وتابع حالته ونسخته المعدة للطباعة.">
-        <Section rows={patient.medicalReports} editable={can("clinical.report")} canDel={canDel} del={deleteReport.bind(null, patientId)} action={addReport.bind(null, patientId)}
-          cols={[["النوع", (r: any) => r.reportType === "FINAL" ? "نهائي" : r.reportType === "PRELIMINARY" ? "أولي" : "قديم"], ["التقرير", (r: any) => r.content], ["الطبيب", (r: any) => r.doctor], ["الحالة والطباعة", (r: any) => <div className="flex flex-wrap items-center gap-2"><span>{({DRAFT:"مسودة",READY_TO_PRINT:"جاهز للطباعة",PRINTED_APPROVED:"مطبوع ومعتمد",CANCELLED:"ملغى"} as any)[r.status] || "قديم"}</span>{r.status === "READY_TO_PRINT" ? <a className="text-brand-700 hover:underline" href={`/patients/${patientId}/medical-report/${r.id}`}>طباعة رسمية</a> : null}{r.status === "DRAFT" ? <form action={setReportStatus.bind(null,patientId,r.id,"READY_TO_PRINT")}><button className="text-brand-700 hover:underline">تجهيز للطباعة</button></form> : null}{r.status === "READY_TO_PRINT" && can("reports.print") ? <form action={setReportStatus.bind(null,patientId,r.id,"PRINTED_APPROVED")}><button className="text-emerald-700 hover:underline">تأشير مطبوع ومعتمد</button></form> : null}</div>], ["التاريخ", (r: any) => fmtDate(r.date)]]}
-          fields={<><Combobox name="reportType" allowFree={false} defaultValue="PRELIMINARY" options={[{value:"PRELIMINARY",label:"أولي"},{value:"FINAL",label:"نهائي"}]} /><Combobox name="status" allowFree={false} defaultValue="DRAFT" options={[{value:"DRAFT",label:"مسودة"},{value:"READY_TO_PRINT",label:"جاهز للطباعة"}]} /><input name="content" className="input min-w-[280px]" placeholder="نص التقرير الطبي" /><input name="doctor" className="input" placeholder="الطبيب" /></>} />
+        <Section rows={patient.medicalReports ?? []} editable={can("clinical.report")} canDel={canDel} del={deleteReport.bind(null, patientId)} action={addReport.bind(null, patientId)} addLabel="+ تقرير طبي"
+          cols={[["النوع", (r: any) => r.reportType === "FINAL" ? "نهائي" : r.reportType === "PRELIMINARY" ? "أولي" : "قديم"], ["التقرير", (r: any) => r.content], ["الطبيب", (r: any) => r.doctor], ["الحالة والطباعة", (r: any) => <div className="flex flex-wrap items-center gap-2"><span>{({DRAFT:"مسودة",READY_TO_PRINT:"جاهز للطباعة",PRINTED_APPROVED:"مطبوع ومعتمد",CANCELLED:"ملغى"} as any)[r.status] || "قديم"}</span>{r.status === "READY_TO_PRINT" ? <a className="text-brand-700 hover:underline" href={`/patients/${patientId}/medical-report/${r.id}`}>طباعة رسمية</a> : null}{r.status === "DRAFT" ? <form action={setReportStatus.bind(null,patientId,r.id,"READY_TO_PRINT")}><button className="text-brand-700 hover:underline">تجهيز للطباعة</button></form> : null}{r.status === "READY_TO_PRINT" && can("reports.medical.approve") ? <form action={setReportStatus.bind(null,patientId,r.id,"PRINTED_APPROVED")}><button className="text-emerald-700 hover:underline">تأشير مطبوع ومعتمد</button></form> : null}</div>], ["التاريخ", (r: any) => fmtDate(r.date)]]}
+          fields={<><Combobox name="reportType" allowFree={false} defaultValue="PRELIMINARY" options={[{value:"PRELIMINARY",label:"أولي"},{value:"FINAL",label:"نهائي"}]} /><Combobox name="status" allowFree={false} defaultValue="DRAFT" options={[{value:"DRAFT",label:"مسودة"},{value:"READY_TO_PRINT",label:"جاهز للطباعة"}]} /><input name="content" className="input min-w-[280px]" placeholder="نص التقرير الطبي" /><input name="doctor" className="input" placeholder="الطبيب" defaultValue={me} /></>} />
       </WorkspaceSection>
     </div>
   );
@@ -778,9 +769,10 @@ function ResidentWorkspace({ data, wounds, can, patientId, role, afterMutate }: 
       <WorkspaceSection title="تقييم الطبيب المقيم" description="يسجل الطبيب بيانات التقييم والعلامات الحيوية وقرار الإحالة والملاحظات في نموذج واحد.">
         <SectionResidentReview rows={data.reviews || []} editable={can("clinical.metrics")} patientId={patientId} afterMutate={afterMutate} />
       </WorkspaceSection>
-      <WorkspaceSection title="سجل العلامات الحيوية السابق" description="قراءات تاريخية غير مرتبطة بتقييم طبيب مقيم. تظهر للقراءة دون نموذج إدخال مستقل.">
-        <SectionVitals rows={data.historicalVitals || []} editable={false} patientId={patientId} />
-      </WorkspaceSection>
+      {(data.historicalVitals || []).length ? <details className="rounded-xl border border-gray-200 p-3">
+        <summary className="cursor-pointer text-sm font-medium text-gray-700">قراءات علامات حيوية قديمة ({(data.historicalVitals || []).length})</summary>
+        <div className="mt-3"><SectionVitals rows={data.historicalVitals || []} editable={false} patientId={patientId} /></div>
+      </details> : null}
       <WorkspaceSection title="تقييم الجروح" description="التقييم الطبي الأولي للجروح وصورها وسجل القياسات والحالة.">
         <SectionWound rows={wounds || []} editable={can("clinical.wound")} patientId={patientId} role={role} />
       </WorkspaceSection>
@@ -809,7 +801,7 @@ function SectionWound({ rows, editable, patientId, role }: any) {
         </div>
       )}
       {editable && (
-        <form action={addWound.bind(null, patientId)} className="grid gap-2 rounded-lg bg-gray-50 p-3 md:grid-cols-3">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ تقييم جرح</summary><div className="mt-3"><form action={addWound.bind(null, patientId)} className="grid gap-2 rounded-lg bg-gray-50 p-3 md:grid-cols-3">
           <input name="woundType" className="input" placeholder="نوع الجرح/القرحة" />
           <input name="exudate" className="input" placeholder="الإفرازات" />
           <input name="photo" type="file" accept="image/*" className="input" />
@@ -821,7 +813,7 @@ function SectionWound({ rows, editable, patientId, role }: any) {
             <label className="flex items-center gap-1"><input type="checkbox" name="warmth" /> حرارة</label>
             <button className="btn-primary mr-auto" type="submit">إضافة تقييم</button>
           </div>
-        </form>
+        </form></div></details>
       )}
       <div className="space-y-3">
         {rows.map((r: any) => (
@@ -886,7 +878,7 @@ function SectionFiles({ rows, officialDocs = [], editable, patientId, afterMutat
   return (
     <div className="space-y-5">
       {editable && (
-        <form action={w(addAttachment.bind(null, patientId))} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-4">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ مرفق جديد</summary><div className="mt-3"><form action={w(addAttachment.bind(null, patientId))} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-4">
           <div>
             <label className="label">الملف</label>
             <input name="file" type="file" className="input" />
@@ -897,7 +889,7 @@ function SectionFiles({ rows, officialDocs = [], editable, patientId, afterMutat
           </div>
           <Combobox name="type" label="التصنيف" allowFree={false} defaultValue="DOCUMENT" options={[{value:"DOCUMENT",label:"وثيقة"},{value:"IMAGE",label:"صورة / أشعة"},{value:"WOUND",label:"صورة جرح"},{value:"OTHER",label:"أخرى"}]} />
           <button className="btn-primary" type="submit">رفع مرفق</button>
-        </form>
+        </form></div></details>
       )}
 
       <div className="card flex flex-wrap gap-2 p-3">
@@ -1030,90 +1022,52 @@ function ActivityLog({ logs }: { logs: any[] }) {
   );
 }
 
-function SchedulePlanner({ patientId, centers, centerHalls }: any) {
-  const [open, setOpen] = useState(false);
-  const WEEKDAYS = [
-    { v: 6, l: "السبت" }, { v: 0, l: "الأحد" }, { v: 1, l: "الإثنين" },
-    { v: 2, l: "الثلاثاء" }, { v: 3, l: "الأربعاء" }, { v: 4, l: "الخميس" }, { v: 5, l: "الجمعة" },
-  ];
-  const THERAPY_OPTS = Object.entries(THERAPY).map(([value, label]: any) => ({ value, label }));
-  return (
-    <div className="rounded-xl border-2 border-brand-200 bg-brand-50 p-4">
-      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-right">
-        <span className="flex items-center gap-2 font-semibold text-brand-800">📅 جدولة الجلسات العلاجية <span className="text-xs font-normal text-brand-600">(رئيس المعالجين)</span></span>
-        <span className="text-brand-600">{open ? "▲" : "▼"}</span>
-      </button>
-      {open && (
-        <form action={scheduleSessions.bind(null, patientId)} className="mt-4 space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="text-xs text-gray-600">نوع العلاج
-              <select name="therapyType" className="input mt-1 w-full">
-                {THERAPY_OPTS.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
-            <div className="md:col-span-2">
-              <CenterHallSelect centers={centers || []} halls={centerHalls || []} hallFieldName="hall" hallValue="name" requiredCenter requiredHall className="grid gap-3 md:grid-cols-2" />
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="text-xs text-gray-600">المعالج<input name="therapist" className="input mt-1 w-full" placeholder="اسم المعالج" /></label>
-            <label className="text-xs text-gray-600">عدد الجلسات<input name="totalSessions" type="number" min={1} max={60} defaultValue={6} className="input mt-1 w-full" /></label>
-            <label className="text-xs text-gray-600">وقت الجلسة<input name="sessionTime" type="time" defaultValue="10:00" className="input mt-1 w-full" /></label>
-          </div>
-
-          <label className="block text-xs text-gray-600">الخطة العلاجية
-            <input name="treatmentPlan" className="input mt-1 w-full" placeholder="وصف الخطة العلاجية" />
-          </label>
-
-          <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-medium text-gray-600">أيام المراجعة بالأسبوع</div>
-              <div className="text-[11px] text-gray-400">اختر يومًا أو أكثر، وسيتم توزيع الجلسات بالتتابع حسب التاريخ والوقت.</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {WEEKDAYS.map((d) => (
-                <label key={d.v} className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-100 has-[:checked]:font-semibold has-[:checked]:text-brand-800">
-                  <input type="checkbox" name="weekdays" value={d.v} className="h-3.5 w-3.5 accent-brand-600" />{d.l}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <label className="block text-xs text-gray-600">تاريخ بداية الجدولة
-            <input name="startDate" type="date" required className="input mt-1 w-full md:w-64" />
-          </label>
-
-          <div className="grid gap-2 md:grid-cols-2">
-            <div className="rounded-lg border border-brand-200 bg-white p-3 text-xs text-gray-500">
-              سيوزّع النظام الجلسات على الأيام المختارة ابتداءً من تاريخ البداية، وينشئ موعداً لكل جلسة في المواعيد تلقائياً. لا يُحذف أي موعد أو جلسة سابقة.
-            </div>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-              قبل الحفظ يتم فحص التضارب القوي: نفس المعالج أو نفس القاعة في نفس وقت الجلسة. إذا ظهر تضارب لن يتم إنشاء الجدولة.
-            </div>
-          </div>
-
-          <button className="btn-primary" type="submit">جدولة الجلسات وإضافتها للمواعيد</button>
-        </form>
-      )}
-    </div>
-  );
-}
-
 function SectionResidentReview({ rows, editable, patientId, afterMutate }: any) {
+  const me = React.useContext(CurrentUserName);
   const w = (action: any) => async (fd: FormData) => { await action(fd); afterMutate?.(); };
   const [refer, setRefer] = useState(false);
   const SPECIALTIES = ["كسور", "جراحة عامة", "عظام", "باطنية", "جراحة أعصاب", "مسالك بولية", "أنف وأذن وحنجرة", "عيون", "جلدية", "أوعية دموية"];
   const sorted = [...rows].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const reviewCard = (r: any) => (
+          <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="badge-brand">{fmtDate(r.date)}</span>
+                {r.residentDoctor && <span className="text-sm font-medium text-gray-700">{r.residentDoctor}</span>}
+              </div>
+              {editable && <form action={w(deleteResidentReview.bind(null, patientId, r.id))}><button className="btn-icon-danger" title="حذف">×</button></form>}
+            </div>
+
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700">
+              {(r.systolic && r.diastolic) ? <span>الضغط: <b>{r.systolic}/{r.diastolic}</b></span> : null}
+              {r.glucose != null ? <span>السكر: <b>{r.glucose}</b> mg/dL</span> : null}
+              {r.pulse != null ? <span>النبض: <b>{r.pulse}</b></span> : null}
+              {r.temp != null ? <span>الحرارة: <b>{r.temp}°</b></span> : null}
+              {r.spo2 != null ? <span>الأكسجين: <b>{r.spo2}%</b></span> : null}
+              {r.respRate != null ? <span>التنفّس: <b>{r.respRate}</b></span> : null}
+              {r.weight != null ? <span>الوزن: <b>{r.weight}</b> kg</span> : null}
+            </div>
+
+            {r.referralNeeded && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+                <div className="flex items-center gap-2 font-semibold text-amber-800">↪ إحالة إلى اختصاص: {r.specialtyType || "غير محدد"}</div>
+                {r.referralReason && <div className="mt-1 text-amber-700">السبب: {r.referralReason}</div>}
+                {r.referralNotes && <div className="mt-0.5 text-amber-700">ملاحظات: {r.referralNotes}</div>}
+              </div>
+            )}
+
+            {r.generalNotes && <div className="mt-2 text-sm text-gray-500">ملاحظات: {r.generalNotes}</div>}
+          </div>
+  );
   return (
     <div className="space-y-5">
       {editable && (
-        <form action={w(addResidentReview.bind(null, patientId))} className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ تقييم جديد</summary><div className="mt-3"><form action={w(addResidentReview.bind(null, patientId))} className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-brand-700">🩺 تقييم الطبيب المقيم</div>
 
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             <label className="text-xs text-gray-500">التاريخ<input name="date" type="date" className="input mt-1 w-full" /></label>
-            <label className="text-xs text-gray-500 md:col-span-3">اسم الطبيب المقيم<input name="residentDoctor" className="input mt-1 w-full" placeholder="د. ..." /></label>
+            <label className="text-xs text-gray-500 md:col-span-3">اسم الطبيب المقيم<input name="residentDoctor" className="input mt-1 w-full" placeholder="د. ..." defaultValue={me} /></label>
           </div>
 
           <div>
@@ -1148,43 +1102,18 @@ function SectionResidentReview({ rows, editable, patientId, afterMutate }: any) 
 
           <input name="generalNotes" className="input w-full" placeholder="ملاحظات عامة للطبيب المقيم" />
           <button className="btn-primary" type="submit">حفظ تقييم الطبيب المقيم</button>
-        </form>
+        </form></div></details>
       )}
 
       {rows.length === 0 && <p className="text-sm text-gray-400">لا توجد تقييمات بعد. يسجّل الطبيب المقيم العلامات الحيوية والإحالة قبل التشخيص.</p>}
 
+      {/* The latest review stays open; older ones fold under one line. */}
       <div className="space-y-3">
-        {sorted.map((r: any) => (
-          <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="badge-brand">{fmtDate(r.date)}</span>
-                {r.residentDoctor && <span className="text-sm font-medium text-gray-700">{r.residentDoctor}</span>}
-              </div>
-              {editable && <form action={w(deleteResidentReview.bind(null, patientId, r.id))}><button className="btn-icon-danger" title="حذف">×</button></form>}
-            </div>
-
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700">
-              {(r.systolic && r.diastolic) ? <span>الضغط: <b>{r.systolic}/{r.diastolic}</b></span> : null}
-              {r.glucose != null ? <span>السكر: <b>{r.glucose}</b> mg/dL</span> : null}
-              {r.pulse != null ? <span>النبض: <b>{r.pulse}</b></span> : null}
-              {r.temp != null ? <span>الحرارة: <b>{r.temp}°</b></span> : null}
-              {r.spo2 != null ? <span>الأكسجين: <b>{r.spo2}%</b></span> : null}
-              {r.respRate != null ? <span>التنفّس: <b>{r.respRate}</b></span> : null}
-              {r.weight != null ? <span>الوزن: <b>{r.weight}</b> kg</span> : null}
-            </div>
-
-            {r.referralNeeded && (
-              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-                <div className="flex items-center gap-2 font-semibold text-amber-800">↪ إحالة إلى اختصاص: {r.specialtyType || "غير محدد"}</div>
-                {r.referralReason && <div className="mt-1 text-amber-700">السبب: {r.referralReason}</div>}
-                {r.referralNotes && <div className="mt-0.5 text-amber-700">ملاحظات: {r.referralNotes}</div>}
-              </div>
-            )}
-
-            {r.generalNotes && <div className="mt-2 text-sm text-gray-500">ملاحظات: {r.generalNotes}</div>}
-          </div>
-        ))}
+        {sorted.slice(0, 1).map(reviewCard)}
+        {sorted.length > 1 ? <details className="rounded-xl border border-gray-200 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-gray-700">التقييمات السابقة ({sorted.length - 1})</summary>
+          <div className="mt-3 space-y-3">{sorted.slice(1).map(reviewCard)}</div>
+        </details> : null}
       </div>
     </div>
   );
@@ -1270,97 +1199,22 @@ function SectionVitals({ rows, editable, patientId, afterMutate }: any) {
   );
 }
 
-function Journey({ patient, can, id, role }: any) {
-  const stages = patient.careStages ?? [];
-  const M: any = {
-    WAITING: { label: "بالانتظار", dot: "bg-gray-300", badge: "bg-gray-100 text-gray-600" },
-    IN_PROGRESS: { label: "قيد التنفيذ", dot: "bg-amber-500", badge: "bg-amber-100 text-amber-700" },
-    CONFIRMED: { label: "مؤكّدة", dot: "bg-emerald-600", badge: "bg-emerald-100 text-emerald-700" },
-    SKIPPED: { label: "متجاوَزة", dot: "bg-gray-300", badge: "bg-gray-100 text-gray-400" },
-  };
-  const isOverride = role === "ADMIN" || role === "MANAGER";
-  const mayConfirm = (st: any) => can("journey.confirm") && (isOverride || !st.responsibleRole || st.responsibleRole === role);
-  const roleLabel = (r: string) => (r ? (ROLE_LABELS as any)[r] ?? r : "أي مخوّل");
-  const current = stages.find((s: any) => s.status === "WAITING" || s.status === "IN_PROGRESS");
-  const done = stages.filter((s: any) => s.status === "CONFIRMED").length;
-  const ROLES = ["RECEPTION", "DATA_ENTRY", "DOCTOR", "RESIDENT", "HEAD_THERAPIST", "LAB", "RADIOLOGY", "PHARMACIST", "THERAPIST", "DRESSING", "PROSTHETICS", "ACCOUNTANT"];
-
-  if (stages.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-gray-300 p-6 text-center">
-        <p className="mb-1 text-sm font-medium text-gray-600">لا يوجد مسار متابعة لهذا المراجع بعد.</p>
-        <p className="mb-4 text-xs text-gray-400">سلسلة محطّات، كل محطة يؤكّدها الدور المسؤول عنها فقط (الصيدلية ← صيدلي، الفحص ← طبيب...).</p>
-        {can("journey.manage") && (
-          <form action={startPathway.bind(null, id)}><button className="btn-primary" type="submit">🧭 بدء المسار القياسي</button></form>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="text-sm text-gray-600">التقدّم: <b className="text-gray-800">{done}/{stages.length}</b></div>
-        {current ? <span className="badge-brand">المحطة الحالية: {current.station}</span> : <span className="badge-success">اكتمل المسار ✔</span>}
-        <a href={`/patients/${id}/journey-print`} target="_blank" className="mr-auto rounded-lg border border-brand-200 px-3 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50">🖨 طباعة المسار</a>
-      </div>
-      <ol className="relative border-r-2 border-gray-200 pr-6">
-        {stages.map((st: any) => {
-          const m = M[st.status] || M.WAITING;
-          const allowed = mayConfirm(st);
-          return (
-            <li key={st.id} className="relative mb-5">
-              <span className={`absolute -right-[31px] top-1 h-4 w-4 rounded-full ring-4 ring-white ${m.dot}`} />
-              <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-semibold text-gray-800">{st.station}</div>
-                  <div className="flex items-center gap-2">
-                    <span className="badge bg-slate-100 text-slate-600">المسؤول: {roleLabel(st.responsibleRole)}</span>
-                    <span className={`badge ${m.badge}`}>{m.label}</span>
-                  </div>
-                </div>
-                {st.note && <div className="mt-1 text-xs text-gray-500">{st.note}</div>}
-                {st.status === "CONFIRMED" && st.confirmedBy && (
-                  <div className="mt-1 text-xs text-emerald-700">✔ أكّدها {st.confirmedBy}{st.confirmedAt ? ` — ${fmtDateTime(st.confirmedAt)}` : ""}</div>
-                )}
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  {allowed ? (
-                    <>
-                      {st.status !== "CONFIRMED" && (
-                        <>
-                          {st.status !== "IN_PROGRESS" && <form action={setStageStatus.bind(null, id, st.id, "IN_PROGRESS")}><button className="rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">قيد التنفيذ</button></form>}
-                          <form action={confirmStage.bind(null, id, st.id)}><button className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">تأكيد ✔</button></form>
-                          <form action={setStageStatus.bind(null, id, st.id, "SKIPPED")}><button className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-500 hover:bg-gray-200">تجاوز</button></form>
-                        </>
-                      )}
-                      {st.status === "CONFIRMED" && <form action={setStageStatus.bind(null, id, st.id, "WAITING")}><button className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-500 hover:bg-gray-200">إلغاء التأكيد</button></form>}
-                    </>
-                  ) : (
-                    st.status !== "CONFIRMED" && <span className="text-xs text-gray-400">🔒 بانتظار تأكيد «{roleLabel(st.responsibleRole)}»</span>
-                  )}
-                  {role === "ADMIN" && <form action={deleteStage.bind(null, id, st.id)}><button className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50">حذف</button></form>}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-      {can("journey.manage") && (
-        <form action={addStage.bind(null, id)} className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-gray-100 p-3">
-          <div className="min-w-[150px] flex-1">
-            <label className="label">إضافة محطة</label>
-            <Combobox name="station" allowFree required options={CENTER_STATION_NAMES} placeholder="مثال: علاج طبيعي" />
+function HandoffHistory({ rows }: { rows: PatientHandoffHistoryRow[] }) {
+  return <section aria-labelledby="handoff-history-heading" className="rounded-xl border border-gray-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+    <h3 id="handoff-history-heading" className="mb-3 text-base font-semibold text-gray-900 dark:text-slate-100">سجل التحويلات</h3>
+    {rows.length === 0 ? <p className="text-sm text-gray-500 dark:text-slate-400">لا توجد تحويلات مسجلة لهذا المراجع.</p> :
+      <ol className="space-y-3">
+        {rows.map((row) => <li key={row.id} className="min-w-0 rounded-lg border border-gray-100 p-3 text-sm dark:border-slate-700">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <time dateTime={new Date(row.sentAt).toISOString()} className="text-gray-500 dark:text-slate-400">{fmtDateTime(row.sentAt)}</time>
+            <span className="badge-brand">{handoffStatusLabel(row.status)}</span>
           </div>
-          <div className="min-w-[130px]">
-            <label className="label">الدور المسؤول</label>
-            <Combobox name="responsibleRole" allowFree={false} placeholder="أي مخوّل" options={ROLES.map((r:any)=>({value:r,label:(ROLE_LABELS as any)[r]}))} />
-          </div>
-          <input name="note" className="input min-w-[130px] flex-1" placeholder="ملاحظة (اختياري)" />
-          <button className="btn-primary" type="submit">إضافة</button>
-        </form>
-      )}
-    </div>
-  );
+          <p className="mt-2 break-words text-gray-800 dark:text-slate-100">من <bdi>{handoffParty(row.fromUser?.fullName, row.fromRole, row.fromCenter?.name)}</bdi> إلى <bdi>{handoffParty(row.toUser?.fullName, row.toRole, row.toCenter?.name)}</bdi></p>
+          {row.note ? <p className="mt-1 break-words text-gray-600 dark:text-slate-300">ملاحظة: {row.note}</p> : null}
+          {row.returnReason ? <p className="mt-1 break-words text-amber-700 dark:text-amber-300">سبب الإرجاع: {row.returnReason}</p> : null}
+        </li>)}
+      </ol>}
+  </section>;
 }
 
 function OfficialDocs({ patient, can, id, role }: any) {
@@ -1402,7 +1256,7 @@ function OfficialDocs({ patient, can, id, role }: any) {
         </div>
       ))}
       {manage && (
-        <form action={addOfficialDoc.bind(null, id)} className="grid gap-2 rounded-xl border border-gray-100 p-3 sm:grid-cols-2">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ إجراء رسمي</summary><div className="mt-3"><form action={addOfficialDoc.bind(null, id)} className="grid gap-2 rounded-xl border border-gray-100 p-3 sm:grid-cols-2">
           <div className="sm:col-span-2 font-medium text-gray-700">إضافة إجراء رسمي</div>
           <div><label className="label">النوع</label><Combobox name="docType" allowFree={false} defaultValue="LETTER" options={Object.entries(DOC_TYPE).map(([value,label]:any)=>({value,label}))} /></div>
           <div><label className="label">الاتجاه</label><Combobox name="direction" allowFree={false} defaultValue="INCOMING" options={Object.entries(DOC_DIRECTION).map(([value,label]:any)=>({value,label}))} /></div>
@@ -1413,7 +1267,7 @@ function OfficialDocs({ patient, can, id, role }: any) {
           <div className="sm:col-span-2"><label className="label">ملاحظات</label><textarea name="body" className="input" rows={2} /></div>
           <div className="sm:col-span-2"><label className="label">مرفق (اختياري)</label><input name="attachment" type="file" className="input" /></div>
           <div className="sm:col-span-2"><button className="btn-primary" type="submit">إضافة للأرشيف</button></div>
-        </form>
+        </form></div></details>
       )}
     </div>
   );
@@ -1517,7 +1371,7 @@ function SickLeaves({ patient, can, id, role, approvals = [], staff = [], staffU
       })}
 
       {manage && (
-        <form action={addSickLeave.bind(null, id)} onChange={(e) => calcDays(e.currentTarget)} className="grid gap-2 rounded-xl border border-gray-100 p-3 sm:grid-cols-2">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ إجازة مرضية</summary><div className="mt-3"><form action={addSickLeave.bind(null, id)} onChange={(e) => calcDays(e.currentTarget)} className="grid gap-2 rounded-xl border border-gray-100 p-3 sm:grid-cols-2">
           <div className="sm:col-span-2 font-medium text-gray-700">إصدار إجازة مرضية</div>
           <div><label className="label">من <span className="text-red-600">*</span></label><input name="startDate" type="date" className="input" required /></div>
           <div><label className="label">إلى <span className="text-red-600">*</span></label><input name="endDate" type="date" className="input" required /></div>
@@ -1557,7 +1411,7 @@ function SickLeaves({ patient, can, id, role, approvals = [], staff = [], staffU
 
           <div className="sm:col-span-2"><label className="label">ملاحظات</label><input name="notes" className="input" /></div>
           <div className="sm:col-span-2"><button className="btn-primary" type="submit">إصدار الإجازة</button></div>
-        </form>
+        </form></div></details>
       )}
     </div>
   );

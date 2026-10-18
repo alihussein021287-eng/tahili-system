@@ -2,25 +2,27 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Combobox } from "@/components/Combobox";
 import { PageHeader } from "@/components/PageHeader";
-import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
+import { AdminIntro, AdminSection, StatCard } from "@/components/AdminPageSections";
+import { HubTabs } from "@/components/hub/HubTabs";
+import { FilterBar } from "@/components/hub/FilterBar";
+import { REPORTS_FINANCE_MOVED, REPORTS_FINANCE_NAV, movedTabUrl } from "@/lib/hub-nav";
 import { TableEmptyRow } from "@/components/Ui";
 import { currentPerms, requireSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { APPROVAL_STATUS, APPROVAL_TYPE, DOC_DIRECTION, DOC_TYPE, INVOICE_STATUS, fmtDate, fmtDateTime, fmtMoney } from "@/lib/labels";
+import { invoiceViewWhere } from "@/lib/patient-guard";
 
 export const dynamic = "force-dynamic";
 
-type ReportsFinanceTab = "overview" | "official" | "patients" | "finance" | "wounded" | "approvals" | "exports" | "alerts";
+type ReportsFinanceTab = "overview" | "official" | "patients" | "exports";
 
-const TABS: { key: ReportsFinanceTab; label: string; title: string; description: string; perms: string[] }[] = [
-  { key: "overview", label: "نظرة عامة", title: "لوحة التقارير والمالية", description: "ملخص موحد للتقارير الرسمية، تقارير المراجعين، الفواتير، صرفيات الجرحى، والاعتمادات.", perms: ["reports.view", "reports.official", "finance.view", "finance.report", "expenses.view", "expenses.reports", "approvals.view", "officialdocs.view", "analytics.view", "patients.export"] },
-  { key: "official", label: "التقارير الرسمية", title: "التقارير الرسمية والوثائق", description: "متابعة التقارير الرسمية الشهرية والإحصائية وأرشيف الوثائق الرسمية عند توفر الصلاحية.", perms: ["reports.view", "reports.official", "officialdocs.view"] },
-  { key: "patients", label: "تقارير المراجعين", title: "تقارير المراجعين", description: "فلترة التقارير الطبية المسجلة للمراجعين حسب التاريخ، النوع، الحالة، والمراجع.", perms: ["reports.view", "patients.print", "clinical.report"] },
-  { key: "finance", label: "المالية", title: "الفواتير والمدفوعات", description: "ملخص الفواتير والتحصيل مع فلترة واضحة وروابط للتقرير السنوي وسجل المدفوعات.", perms: ["finance.view", "finance.report"] },
-  { key: "wounded", label: "صرفيات الجرحى", title: "صرفيات الجرحى", description: "متابعة مسودات وطلبات الصرف والاعتماد والتنفيذ دون إظهار مبالغ إلا لصلاحية المبالغ.", perms: ["expenses.view", "expenses.reports", "expenses.approve", "expenses.pay"] },
-  { key: "approvals", label: "الموافقات والاعتمادات", title: "الموافقات والاعتمادات", description: "طلبات الموافقة العامة وصرفيات الجرحى التي تحتاج قراراً أو تنفيذ صرف.", perms: ["approvals.view", "expenses.approve", "expenses.pay", "reports.approve"] },
-  { key: "exports", label: "الصادرات والملفات", title: "الصادرات والملفات", description: "روابط التصدير المتاحة حسب الصلاحيات، مع سجل الصادرات إذا كان التدقيق متاحاً.", perms: ["patients.export", "patients.view", "expenses.reports", "officialdocs.view", "audit.view"] },
-  { key: "alerts", label: "تنبيهات ومتابعة", title: "تنبيهات ومتابعة", description: "سجلات تحتاج متابعة: تقارير غير معتمدة، صرفيات متأخرة، فواتير معلقة، وطلبات موافقة.", perms: ["reports.view", "reports.official", "finance.view", "expenses.view", "expenses.approve", "expenses.pay", "approvals.view"] },
+// Invoices (/finance), wounded expenses (/finance/expenses), approvals (/approvals) and the
+// official documents archive (/official-docs) are their own pages; see REPORTS_FINANCE_NAV.
+const TABS: { key: ReportsFinanceTab; title: string; description: string; perms: string[] }[] = [
+  { key: "overview", title: "لوحة التقارير والمالية", description: "ملخص التقارير والفواتير والصرفيات والاعتمادات، وما يحتاج متابعة.", perms: ["reports.view", "reports.official", "finance.view", "finance.report", "expenses.view", "expenses.reports", "approvals.view", "officialdocs.view", "analytics.view", "patients.export"] },
+  { key: "official", title: "التقارير الرسمية", description: "حالة التقرير الرسمي الشهري والإحصائي، وروابط التقارير.", perms: ["reports.view", "reports.official"] },
+  { key: "patients", title: "التقارير الطبية", description: "التقارير الطبية المسجلة للمراجعين حسب التاريخ، النوع، الحالة، والمراجع.", perms: ["reports.view", "patients.print", "clinical.report"] },
+  { key: "exports", title: "الصادرات والملفات", description: "روابط التصدير المتاحة حسب الصلاحيات، مع سجل الصادرات إذا كان التدقيق متاحاً.", perms: ["patients.export", "patients.view", "expenses.reports", "officialdocs.view", "audit.view"] },
 ];
 
 const MONTHS = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"];
@@ -119,6 +121,8 @@ export default async function ReportsFinancePage({
 }) {
   await requireSession();
   const sp = await searchParams;
+  const moved = sp.tab ? movedTabUrl(REPORTS_FINANCE_MOVED, sp.tab, sp) : null;
+  if (moved) redirect(moved);
   const perms = await currentPerms();
 
   const canReports = perms.has("reports.view");
@@ -153,7 +157,6 @@ export default async function ReportsFinancePage({
   const nextMonth = new Date(currentYear, currentMonth + 1, 1);
   const range = dateRange(sp);
   const activeInfo = TABS.find((tab) => tab.key === activeTab)!;
-  const navTabs = visibleTabs.map((tab) => ({ key: tab.key, label: tab.label, href: tabHref(tab.key) }));
 
   const reportWhere: any = {};
   if (range) reportWhere.date = range;
@@ -163,7 +166,7 @@ export default async function ReportsFinancePage({
     reportWhere.patient = { fullName: { contains: sp.reportPatient.trim(), mode: "insensitive" } };
   }
 
-  const invoiceWhere: any = {};
+  const invoiceWhere: any = { AND: [await invoiceViewWhere()] };
   if (range) invoiceWhere.issuedAt = range;
   if (sp.invoiceStatus && sp.invoiceStatus !== "all") invoiceWhere.status = sp.invoiceStatus;
   if (sp.financePatient) invoiceWhere.patientId = sp.financePatient;
@@ -222,16 +225,14 @@ export default async function ReportsFinancePage({
     officialDocs,
     exportLogs,
   ] = await Promise.all([
-    canPatientReportRows || canFinance || canExpenses || canExpenseReports
-      ? prisma.patient.findMany({ where: { archivedAt: null }, select: { id: true, fullName: true, fileNumber: true }, orderBy: { fullName: "asc" }, take: 400 })
-      : Promise.resolve([]),
+    Promise.resolve([] as any[]),
     canReports ? prisma.medicalReport.count({ where: { date: { gte: monthStart, lt: nextMonth } } }) : Promise.resolve(0),
     canOfficialDocs ? prisma.officialDocument.count({ where: { docDate: { gte: monthStart, lt: nextMonth } } }) : Promise.resolve(0),
     canReports ? prisma.medicalReport.count({ where: { status: "READY_TO_PRINT" } }) : Promise.resolve(0),
     canOfficialReports || canReports
       ? prisma.reportApproval.findMany({ where: { OR: [{ kind: "official-monthly", refKey: `${currentYear}-${currentMonth}` }, { kind: "official-stat", refKey: `m-${currentYear}-${currentMonth}` }] } })
       : Promise.resolve([]),
-    canPatientReportRows
+    canPatientReportRows && activeTab === "patients"
       ? prisma.medicalReport.findMany({
           where: reportWhere,
           include: { patient: { select: { id: true, fullName: true, fileNumber: true, branch: { select: { name: true } } } } },
@@ -242,20 +243,11 @@ export default async function ReportsFinancePage({
     canOfficialReports || canReports || canReportApprove
       ? prisma.reportApproval.findMany({ where: { kind: { in: ["official-monthly", "official-stat", "patient-report"] } }, orderBy: { approvedAt: "desc" }, take: 10 })
       : Promise.resolve([]),
-    canFinance
-      ? prisma.invoice.findMany({ where: invoiceWhere, include: { patient: { select: { id: true, fullName: true, fileNumber: true } } }, orderBy: { issuedAt: "desc" }, take: 200 })
-      : Promise.resolve([]),
+    Promise.resolve([] as any[]),
     canFinanceAmounts ? prisma.invoice.aggregate({ where: invoiceWhere, _sum: { amount: true, paidAmount: true }, _count: { _all: true } }) : Promise.resolve(null),
-    canFinance ? prisma.invoice.count({ where: { status: { in: ["UNPAID", "PARTIAL"] } } }) : Promise.resolve(0),
+    canFinance ? prisma.invoice.count({ where: { status: { in: ["UNPAID", "PARTIAL"] }, AND: [await invoiceViewWhere()] } }) : Promise.resolve(0),
     canFinanceAmounts ? prisma.payment.aggregate({ where: { paidAt: { gte: monthStart, lt: nextMonth } }, _sum: { amount: true }, _count: { _all: true } }) : Promise.resolve(null),
-    canExpenses || canExpenseReports
-      ? prisma.woundedExpense.findMany({
-          where: expenseWhere,
-          include: { patient: { select: { id: true, fullName: true, fileNumber: true } }, createdBy: { select: { fullName: true } } },
-          orderBy: [{ status: "asc" }, { dueDate: "asc" }, { requestDate: "desc" }],
-          take: 200,
-        })
-      : Promise.resolve([]),
+    Promise.resolve([] as any[]),
     canExpenseAmounts && (canExpenses || canExpenseReports)
       ? prisma.woundedExpense.aggregate({ where: expenseWhere, _sum: { amount: true }, _count: { _all: true } })
       : Promise.resolve(null),
@@ -264,13 +256,9 @@ export default async function ReportsFinancePage({
     canExpenses || canExpenseApprove || canExpensePay
       ? prisma.woundedExpense.count({ where: { dueDate: { lt: now }, status: { in: ["DRAFT", "SUBMITTED", "APPROVED", "READY_FOR_PAYMENT"] } } })
       : Promise.resolve(0),
-    canApprovals
-      ? prisma.approvalRequest.findMany({ where: approvalWhere, include: { patient: { select: { id: true, fullName: true } } }, orderBy: { createdAt: "desc" }, take: 100 })
-      : Promise.resolve([]),
+    Promise.resolve([] as any[]),
     canApprovals ? prisma.approvalRequest.count({ where: { status: { in: ["PENDING_REVIEW", "PENDING_APPROVAL", "APPROVED"] } } }) : Promise.resolve(0),
-    canOfficialDocs
-      ? prisma.officialDocument.findMany({ where: docWhere, include: { patient: { select: { id: true, fullName: true, fileNumber: true } } }, orderBy: [{ docDate: "desc" }, { createdAt: "desc" }], take: 120 })
-      : Promise.resolve([]),
+    Promise.resolve([] as any[]),
     canAudit
       ? prisma.auditLog.findMany({ where: { tableName: "wounded_expenses", recordId: "REPORT" }, orderBy: { createdAt: "desc" }, take: 8 })
       : Promise.resolve([]),
@@ -297,38 +285,40 @@ export default async function ReportsFinancePage({
     canOfficialReports && !monthlyOfficialApproved ? { label: "التقرير الرسمي الشهري غير معتمد", detail: `${MONTHS[currentMonth]} ${currentYear}`, href: `/reports/official?year=${currentYear}&month=${currentMonth}`, tone: "warning" } : null,
     canReports && !monthlyStatApproved ? { label: "التقرير الإحصائي الرسمي غير معتمد", detail: `${MONTHS[currentMonth]} ${currentYear}`, href: `/reports/statistical?ptype=month&year=${currentYear}&month=${currentMonth}`, tone: "warning" } : null,
     canReports && readyMedicalReports > 0 ? { label: "تقارير مراجع جاهزة للطباعة", detail: `${readyMedicalReports} تقرير`, href: "/reports-finance?tab=patients&reportStatus=READY_TO_PRINT", tone: "warning" } : null,
-    (canExpenses || canExpenseApprove) && submittedExpenses > 0 ? { label: "صرفيات بانتظار الاعتماد", detail: `${submittedExpenses} صرفية`, href: "/reports-finance?tab=wounded&expenseStatus=SUBMITTED", tone: "danger" } : null,
-    (canExpenses || canExpensePay) && readyExpenses > 0 ? { label: "صرفيات جاهزة للصرف", detail: `${readyExpenses} صرفية`, href: "/reports-finance?tab=wounded&expenseStatus=READY_FOR_PAYMENT", tone: "warning" } : null,
-    (canExpenses || canExpenseApprove || canExpensePay) && overdueExpenses > 0 ? { label: "صرفيات متأخرة", detail: `${overdueExpenses} صرفية بتاريخ استحقاق سابق`, href: "/reports-finance?tab=alerts", tone: "danger" } : null,
-    canFinance && unpaidInvoices > 0 ? { label: "فواتير غير مكتملة التحصيل", detail: `${unpaidInvoices} فاتورة`, href: "/reports-finance?tab=finance&invoiceStatus=UNPAID", tone: "warning" } : null,
-    canApprovals && pendingApprovals > 0 ? { label: "طلبات موافقة تحتاج متابعة", detail: `${pendingApprovals} طلب`, href: "/reports-finance?tab=approvals", tone: "warning" } : null,
+    (canExpenses || canExpenseApprove) && submittedExpenses > 0 ? { label: "صرفيات بانتظار الاعتماد", detail: `${submittedExpenses} صرفية`, href: "/finance/expenses?status=SUBMITTED", tone: "danger" } : null,
+    (canExpenses || canExpensePay) && readyExpenses > 0 ? { label: "صرفيات جاهزة للصرف", detail: `${readyExpenses} صرفية`, href: "/finance/expenses?status=READY_FOR_PAYMENT", tone: "warning" } : null,
+    (canExpenses || canExpenseApprove || canExpensePay) && overdueExpenses > 0 ? { label: "صرفيات متأخرة", detail: `${overdueExpenses} صرفية بتاريخ استحقاق سابق`, href: "/finance/expenses?status=overdue", tone: "danger" } : null,
+    canFinance && unpaidInvoices > 0 ? { label: "فواتير غير مكتملة التحصيل", detail: `${unpaidInvoices} فاتورة`, href: "/finance?status=UNPAID", tone: "warning" } : null,
+    canApprovals && pendingApprovals > 0 ? { label: "طلبات موافقة تحتاج متابعة", detail: `${pendingApprovals} طلب`, href: "/approvals", tone: "warning" } : null,
   ].filter(Boolean) as { label: string; detail: string; href: string; tone: string }[];
 
   return (
     <div className="min-w-0 space-y-6">
       <PageHeader title="التقارير والمالية" subtitle="صفحة جامعة للتقارير، الفواتير، الصرفيات، الاعتمادات، والتصدير" icon="📊" />
-      <AdminSectionTabs tabs={navTabs} active={activeTab} label="تبويبات التقارير والمالية" />
+      <HubTabs nav={REPORTS_FINANCE_NAV} active={activeTab} label="تبويبات التقارير والمالية" perms={perms} />
       <AdminIntro title={activeInfo.title} description={activeInfo.description}>
-        <div className="flex flex-wrap gap-2">
-          {canOfficialReports ? <Link href="/reports/official" className="btn-ghost btn-sm">إنشاء/فتح تقرير رسمي</Link> : null}
-          {canReports ? <Link href="/reports" className="btn-ghost btn-sm">فتح تقارير المراجعين</Link> : null}
-          {canExpenseCreate ? <Link href="/finance/expenses" className="btn-ghost btn-sm">صرفية جديدة</Link> : null}
-          {canFinance ? <Link href="/finance" className="btn-ghost btn-sm">فتح المالية</Link> : null}
-          {canPatientsExport ? <a href="/api/export/full" className="btn-ghost btn-sm">تصدير شامل</a> : null}
-        </div>
+        {activeTab === "overview" ? (
+          <div className="flex flex-wrap gap-2">
+            {canOfficialReports ? <Link href="/reports/official" className="btn-ghost btn-sm">إنشاء/فتح تقرير رسمي</Link> : null}
+            {canReports ? <Link href="/reports" className="btn-ghost btn-sm">فتح تقارير المراجعين</Link> : null}
+            {canPatientsExport ? <a href="/api/export/full" className="btn-ghost btn-sm">تصدير شامل</a> : null}
+          </div>
+        ) : null}
       </AdminIntro>
 
-      <section className="space-y-3" aria-labelledby="reports-summary-title">
-        <h2 id="reports-summary-title" className="font-semibold text-gray-900">ملخص التقارير والمالية</h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {canReports || canOfficialDocs ? <StatCard label="تقارير ووثائق هذا الشهر" value={reportsCount} /> : null}
-          {canReports || canOfficialReports ? <StatCard label="تقارير تحتاج اعتماد" value={reportsPendingApproval} tone="text-amber-700" /> : null}
-          {canExpenses || canExpenseApprove ? <StatCard label="صرفيات قيد الاعتماد" value={submittedExpenses} tone="text-amber-700" /> : null}
-          {canExpenses || canExpensePay ? <StatCard label="جاهزة للصرف" value={readyExpenses} tone="text-brand-700" /> : null}
-          {canExpenses || canExpenseReports ? <StatCard label="المصروف/المعلق" value={canExpenseAmounts ? moneyFromDecimal(expenseTotal) : "مخفي"} description={canExpenseAmounts ? `${expenseCount} سجل ضمن الفلتر` : "يتطلب صلاحية عرض المبالغ"} /> : null}
-          {canAudit ? <StatCard label="صادرات حديثة" value={exportLogs.length} description="من سجل التدقيق المتاح" /> : null}
-        </div>
-      </section>
+      {activeTab === "overview" ? (
+        <section className="space-y-3" aria-labelledby="reports-summary-title">
+          <h2 id="reports-summary-title" className="font-semibold text-gray-900">ملخص التقارير والمالية</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {canReports || canOfficialDocs ? <StatCard label="تقارير ووثائق هذا الشهر" value={reportsCount} /> : null}
+            {canReports || canOfficialReports ? <StatCard label="تقارير تحتاج اعتماد" value={reportsPendingApproval} tone="text-amber-700" /> : null}
+            {canExpenses || canExpenseApprove ? <StatCard label="صرفيات قيد الاعتماد" value={submittedExpenses} tone="text-amber-700" /> : null}
+            {canExpenses || canExpensePay ? <StatCard label="جاهزة للصرف" value={readyExpenses} tone="text-brand-700" /> : null}
+            {canExpenses || canExpenseReports ? <StatCard label="المصروف/المعلق" value={canExpenseAmounts ? moneyFromDecimal(expenseTotal) : "مخفي"} description={canExpenseAmounts ? `${expenseCount} سجل ضمن الفلتر` : "يتطلب صلاحية عرض المبالغ"} /> : null}
+            {canAudit ? <StatCard label="صادرات حديثة" value={exportLogs.length} description="من سجل التدقيق المتاح" /> : null}
+          </div>
+        </section>
+      ) : null}
 
       {activeTab === "overview" ? (
         <div className="grid gap-5 xl:grid-cols-2">
@@ -339,15 +329,14 @@ export default async function ReportsFinancePage({
               <Metric label="تحصيل الشهر" value={canFinanceAmounts ? fmtMoney(monthPayments) : "مخفي"} tone="text-emerald-700" />
             </div>
             <div className="flex flex-wrap gap-2">
-              {canFinance ? <Link href="/reports-finance?tab=finance" className="btn-ghost btn-sm">لوحة المالية</Link> : null}
+              {canFinance ? <Link href="/finance" className="btn-ghost btn-sm">الفواتير</Link> : null}
               {canFinanceReport ? <Link href="/finance/report" className="btn-ghost btn-sm">التقرير السنوي</Link> : null}
               {canFinance ? <Link href="/finance/payments" className="btn-ghost btn-sm">سجل المدفوعات</Link> : null}
             </div>
           </AdminSection>
 
           <AdminSection id="overview-alerts" title="أولويات المتابعة" description="أبرز السجلات التي تحتاج إجراء أو مراجعة.">
-            <AlertList rows={alertRows.slice(0, 6)} />
-            {alertRows.length > 6 ? <Link href="/reports-finance?tab=alerts" className="btn-ghost btn-sm">عرض كل التنبيهات</Link> : null}
+            <AlertList rows={alertRows} />
           </AdminSection>
         </div>
       ) : null}
@@ -361,37 +350,14 @@ export default async function ReportsFinancePage({
             </div>
           </AdminSection>
 
-          {canOfficialDocs ? (
-            <AdminSection id="official-docs" title="أرشيف الوثائق الرسمية" description="فلترة الوثائق الرسمية المسجلة في الأرشيف." className="overflow-hidden">
-              <form action="/reports-finance" className="grid gap-3 md:grid-cols-5">
-                <input type="hidden" name="tab" value="official" />
-                <div className="md:col-span-2"><label className="label">بحث</label><input name="docQ" className="input" defaultValue={sp.docQ ?? ""} placeholder="رقم، موضوع، جهة، مراجع" /></div>
-                <Combobox name="docType" label="النوع" allowFree={false} defaultValue={sp.docType ?? "all"} options={[{ value: "all", label: "كل الأنواع" }, ...optionEntries(DOC_TYPE as any)]} />
-                <Combobox name="docDirection" label="الاتجاه" allowFree={false} defaultValue={sp.docDirection ?? "all"} options={[{ value: "all", label: "كل الاتجاهات" }, ...optionEntries(DOC_DIRECTION as any)]} />
-                <div><label className="label">من</label><input name="from" type="date" className="input" defaultValue={sp.from ?? ""} /></div>
-                <div><label className="label">إلى</label><input name="to" type="date" className="input" defaultValue={sp.to ?? ""} /></div>
-                <div className="flex flex-wrap items-end gap-2 md:col-span-4"><button className="btn-primary" type="submit">تصفية</button><Link href="/reports-finance?tab=official" className="btn-ghost">مسح</Link><Link href="/official-docs" className="btn-ghost">فتح الأرشيف</Link></div>
-              </form>
-              <div className="-mx-5 -mb-5 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr><th className="th">الوثيقة</th><th className="th">العدد</th><th className="th">التاريخ</th><th className="th">الجهة</th><th className="th">المراجع</th><th className="th">إجراءات</th></tr></thead>
-                  <tbody>
-                    {officialDocs.map((doc: any) => (
-                      <tr key={doc.id} className={!doc.attachmentUrl ? "bg-amber-50/40 hover:bg-amber-50" : "hover:bg-gray-50"}>
-                        <td className="td"><div className="font-medium text-gray-800">{doc.subject}</div><div className="mt-1 flex flex-wrap gap-1">{badge(DOC_TYPE[doc.docType as keyof typeof DOC_TYPE], "bg-gray-100 text-gray-600")}{badge(DOC_DIRECTION[doc.direction as keyof typeof DOC_DIRECTION], doc.direction === "OUTGOING" ? "bg-sky-50 text-sky-700" : "bg-emerald-50 text-emerald-700")}{!doc.attachmentUrl ? badge("بلا مرفق", "bg-amber-50 text-amber-700") : null}</div></td>
-                        <td className="td">{doc.number}</td>
-                        <td className="td">{fmtDate(doc.docDate)}</td>
-                        <td className="td">{doc.entity || "—"}</td>
-                        <td className="td">{doc.patient ? <Link href={`/patients/${doc.patient.id}`} className="text-brand-700 hover:underline">{doc.patient.fullName} #{doc.patient.fileNumber}</Link> : "وثيقة عامة"}</td>
-                        <td className="td"><Link href={`/official-docs/${doc.id}`} className="text-xs text-brand-700 hover:underline">عرض/طباعة</Link></td>
-                      </tr>
-                    ))}
-                    {officialDocs.length === 0 ? emptyRow(6) : null}
-                  </tbody>
-                </table>
-              </div>
-            </AdminSection>
-          ) : null}
+          <AdminSection id="official-links" title="التقارير" description="فتح التقارير لإعدادها أو طباعتها.">
+            <div className="flex flex-wrap gap-2">
+              {canOfficialReports ? <Link href="/reports/official" className="btn-ghost btn-sm">التقرير الرسمي الشهري</Link> : null}
+              {canReports ? <Link href="/reports/statistical" className="btn-ghost btn-sm">التقرير الإحصائي</Link> : null}
+              {canReports ? <Link href="/reports" className="btn-ghost btn-sm">إحصاءات المراجعين</Link> : null}
+              {canReports ? <Link href="/reports/daily" className="btn-ghost btn-sm">تقرير العمليات اليومي</Link> : null}
+            </div>
+          </AdminSection>
         </div>
       ) : null}
 
@@ -399,15 +365,12 @@ export default async function ReportsFinancePage({
         <AdminSection id="patient-reports" title="تقارير المراجعين الطبية" description="تظهر القائمة التفصيلية فقط لمن يملك صلاحية عرض المراجعين إضافة إلى التقارير." className="overflow-hidden">
           {canPatientReportRows ? (
             <>
-              <form action="/reports-finance" className="grid gap-3 md:grid-cols-6">
-                <input type="hidden" name="tab" value="patients" />
-                <div className="md:col-span-2"><label className="label">المراجع</label><input name="reportPatient" className="input" defaultValue={sp.reportPatient ?? ""} placeholder="اسم المراجع" /></div>
+              <FilterBar action="/reports-finance" queryName="reportPatient" query={sp.reportPatient} placeholder="اسم المراجع…" activeCount={[sp.reportStatus && sp.reportStatus !== "all" ? 1 : null, sp.reportType && sp.reportType !== "all" ? 1 : null, sp.from, sp.to].filter(Boolean).length} clearHref="/reports-finance?tab=patients" hidden={<input type="hidden" name="tab" value="patients" />}>
                 <Combobox name="reportStatus" label="الحالة" allowFree={false} defaultValue={sp.reportStatus ?? "all"} options={[{ value: "all", label: "كل الحالات" }, ...Object.entries(MEDICAL_REPORT_STATUS).map(([value, item]) => ({ value, label: item.label }))]} />
                 <Combobox name="reportType" label="النوع" allowFree={false} defaultValue={sp.reportType ?? "all"} options={[{ value: "all", label: "كل الأنواع" }, ...optionEntries(MEDICAL_REPORT_TYPE)]} />
                 <div><label className="label">من</label><input name="from" type="date" className="input" defaultValue={sp.from ?? ""} /></div>
                 <div><label className="label">إلى</label><input name="to" type="date" className="input" defaultValue={sp.to ?? ""} /></div>
-                <div className="flex flex-wrap items-end gap-2 md:col-span-6"><button className="btn-primary" type="submit">تصفية</button><Link href="/reports-finance?tab=patients" className="btn-ghost">مسح</Link><Link href="/reports" className="btn-ghost">التقرير الإحصائي</Link></div>
-              </form>
+              </FilterBar>
               <div className="-mx-5 -mb-5 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr><th className="th">المراجع</th><th className="th">النوع</th><th className="th">الحالة</th><th className="th">الطبيب</th><th className="th">التاريخ</th><th className="th">إجراءات</th></tr></thead>
@@ -433,142 +396,6 @@ export default async function ReportsFinancePage({
         </AdminSection>
       ) : null}
 
-      {activeTab === "finance" ? (
-        <AdminSection id="finance" title="الفواتير والمدفوعات" description="المبالغ هنا هي نفس نطاق صفحة المالية والتقرير السنوي." className="overflow-hidden">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Metric label="إجمالي الفواتير" value={canFinanceAmounts ? fmtMoney(invoiceTotal) : "مخفي"} />
-            <Metric label="المحصّل" value={canFinanceAmounts ? fmtMoney(invoiceCollected) : "مخفي"} tone="text-emerald-700" />
-            <Metric label="المتبقّي" value={canFinanceAmounts ? fmtMoney(invoiceOutstanding) : "مخفي"} tone={invoiceOutstanding > 0 ? "text-red-700" : "text-gray-900"} />
-          </div>
-          {canFinance ? (
-            <>
-              <form action="/reports-finance" className="grid gap-3 md:grid-cols-6">
-                <input type="hidden" name="tab" value="finance" />
-                <Combobox name="invoiceStatus" label="الحالة" allowFree={false} defaultValue={sp.invoiceStatus ?? "all"} options={[{ value: "all", label: "كل الحالات" }, ...optionEntries(INVOICE_STATUS as any)]} />
-                <Combobox name="financePatient" label="المراجع" allowFree={false} defaultValue={sp.financePatient ?? ""} placeholder="كل المراجعين" options={[{ value: "", label: "كل المراجعين" }, ...patients.map((patient: any) => ({ value: patient.id, label: `${patient.fullName} (#${patient.fileNumber})` }))]} />
-                <div className="md:col-span-2"><label className="label">بحث</label><input name="financeQ" className="input" defaultValue={sp.financeQ ?? ""} placeholder="اسم أو بيان" /></div>
-                <div><label className="label">من</label><input name="from" type="date" className="input" defaultValue={sp.from ?? ""} /></div>
-                <div><label className="label">إلى</label><input name="to" type="date" className="input" defaultValue={sp.to ?? ""} /></div>
-                <div className="flex flex-wrap items-end gap-2 md:col-span-6"><button className="btn-primary" type="submit">تصفية</button><Link href="/reports-finance?tab=finance" className="btn-ghost">مسح</Link><Link href="/finance" className="btn-ghost">إدارة الفواتير</Link><Link href="/finance/payments" className="btn-ghost">سجل المدفوعات</Link>{canFinanceReport ? <Link href="/finance/report" className="btn-ghost">التقرير السنوي</Link> : null}</div>
-              </form>
-              <div className="-mx-5 -mb-5 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr><th className="th">المراجع</th><th className="th">البيان</th><th className="th">المبلغ</th><th className="th">المدفوع</th><th className="th">المتبقي</th><th className="th">الحالة</th><th className="th">التاريخ</th><th className="th">إجراءات</th></tr></thead>
-                  <tbody>
-                    {invoices.map((invoice: any) => {
-                      const outstanding = invoice.amount - invoice.paidAmount;
-                      return (
-                        <tr key={invoice.id} className={outstanding > 0 ? "bg-amber-50/30 hover:bg-amber-50" : "hover:bg-gray-50"}>
-                          <td className="td"><Link href={`/patients/${invoice.patientId}`} className="font-medium text-brand-700 hover:underline">{invoice.patient.fullName} #{invoice.patient.fileNumber}</Link></td>
-                          <td className="td">{invoice.description || "—"}</td>
-                          <td className="td">{fmtMoney(invoice.amount)}</td>
-                          <td className="td text-emerald-700">{fmtMoney(invoice.paidAmount)}</td>
-                          <td className={`td ${outstanding > 0 ? "font-semibold text-red-700" : ""}`}>{fmtMoney(outstanding)}</td>
-                          <td className="td">{badge(INVOICE_STATUS[invoice.status as keyof typeof INVOICE_STATUS], INVOICE_STATUS_STYLE[invoice.status])}</td>
-                          <td className="td">{fmtDate(invoice.issuedAt)}</td>
-                          <td className="td"><Link href="/finance" className="text-xs text-brand-700 hover:underline">فتح المالية</Link></td>
-                        </tr>
-                      );
-                    })}
-                    {invoices.length === 0 ? emptyRow(8) : null}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">لديك صلاحية التقرير المالي السنوي فقط؛ استخدم الرابط لفتح التقرير دون عرض جدول الفواتير التشغيلي هنا.</div>
-          )}
-        </AdminSection>
-      ) : null}
-
-      {activeTab === "wounded" ? (
-        <AdminSection id="wounded-expenses" title="صرفيات الجرحى" description="فلترة حسب الحالة، النوع، المراجع، والجهة. المبالغ محمية بصلاحية منفصلة." className="overflow-hidden">
-          <form action="/reports-finance" className="grid gap-3 md:grid-cols-6">
-            <input type="hidden" name="tab" value="wounded" />
-            <Combobox name="expenseStatus" label="الحالة" allowFree={false} defaultValue={sp.expenseStatus ?? "all"} options={[{ value: "all", label: "كل الحالات" }, ...Object.entries(EXPENSE_STATUS).map(([value, item]) => ({ value, label: item.label }))]} />
-            <Combobox name="expensePatient" label="المراجع" allowFree={false} defaultValue={sp.expensePatient ?? ""} placeholder="كل المراجعين" options={[{ value: "", label: "كل المراجعين" }, ...patients.map((patient: any) => ({ value: patient.id, label: `${patient.fullName} (#${patient.fileNumber})` }))]} />
-            <div><label className="label">النوع</label><input name="expenseType" className="input" defaultValue={sp.expenseType ?? ""} /></div>
-            <div><label className="label">الجهة</label><input name="expenseEntity" className="input" defaultValue={sp.expenseEntity ?? ""} /></div>
-            <div><label className="label">من</label><input name="from" type="date" className="input" defaultValue={sp.from ?? ""} /></div>
-            <div><label className="label">إلى</label><input name="to" type="date" className="input" defaultValue={sp.to ?? ""} /></div>
-            <div className="flex flex-wrap items-end gap-2 md:col-span-6"><button className="btn-primary" type="submit">تصفية</button><Link href="/reports-finance?tab=wounded" className="btn-ghost">مسح</Link>{canExpenses ? <Link href="/finance/expenses" className="btn-ghost">فتح الصرفيات</Link> : null}{canExpenseReports ? <Link href="/finance/expenses/reports" className="btn-ghost">تقرير الصرفيات</Link> : null}{canExpenseReports && canExpenseAmounts ? <a href={`/api/export/wounded-expenses${expenseExportQs ? `?${expenseExportQs}` : ""}`} className="btn-ghost">تصدير CSV</a> : null}</div>
-          </form>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Metric label="عدد الصرفيات" value={String(expenses.length)} />
-            <Metric label="إجمالي ضمن الفلتر" value={canExpenseAmounts ? moneyFromDecimal(expenseTotal) : "مخفي"} />
-            <Metric label="متأخرة" value={String(overdueExpenses)} tone={overdueExpenses > 0 ? "text-red-700" : "text-gray-900"} />
-          </div>
-          <div className="-mx-5 -mb-5 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr><th className="th">السند</th><th className="th">المراجع</th><th className="th">المستفيد</th><th className="th">النوع/الجهة</th>{canExpenseAmounts ? <th className="th">المبلغ</th> : null}<th className="th">الحالة</th><th className="th">الاستحقاق</th><th className="th">إجراءات</th></tr></thead>
-              <tbody>
-                {expenses.map((expense: any) => {
-                  const isOverdue = expense.dueDate && new Date(expense.dueDate) < now && !["PAID", "CANCELLED", "REJECTED"].includes(expense.status);
-                  return (
-                    <tr key={expense.id} className={isOverdue ? "bg-red-50/40 hover:bg-red-50" : "hover:bg-gray-50"}>
-                      <td className="td font-medium">{canExpenses ? <Link href={`/finance/expenses/${expense.id}`} className="text-brand-700 hover:underline">{expense.voucherNo}</Link> : expense.voucherNo}</td>
-                      <td className="td">{expense.patient.fullName} #{expense.patient.fileNumber}</td>
-                      <td className="td">{expense.beneficiary}<div className="text-xs text-gray-400">أنشأها: {expense.createdBy?.fullName || "—"}</div></td>
-                      <td className="td"><div>{expense.expenseType}</div><div className="text-xs text-gray-400">{expense.beneficiaryEntity || "—"}</div></td>
-                      {canExpenseAmounts ? <td className="td">{moneyFromDecimal(expense.amount, expense.currency)}</td> : null}
-                      <td className="td">{badge(EXPENSE_STATUS[expense.status]?.label || expense.status, EXPENSE_STATUS[expense.status]?.cls || "bg-gray-100 text-gray-600")}</td>
-                      <td className={`td ${isOverdue ? "font-semibold text-red-700" : ""}`}>{fmtDate(expense.dueDate)}{isOverdue ? <div className="text-xs">متأخرة</div> : null}</td>
-                      <td className="td">{canExpenses ? <Link href={`/finance/expenses/${expense.id}`} className="text-xs text-brand-700 hover:underline">تفاصيل</Link> : "—"}</td>
-                    </tr>
-                  );
-                })}
-                {expenses.length === 0 ? emptyRow(canExpenseAmounts ? 8 : 7) : null}
-              </tbody>
-            </table>
-          </div>
-        </AdminSection>
-      ) : null}
-
-      {activeTab === "approvals" ? (
-        <div className="space-y-5">
-          {canApprovals ? (
-            <AdminSection id="approval-requests" title="سير الموافقات العام" description="طلبات الموافقة العامة حسب الحالة والنوع." className="overflow-hidden">
-              <form action="/reports-finance" className="grid gap-3 md:grid-cols-4">
-                <input type="hidden" name="tab" value="approvals" />
-                <Combobox name="approvalStatus" label="الحالة" allowFree={false} defaultValue={sp.approvalStatus ?? "all"} options={[{ value: "all", label: "كل الحالات" }, ...optionEntries(APPROVAL_STATUS as any)]} />
-                <Combobox name="approvalType" label="النوع" allowFree={false} defaultValue={sp.approvalType ?? "all"} options={[{ value: "all", label: "كل الأنواع" }, ...optionEntries(APPROVAL_TYPE as any)]} />
-                <div><label className="label">من</label><input name="from" type="date" className="input" defaultValue={sp.from ?? ""} /></div>
-                <div><label className="label">إلى</label><input name="to" type="date" className="input" defaultValue={sp.to ?? ""} /></div>
-                <div className="flex flex-wrap items-end gap-2 md:col-span-4"><button className="btn-primary" type="submit">تصفية</button><Link href="/reports-finance?tab=approvals" className="btn-ghost">مسح</Link><Link href="/approvals" className="btn-ghost">فتح سير الموافقات</Link></div>
-              </form>
-              <div className="-mx-5 -mb-5 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr><th className="th">الطلب</th><th className="th">النوع</th><th className="th">المراجع</th><th className="th">المبلغ</th><th className="th">الحالة</th><th className="th">آخر تحديث</th></tr></thead>
-                  <tbody>
-                    {approvalRequests.map((request: any) => (
-                      <tr key={request.id} className={["PENDING_REVIEW", "PENDING_APPROVAL"].includes(request.status) ? "bg-amber-50/30 hover:bg-amber-50" : "hover:bg-gray-50"}>
-                        <td className="td"><div className="font-medium text-gray-800">{request.title}</div><div className="text-xs text-gray-400">{request.requestedByName || "—"}</div></td>
-                        <td className="td">{APPROVAL_TYPE[request.reqType as keyof typeof APPROVAL_TYPE]}</td>
-                        <td className="td">{request.patient ? <Link href={`/patients/${request.patient.id}`} className="text-brand-700 hover:underline">{request.patient.fullName}</Link> : "—"}</td>
-                        <td className="td">{request.amount != null && canFinanceAmounts ? fmtMoney(request.amount) : "—"}</td>
-                        <td className="td">{badge(APPROVAL_STATUS[request.status as keyof typeof APPROVAL_STATUS], APPROVAL_STYLE[request.status])}</td>
-                        <td className="td">{fmtDateTime(request.updatedAt)}</td>
-                      </tr>
-                    ))}
-                    {approvalRequests.length === 0 ? emptyRow(6) : null}
-                  </tbody>
-                </table>
-              </div>
-            </AdminSection>
-          ) : null}
-
-          {(canExpenseApprove || canExpensePay || canReportApprove) ? (
-            <AdminSection id="approval-shortcuts" title="اعتمادات مالية ورسمية" description="روابط مباشرة للطلبات التي تحتاج قراراً من صلاحياتك.">
-              <div className="grid gap-3 sm:grid-cols-3">
-                {canExpenseApprove ? <ActionCard title="صرفيات بانتظار الاعتماد" value={submittedExpenses} href="/reports-finance?tab=wounded&expenseStatus=SUBMITTED" /> : null}
-                {canExpensePay ? <ActionCard title="صرفيات جاهزة للصرف" value={readyExpenses} href="/reports-finance?tab=wounded&expenseStatus=READY_FOR_PAYMENT" /> : null}
-                {canReportApprove ? <ActionCard title="تقارير رسمية غير معتمدة" value={pendingOfficialReports} href="/reports-finance?tab=official" /> : null}
-              </div>
-            </AdminSection>
-          ) : null}
-        </div>
-      ) : null}
-
       {activeTab === "exports" ? (
         <div className="space-y-5">
           <AdminSection id="exports" title="الصادرات المتاحة" description="كل رابط يبقى محمياً من route التصدير نفسه، ولا تظهر روابط لا تملك صلاحيتها.">
@@ -576,7 +403,7 @@ export default async function ReportsFinancePage({
               {canPatientsExport ? <ExportCard title="تصدير شامل Excel" description="ملف متعدد الأوراق حسب صلاحياتك الحالية." href="/api/export/full" /> : null}
               {canPatientsExport ? <ExportCard title="تصدير المراجعين CSV" description="قائمة المراجعين حسب صلاحية تصدير المراجعين." href="/api/export/patients" /> : null}
               {perms.has("patients.view") ? <ExportCard title="جودة بيانات المراجعين CSV" description="سجلات ناقصة أو تحتاج مراجعة." href="/api/export/data-quality" /> : null}
-              {canExpenseReports && canExpenseAmounts ? <ExportCard title="صرفيات الجرحى CSV" description="يحترم فلاتر التاريخ والحالة من الصفحة الجامعة." href={`/api/export/wounded-expenses${expenseExportQs ? `?${expenseExportQs}` : ""}`} /> : null}
+              {canExpenseReports && canExpenseAmounts ? <ExportCard title="صرفيات الجرحى CSV" description="كل الصرفيات؛ للتصدير حسب فلتر استخدم صفحة الصرفيات." href={`/api/export/wounded-expenses${expenseExportQs ? `?${expenseExportQs}` : ""}`} /> : null}
               {canOfficialDocs ? <ExportCard title="أرشيف الوثائق الرسمية" description="فتح الأرشيف للبحث والطباعة والمرفقات." href="/official-docs" /> : null}
               {canReports ? <ExportCard title="تقرير العمليات اليومي" description="تقرير قابل للطباعة ليوم محدد." href="/reports/daily" /> : null}
             </div>
@@ -598,11 +425,6 @@ export default async function ReportsFinancePage({
         </div>
       ) : null}
 
-      {activeTab === "alerts" ? (
-        <AdminSection id="alerts" title="تنبيهات ومتابعة" description="قائمة عملية مختصرة مبنية من البيانات الحالية ولا تنشئ حالات جديدة.">
-          <AlertList rows={alertRows} />
-        </AdminSection>
-      ) : null}
     </div>
   );
 }

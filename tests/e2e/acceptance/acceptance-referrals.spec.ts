@@ -10,7 +10,7 @@ import { submitServerAction } from "./resilient-action";
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 
 async function activateTab(page: Page, name: string) {
-  await page.getByRole("button", { name }).evaluate((button: HTMLElement) => button.click());
+  await page.getByRole("button", { name, exact: true }).evaluate((button: HTMLElement) => button.click());
 }
 
 async function checkIn(browser: Browser, patient: { id: string; fullName: string }, destination = "طبيب/تشخيص") {
@@ -18,13 +18,15 @@ async function checkIn(browser: Browser, patient: { id: string; fullName: string
   await actor.page.goto(`/visits?q=${encodeURIComponent(patient.fullName)}`, { waitUntil: "domcontentloaded" });
   const form = actor.page.locator(`form:has(input[name="patientId"][value="${patient.id}"])`);
   await form.locator('select[name="destination"]').selectOption({ label: destination });
-  await submitServerAction({ name: `attendance-${patient.id}`, role: "RECEPTION", browser, context: actor.context, page: actor.page, submit: form.getByRole("button", { name: /تسجيل زيارة/ }), dbExpectation: async () => Boolean(await prisma.visit.findFirst({ where: { patientId: patient.id } })), confirmation: async (page) => (await page.locator("body").innerText()).includes("حاضر"), recoveryUrl: `/visits?q=${encodeURIComponent(patient.fullName)}`, roleState: statePath(credential("RECEPTION")) });
+  await submitServerAction({ name: `attendance-${patient.id}`, role: "RECEPTION", browser, context: actor.context, page: actor.page, submit: form.getByRole("button", { name: "تسجيل الحضور والتوجيه", exact: true }), dbExpectation: async () => Boolean(await prisma.visit.findFirst({ where: { patientId: patient.id } })), confirmation: async (page) => (await page.locator("body").innerText()).includes("حاضر"), recoveryUrl: `/visits?q=${encodeURIComponent(patient.fullName)}`, roleState: statePath(credential("RECEPTION")) });
 }
 
 async function residentReview(browser: Browser, patient: { id: string }) {
   const actor = await pageFor(browser, "RESIDENT");
   await actor.page.goto(`/patients/${patient.id}`, { waitUntil: "domcontentloaded" });
   await activateTab(actor.page, "الطبيب المقيم");
+  await actor.page.locator("details.patient-add-form").first().waitFor({ state: "attached", timeout: 10_000 }).catch(() => undefined);
+  await actor.page.locator("details.patient-add-form").evaluateAll((items) => items.forEach((item) => item.setAttribute("open", "")));
   const form = actor.page.locator('form:has(button:has-text("حفظ تقييم الطبيب المقيم"))');
   await form.locator('input[name="pulse"]').fill("78");
   await form.locator('input[name="spo2"]').fill("98");

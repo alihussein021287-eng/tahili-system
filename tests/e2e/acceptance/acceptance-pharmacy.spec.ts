@@ -7,6 +7,11 @@ import { submitServerAction } from "./resilient-action";
 
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 
+// Expiry dates are relative to the run date: a fixed calendar date eventually becomes an expired batch, which FEFO correctly skips.
+const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+const FEFO_A_EXPIRY = inDays(60);
+const FEFO_A2_EXPIRY = inDays(150);
+
 async function pharmacyFixtures() {
   const supplier = await prisma.supplier.upsert({
     where: { name: `ACCEPTANCE-20260713 ${RUN_ID} مورد صيدلية` },
@@ -30,9 +35,8 @@ async function createMedicationViaInventory(browser: Browser) {
   const name = `ACCEPTANCE-20260713 ${RUN_ID} دواء FEFO`;
   const actor = await pageFor(browser, "PHARMACIST");
   await actor.page.goto("/inventory", { waitUntil: "domcontentloaded" });
-  const form = actor.page.locator('form:has(button:has-text("إضافة للمخزون"))').first();
+  const form = actor.page.locator('form:has(button:has-text("إضافة للفهرس"))').first();
   await form.locator('input[name="name"]').fill(name);
-  await form.locator('input[name="quantity"]').fill("0");
   await form.locator('input[name="minQuantity"]').fill("2");
   await form.locator('input[name="unit"]').fill("حبة");
   await submitServerAction({
@@ -41,7 +45,7 @@ async function createMedicationViaInventory(browser: Browser) {
     browser,
     context: actor.context,
     page: actor.page,
-    submit: form.getByRole("button", { name: "إضافة للمخزون" }),
+    submit: form.getByRole("button", { name: "إضافة للفهرس" }),
     dbExpectation: async () => Boolean(await prisma.medication.findUnique({ where: { name } })),
     confirmation: async (page) => (await page.locator("body").innerText()).includes(name),
     recoveryUrl: "/inventory",
@@ -53,6 +57,7 @@ async function createMedicationViaInventory(browser: Browser) {
 async function createOrder(browser: Browser, supplierId: number) {
   const actor = await pageFor(browser, "PHARMACIST");
   await actor.page.goto("/pharmacy/purchases", { waitUntil: "domcontentloaded" });
+  await actor.page.getByText("+ إنشاء أمر شراء").click();
   const form = actor.page.locator('form:has(button:has-text("إنشاء المسودة"))');
   await form.locator('select[name="supplierId"]').selectOption(String(supplierId));
   await form.locator('input[name="expectedDeliveryDate"]').fill("2026-07-20");
@@ -144,11 +149,15 @@ async function receiveItem(browser: Browser, orderId: string, itemId: string, ac
 async function createInternalPrescription(browser: Browser, patientId: string, medicationId: number) {
   const actor = await pageFor(browser, "DOCTOR");
   await actor.page.goto(`/patients/${patientId}`, { waitUntil: "domcontentloaded" });
-  await actor.page.locator("button").filter({ hasText: "الوصفات والتجهيز" }).last().click();
+  await actor.page.locator("button").filter({ hasText: "الوصفات" }).last().click();
+  await actor.page.locator("details.patient-add-form").first().waitFor({ state: "attached", timeout: 10_000 }).catch(() => undefined);
+  await actor.page.locator("details.patient-add-form").evaluateAll((items) => items.forEach((item) => item.setAttribute("open", "")));
   const form = actor.page.locator('form:has(input[name="prescriptionType"])');
-  await pickCombo(form, 0, "داخلية من صيدلية المجمع");
+  const branch = await prisma.branch.findUniqueOrThrow({ where: { id: Number(process.env.ACCEPTANCE_BRANCH_ID) } });
+  await pickCombo(form, 0, branch.name);
+  await pickCombo(form, 1, "داخلية من صيدلية المجمع");
   const medication = await prisma.medication.findUniqueOrThrow({ where: { id: medicationId } });
-  await pickCombo(form, 1, medication.name);
+  await pickCombo(form, 2, medication.name);
   await form.locator('input[name="usage"]').fill("مرتين يومياً");
   await form.locator('input[name="quantity"]').fill("2");
   await form.locator('input[name="duration"]').fill("يوم واحد");
@@ -162,7 +171,7 @@ async function createInternalPrescription(browser: Browser, patientId: string, m
     submit: form.getByRole("button", { name: "إضافة" }),
     dbExpectation: async () => Boolean(await prisma.prescription.findFirst({ where: { patientId, medicationId, prescriptionType: "INTERNAL" } })),
     confirmation: async (page) => (await page.locator("body").innerText()).includes(medication.name),
-    recoveryUrl: `/patients/${patientId}`,
+    recoveryUrl: `/patients/${patientId}?tab=rx`,
     roleState: statePath(credential("DOCTOR")),
   });
   return prisma.prescription.findFirstOrThrow({ where: { patientId, medicationId, prescriptionType: "INTERNAL" }, orderBy: { prescribedAt: "desc" } });
@@ -191,12 +200,12 @@ test("workflow 20: purchase, split receipts, FEFO dispense, shortages and idempo
   const { supplier, medB } = await pharmacyFixtures();
   const medA = await createMedicationViaInventory(browser);
   const order = await createOrder(browser, supplier.id);
-  const itemA = await addItem(browser, order.id, medA.id, 8, `${RUN_ID}-FEFO-A`, "2026-08-01");
+  const itemA = await addItem(browser, order.id, medA.id, 8, `${RUN_ID}-FEFO-A`, FEFO_A_EXPIRY);
   const itemB = await addItem(browser, order.id, medB.id, 4, `${RUN_ID}-ITEM-B`, "2027-01-01");
   await transitionOrder(browser, "PHARMACIST", order.id, "إرسال للاعتماد", "PENDING_APPROVAL");
   await transitionOrder(browser, "MANAGER", order.id, "اعتماد الأمر", "APPROVED");
 
-  await receiveItem(browser, order.id, itemA.id, 3, `${RUN_ID}-FEFO-A`, "2026-08-01", "PARTIALLY_RECEIVED");
+  await receiveItem(browser, order.id, itemA.id, 3, `${RUN_ID}-FEFO-A`, FEFO_A_EXPIRY, "PARTIALLY_RECEIVED");
   let savedA = await prisma.purchaseOrderItem.findUniqueOrThrow({ where: { id: itemA.id } });
   expect(savedA.receivedQuantity).toBe(3);
   expect(savedA.orderedQuantity - savedA.receivedQuantity).toBe(5);
@@ -205,7 +214,7 @@ test("workflow 20: purchase, split receipts, FEFO dispense, shortages and idempo
   expect(await prisma.stockMovement.count({ where: { medicationId: medA.id, type: "IN", purchaseReceiptId: { not: null } } })).toBe(1);
 
   await receiveItem(browser, order.id, itemB.id, 4, `${RUN_ID}-ITEM-B`, "2027-01-01", "PARTIALLY_RECEIVED");
-  await receiveItem(browser, order.id, itemA.id, 5, `${RUN_ID}-FEFO-A2`, "2026-12-01", "FULLY_RECEIVED");
+  await receiveItem(browser, order.id, itemA.id, 5, `${RUN_ID}-FEFO-A2`, FEFO_A2_EXPIRY, "FULLY_RECEIVED");
   expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("FULLY_RECEIVED");
   const receiptsAfterFull = await prisma.purchaseReceipt.count({ where: { purchaseOrderId: order.id } });
   const noRepeat = await pageFor(browser, "PHARMACIST");
@@ -214,7 +223,7 @@ test("workflow 20: purchase, split receipts, FEFO dispense, shortages and idempo
   await noRepeat.context.close();
   expect(await prisma.purchaseReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(receiptsAfterFull);
 
-  await prisma.medicationBatch.create({ data: { medicationId: medA.id, supplierId: supplier.id, batchNo: `${RUN_ID}-EXPIRED`, quantity: 5, expiryDate: new Date("2026-01-01") } });
+  await prisma.medicationBatch.create({ data: { medicationId: medA.id, branchId: process.env.ACCEPTANCE_BRANCH_ID ? Number(process.env.ACCEPTANCE_BRANCH_ID) : undefined, supplierId: supplier.id, batchNo: `${RUN_ID}-EXPIRED`, quantity: 5, expiryDate: new Date("2026-01-01") } });
   const patient = await clinicalPatient("صيدلية شراء وصرف", true);
   const rx = await createInternalPrescription(browser, patient.id, medA.id);
   await dispense(browser, patient.fullName, rx.id);
@@ -230,7 +239,8 @@ test("workflow 20: purchase, split receipts, FEFO dispense, shortages and idempo
   await queueAfter.context.close();
 
   const shortagePatient = await clinicalPatient("صيدلية نقص", true);
-  const shortageRx = await prisma.prescription.create({ data: { patientId: shortagePatient.id, medicationId: medA.id, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE", eligibilityReason: "ACCEPTANCE-20260713", eligibilityRecordedAt: new Date(), quantity: "999", count: 999, usage: "اختبار نقص", doctor: "ACCEPTANCE-20260713 DOCTOR", createdById: (await prisma.user.findUniqueOrThrow({ where: { username: "acceptance-20260713-doctor" } })).id } });
+  const shortageVisit = await prisma.visit.findFirstOrThrow({ where: { patientId: shortagePatient.id } });
+  const shortageRx = await prisma.prescription.create({ data: { patientId: shortagePatient.id, visitId: shortageVisit.id, originBranchId: process.env.ACCEPTANCE_BRANCH_ID ? Number(process.env.ACCEPTANCE_BRANCH_ID) : undefined, medicationId: medA.id, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE", eligibilityReason: "ACCEPTANCE-20260713", eligibilityRecordedAt: new Date(), quantity: "999", count: 999, usage: "اختبار نقص", doctor: "ACCEPTANCE-20260713 DOCTOR", createdById: (await prisma.user.findUniqueOrThrow({ where: { username: "acceptance-20260713-doctor" } })).id } });
   const shortage = await pageFor(browser, "PHARMACIST");
   await shortage.page.goto("/pharmacy", { waitUntil: "domcontentloaded" });
   await shortage.page.getByText(shortagePatient.fullName).click();
@@ -251,8 +261,8 @@ test("workflow 20: purchase, split receipts, FEFO dispense, shortages and idempo
   expect(await prisma.stockMovement.count({ where: { prescriptionId: shortageRx.id } })).toBe(0);
 
   const reports = await pageFor(browser, "PHARMACIST");
-  await reports.page.goto("/pharmacy/purchases/reports", { waitUntil: "domcontentloaded" });
-  await expect(reports.page.getByText("تقارير الشراء والاستلام والمخزون")).toBeVisible();
+  await reports.page.goto("/pharmacy/reports", { waitUntil: "domcontentloaded" });
+  await expect(reports.page.getByText("الشراء والاستلام")).toBeVisible();
   await reports.page.goto("/pharmacy/reports", { waitUntil: "domcontentloaded" });
   await expect(reports.page.getByText(`${RUN_ID}-EXPIRED`)).toBeVisible();
   await screenshot(reports.page, "pharmacy-purchase-dispense");

@@ -14,16 +14,15 @@ describe("patient file tabs navigation", () => {
 
   it("exposes the resident review form only in the resident tab and focuses its section after navigation", () => {
     expect(PATIENT_TABS).toContainEqual(expect.objectContaining({ key: "resident", label: "الطبيب المقيم" }));
-    expect(source).toContain('tab === "resident"');
+    expect(source).toContain('shows("resident")');
     expect(source).toContain('action={w(addResidentReview.bind(null, patientId))}');
     expect(source).toContain('sectionHeadingRef.current?.focus()');
     expect(source).toContain('tabIndex={-1}');
   });
 
-  it("does not render an intake tab link for a user missing the resident-review action permission", () => {
-    expect(patientPageSource).toContain('canExecuteResidentReview={perms.has("clinical.metrics")}');
-    expect(patientPageSource).toContain('nextStep.key === "intake" && !canExecuteResidentReview');
-    expect(patientPageSource).toContain("لا يملك حسابك هذا الإجراء");
+  it("has no stage link that could open a tab the user cannot act in", () => {
+    expect(patientPageSource).not.toContain("الانتقال إلى التبويب");
+    expect(patientPageSource).not.toContain("لا يملك حسابك هذا الإجراء");
   });
 
   it("filters tabs by effective permissions and omits empty groups", () => {
@@ -35,14 +34,20 @@ describe("patient file tabs navigation", () => {
     expect(PATIENT_TABS).toContainEqual(expect.objectContaining({ key: "activity", permissions: ["audit.view"] }));
   });
 
-  it("opens the active group and exposes accessible disclosure state", () => {
-    expect(source).toContain("[activeTab.group]: true");
-    expect(source).toContain("aria-expanded={expanded}");
-    expect(source).toContain("aria-controls={`patient-tabs-${group}`}");
+  it("keeps every group open so the whole file is visible at a glance", () => {
+    expect(source).not.toContain("setOpenGroups");
+    expect(source).toContain("id={`patient-tabs-${group}`}");
+  });
+
+  it("shows records first and folds every add form behind an add button", () => {
+    expect(source).toContain('function Section({ rows, cols, editable, action, fields, del, canDel, edit, editFields, addLabel = "+ إضافة" }');
+    expect(source).toContain('<details className="patient-add-form">');
+    expect(source).not.toContain("إجراءات الطبيب الاختصاص");
+    expect(source).not.toContain("referToCenter");
   });
 
   it("uses distinct section and activity labels without duplicate headings", () => {
-    expect(source).toContain('system: "سجل الملف"');
+    expect(source).toContain("const TAB_GROUPS: Record<string, string> = PATIENT_NAV_GROUPS");
     expect(PATIENT_TABS).toContainEqual(expect.objectContaining({ key: "activity", label: "سجل النشاط" }));
     expect(source).not.toContain('system: "النشاط"');
     expect(PATIENT_TABS).not.toContainEqual(expect.objectContaining({ label: "النشاط" }));

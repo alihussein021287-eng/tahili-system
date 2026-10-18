@@ -5,6 +5,7 @@ import Link from "next/link";
 import { fmtDate } from "@/lib/labels";
 import { PrintButton } from "@/components/PrintButton";
 import { currentPerms } from "@/lib/access";
+import { canPharmacyActOnPatient, currentPharmacyActor, pharmacyPrescriptionWhere } from "@/lib/pharmacy-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -16,9 +17,13 @@ export default async function PatientPrescriptionsPrint({ params }: { params: Pr
 
   const patient = await prisma.patient.findUnique({ where: { id } });
   if (!patient) notFound();
+  {
+    const actor = await currentPharmacyActor();
+    if (!actor || !(await canPharmacyActOnPatient(actor, id))) notFound();
+  }
 
   const rxs = await prisma.prescription.findMany({
-    where: { patientId: id, isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" },
+    where: { AND: [await pharmacyPrescriptionWhere()], patientId: id, isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" },
     include: { medication: true },
     orderBy: { prescribedAt: "asc" },
   });

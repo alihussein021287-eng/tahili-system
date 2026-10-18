@@ -1,8 +1,14 @@
 import { prisma } from "@/lib/db";
+import { invoiceViewWhere } from "@/lib/patient-guard";
+import { currentStockViewer, batchViewWhere, orderViewWhere, lowStockMedications } from "@/lib/pharmacy-stock";
+import { pharmacyPrescriptionWhere } from "@/lib/pharmacy-scope";
+import { EXPIRY_SOON_DAYS } from "@/lib/pharmacy-expiry";
 import Link from "next/link";
 import { Fragment } from "react";
 import { fmtDate, fmtTime, THERAPY } from "@/lib/labels";
 import { currentPerms, getSession } from "@/lib/access";
+import { queueViewerWhere } from "@/lib/queue-viewer";
+import { patientScopeWhere, visitScopeWhere } from "@/lib/patient-access";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { ShortcutsEditor } from "@/components/ShortcutsEditor";
@@ -15,21 +21,21 @@ const HUB_LINKS = {
   staffTasks: "/staff?tab=tasks",
   staffTasksOverdue: "/staff?tab=tasks&taskStatus=overdue",
   staffAttendance: "/staff?tab=attendance",
-  patients: "/patients-care?tab=patients",
-  visits: "/patients-care?tab=visits",
-  queue: "/patients-care?tab=queue",
-  journey: "/patients-care?tab=journey",
-  appointments: "/patients-care?tab=appointments",
-  therapyToday: "/therapy-centers?tab=today",
-  therapyBeds: "/therapy-centers?tab=beds",
-  therapyMeds: "/therapy-centers?tab=meds",
-  pharmacyDispense: "/pharmacy-inventory?tab=dispense",
-  pharmacyStock: "/pharmacy-inventory?tab=stock",
-  pharmacyLowStock: "/pharmacy-inventory?tab=stock&stockState=low",
+  patients: "/patients",
+  visits: "/visits",
+  queue: "/queue",
+  journey: "/care-board",
+  appointments: "/appointments",
+  therapyToday: "/therapy/today",
+  therapyBeds: "/beds",
+  therapyMeds: "/meds",
+  pharmacyDispense: "/pharmacy",
+  pharmacyStock: "/pharmacy/stock",
+  pharmacyLowStock: "/pharmacy/stock?state=low",
   pharmacyBatchesSoon: "/pharmacy-inventory?tab=batches&batchState=soon",
   reportsPatients: "/reports-finance?tab=patients",
   reportsOfficial: "/reports-finance?tab=official",
-  finance: "/reports-finance?tab=finance",
+  finance: "/finance",
   readiness: "/readiness",
 } as const;
 
@@ -62,6 +68,10 @@ export default async function Dashboard() {
   const name = session?.user?.name ?? "مستخدم";
   const dateLine = new Intl.DateTimeFormat("ar-IQ-u-ca-gregory", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Baghdad" }).format(new Date());
   const perms = await currentPerms();
+  // Queue figures follow the verified viewer scope (own active branch / own centers; ADMIN all).
+  const dashboardPatientScope = await patientScopeWhere(prisma, { userId: uid ?? "", role: (session?.user as any)?.role, permissions: perms });
+  const dashboardVisitScope = await visitScopeWhere(prisma, { userId: uid ?? "", role: (session?.user as any)?.role, permissions: perms });
+  const dashboardQueueWhere = perms.has("queue.view") ? await queueViewerWhere({ userId: uid, role: (session?.user as any)?.role }) : {};
   const CANDIDATES = [
     { href: "/patients/new", label: "مراجع جديد", icon: "➕", perm: "patients.create" },
     { href: HUB_LINKS.visits, label: "تسجيل حضور", icon: "📋", perm: "visits.view" },
@@ -95,6 +105,7 @@ export default async function Dashboard() {
   const canAppointments = perms.has("appointments.view");
   const canBeds = perms.has("beds.view");
   const canInventory = perms.has("inventory.view") || perms.has("pharmacy.view");
+  const stockViewer = await currentStockViewer();
 
   const [patients, active, admittedCount, sessions, recent, todayAppts, tomorrowAppts, admittedList, meds, devicesDue, queueWaiting, visitsToday, diagnosesToday, followupsDue, therapistToday, activePlans, activeUsers, auditToday] =
     await Promise.all([
@@ -102,14 +113,14 @@ export default async function Dashboard() {
       canPatients ? prisma.patient.count({ where: { status: "ACTIVE" } }) : Promise.resolve(0),
       canBeds ? prisma.admission.count({ where: { status: "ADMITTED" } }) : Promise.resolve(0),
       (perms.has("therapy.view") || perms.has("clinical.session")) ? prisma.therapySession.count() : Promise.resolve(0),
-      canPatients ? prisma.patient.findMany({ take: 15, select: { id: true, fileNumber: true, fullName: true, registrationDate: true, governorate: { select: { name: true } } }, orderBy: { registrationDate: "desc" } }) : Promise.resolve([]),
+      canPatients ? prisma.patient.findMany({ take: 15, where: { AND: [dashboardPatientScope] }, select: { id: true, fileNumber: true, fullName: true, registrationDate: true, governorate: { select: { name: true } } }, orderBy: { registrationDate: "desc" } }) : Promise.resolve([]),
       canAppointments ? prisma.appointment.findMany({ where: { status: "SCHEDULED", scheduledAt: { gte: startToday, lt: startTomorrow } }, select: { id: true, patientId: true, scheduledAt: true, type: true, therapyType: true, assignedTo: true, ...(canPatients ? { patient: { select: { fullName: true } } } : {}) }, orderBy: { scheduledAt: "asc" }, take: 40 }) : Promise.resolve([]),
       canAppointments ? prisma.appointment.findMany({ where: { status: "SCHEDULED", scheduledAt: { gte: startTomorrow, lt: startDayAfter } }, select: { id: true, patientId: true, scheduledAt: true, type: true, therapyType: true, assignedTo: true, ...(canPatients ? { patient: { select: { fullName: true } } } : {}) }, orderBy: { scheduledAt: "asc" }, take: 40 }) : Promise.resolve([]),
       canBeds ? prisma.admission.findMany({ where: { status: "ADMITTED" }, select: { id: true, patientId: true, admissionDate: true, durationDays: true, patient: { select: { fullName: true } }, center: { select: { name: true } } }, orderBy: { admissionDate: "asc" }, take: 50 }) : Promise.resolve([]),
-      canInventory ? prisma.medication.findMany({ select: { id: true, quantity: true, minQuantity: true }, orderBy: { id: "asc" }, take: 200 }) : Promise.resolve([]),
+      canInventory ? lowStockMedications(stockViewer) : Promise.resolve([]),
       perms.has("devices.view") ? prisma.device.count({ where: { nextMaintenanceAt: { lte: now }, status: { not: "REPLACED" } } }) : Promise.resolve(0),
-      perms.has("queue.view") ? prisma.queueEntry.count({ where: { status: { in: ["WAITING", "CALLED", "IN_SESSION"] }, createdAt: { gte: startToday, lt: startTomorrow } } }) : Promise.resolve(0),
-      perms.has("visits.view") ? prisma.visit.count({ where: { visitDate: { gte: startToday, lt: startTomorrow } } }) : Promise.resolve(0),
+      perms.has("queue.view") ? prisma.queueEntry.count({ where: { status: { in: ["WAITING", "CALLED", "IN_SESSION"] }, createdAt: { gte: startToday, lt: startTomorrow }, ...dashboardQueueWhere } }) : Promise.resolve(0),
+      perms.has("visits.view") ? prisma.visit.count({ where: { visitDate: { gte: startToday, lt: startTomorrow }, AND: [dashboardVisitScope] } }) : Promise.resolve(0),
       perms.has("clinical.diagnosis") ? prisma.diagnosis.count({ where: { createdAt: { gte: startToday, lt: startTomorrow } } }) : Promise.resolve(0),
       canPatients ? prisma.patient.count({ where: { nextCheckupAt: { lte: startDayAfter }, archivedAt: null } }) : Promise.resolve(0),
       perms.has("therapy.session.record") ? prisma.appointment.count({ where: { status: "SCHEDULED", assignedTo: name, scheduledAt: { gte: startToday, lt: startTomorrow }, type: { contains: "جلسة" } } }) : Promise.resolve(0),
@@ -132,18 +143,20 @@ export default async function Dashboard() {
   const myRole = (session?.user as any)?.role;
   const myStation = stationForRole(myRole);
   const [myStationWaiting, myStationInProgress] = await Promise.all([
-    perms.has("journey.view") && myRole ? prisma.careStage.count({ where: { responsibleRole: myRole, status: "WAITING", patient: { archivedAt: null } } }) : Promise.resolve(0),
-    perms.has("journey.view") && myRole ? prisma.careStage.count({ where: { responsibleRole: myRole, status: "IN_PROGRESS", patient: { archivedAt: null } } }) : Promise.resolve(0),
+    // From handoffs: sent to my role (or to me) and not yet received, and the ones I received.
+    perms.has("handoff.receive") && myRole ? prisma.patientHandoff.count({ where: { status: "SENT", toRole: myRole, OR: [{ toUserId: uid }, { toUserId: null }], patient: { archivedAt: null } } }) : Promise.resolve(0),
+    perms.has("handoff.receive") && uid ? prisma.patientHandoff.count({ where: { status: "ACCEPTED", acceptedById: uid, patient: { archivedAt: null } } }) : Promise.resolve(0),
   ]);
 
   // شريط "ركّز على عملك" — يتكيّف حسب صلاحيات المستخدم
   const wantPharm = perms.has("pharmacy.view");
+  const rxScope = await pharmacyPrescriptionWhere();
   const wantFin = perms.has("finance.view");
-  const soon60 = new Date(); soon60.setDate(soon60.getDate() + 60);
+  const soon60 = new Date(); soon60.setDate(soon60.getDate() + EXPIRY_SOON_DAYS);
   const [rxPending, expiringSoon, unpaidInvoices, myOpenTasks, overdueTasks, appointmentSoon] = await Promise.all([
-    wantPharm ? prisma.prescription.count({ where: { isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" } }) : Promise.resolve(0),
-    wantPharm ? prisma.medicationBatch.count({ where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: soon60 } } }) : Promise.resolve(0),
-    wantFin ? prisma.invoice.findMany({ where: { status: { not: "PAID" } }, select: { amount: true, paidAmount: true } }) : Promise.resolve([] as { amount: number; paidAmount: number }[]),
+    wantPharm ? prisma.prescription.count({ where: { ...rxScope, isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE", visitId: { not: null } } }) : Promise.resolve(0),
+    wantPharm ? prisma.medicationBatch.count({ where: { ...batchViewWhere(stockViewer), quantity: { gt: 0 }, expiryDate: { not: null, lte: soon60 } } }) : Promise.resolve(0),
+    wantFin ? prisma.invoice.findMany({ where: { status: { not: "PAID" }, AND: [await invoiceViewWhere()] }, select: { amount: true, paidAmount: true } }) : Promise.resolve([] as { amount: number; paidAmount: number }[]),
     perms.has("tasks.view") ? prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, OR: [{ assignedToId: uid }, { assignedRole: myRole }] } }) : Promise.resolve(0),
     perms.has("tasks.view") ? prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, dueDate: { lt: now }, OR: [{ assignedToId: uid }, { assignedRole: myRole }] } }) : Promise.resolve(0),
     perms.has("appointments.view") ? prisma.appointment.count({ where: { status: "SCHEDULED", scheduledAt: { gte: now, lte: new Date(now.getTime() + 2 * 60 * 60 * 1000) }, OR: [{ assignedTo: name }, { assignedTo: null }] } }) : Promise.resolve(0),
@@ -172,8 +185,8 @@ export default async function Dashboard() {
     ...((perms.has("appointments.view") && myToday > 0) ? [
       { show: true, label: "مواعيدي اليوم", value: myToday as any, icon: "📅", href: HUB_LINKS.appointments, color: "bg-sky-600" },
     ] : []),
-    ...((perms.has("journey.view") && myStation && (myStationWaiting + myStationInProgress) > 0) ? [
-      { show: true, label: `محطتي: ${myStation.name}`, value: (myStationWaiting + myStationInProgress) as any, icon: "🧭", href: HUB_LINKS.journey, color: "bg-slate-700" },
+    ...((myStationWaiting + myStationInProgress) > 0 ? [
+      { show: true, label: "مراجعون عندي", value: (myStationWaiting + myStationInProgress) as any, icon: "🧭", href: "/my-work", color: "bg-slate-700" },
     ] : []),
   ].filter((x) => x.show);
 
@@ -191,6 +204,13 @@ export default async function Dashboard() {
     { show: devicesDue > 0, label: "أجهزة بحاجة صيانة", value: devicesDue, cls: "border-amber-200 bg-amber-50 text-amber-700", href: "/devices?due=1" },
     { show: lowMeds.length > 0, label: "مواد منخفضة بالمخزون", value: lowMeds.length, cls: "border-orange-200 bg-orange-50 text-orange-700", href: HUB_LINKS.pharmacyLowStock },
   ].filter((a) => a.show);
+  // One "needs your attention" list: the focus items plus any alert that isn't already there.
+  const attention = [
+    ...focus.map((f) => ({ label: f.label, value: f.value, href: f.href, icon: f.icon, color: f.color })),
+    ...alerts
+      .filter((a) => !focus.some((f) => f.href === a.href))
+      .map((a) => ({ label: a.label, value: a.value as any, href: a.href, icon: "⚠", color: a.cls.includes("red") ? "bg-red-600" : a.cls.includes("purple") ? "bg-purple-600" : "bg-amber-600" })),
+  ];
 
   const tToday = startToday.getTime();
   const bucketOf = (d: Date | string) => {
@@ -209,8 +229,8 @@ export default async function Dashboard() {
   const [visitsWithoutQueue, specialistPending, headUnassigned, therapistUnlogged, pendingPurchases, submittedExpenses, payableExpenses, accountIssues] = await Promise.all([
     receptionRole && perms.has("visits.view") && perms.has("queue.view")
       ? Promise.all([
-        prisma.visit.findMany({ where: { visitDate: { gte: startToday, lt: startTomorrow } }, select: { patientId: true }, orderBy: { visitDate: "desc" }, take: 100 }),
-        prisma.queueEntry.findMany({ where: { createdAt: { gte: startToday, lt: startTomorrow } }, select: { patientId: true }, orderBy: { createdAt: "desc" }, take: 100 }),
+        prisma.visit.findMany({ where: { visitDate: { gte: startToday, lt: startTomorrow }, AND: [dashboardVisitScope] }, select: { patientId: true }, orderBy: { visitDate: "desc" }, take: 100 }),
+        prisma.queueEntry.findMany({ where: { createdAt: { gte: startToday, lt: startTomorrow }, ...dashboardQueueWhere }, select: { patientId: true }, orderBy: { createdAt: "desc" }, take: 100 }),
       ]).then(([visits, queued]) => {
         const queuePatients = new Set(queued.map((item) => item.patientId));
         return new Set(visits.filter((item) => !queuePatients.has(item.patientId)).map((item) => item.patientId)).size;
@@ -226,7 +246,7 @@ export default async function Dashboard() {
       ? prisma.appointment.count({ where: { assignedToId: uid, sessionId: { not: null }, status: { in: ["SCHEDULED", "NOSHOW"] }, scheduledAt: { gte: startToday, lt: startTomorrow }, therapySessionLogs: { none: {} }, ...(membershipCenterIds.length ? { centerId: { in: membershipCenterIds } } : { centerId: -1 }) } })
       : Promise.resolve(0),
     perms.has("pharmacy.purchase.view")
-      ? prisma.purchaseOrder.count({ where: { status: { in: ["PENDING_APPROVAL", "APPROVED", "ORDERED", "PARTIALLY_RECEIVED"] } } })
+      ? prisma.purchaseOrder.count({ where: { ...orderViewWhere(stockViewer), status: { in: ["PENDING_APPROVAL", "APPROVED", "ORDERED", "PARTIALLY_RECEIVED"] } } })
       : Promise.resolve(0),
     perms.has("expenses.approve") ? prisma.woundedExpense.count({ where: { status: "SUBMITTED" } }) : Promise.resolve(0),
     perms.has("expenses.pay") ? prisma.woundedExpense.count({ where: { status: "READY_FOR_PAYMENT" } }) : Promise.resolve(0),
@@ -253,7 +273,7 @@ export default async function Dashboard() {
       title: "مساحة الطبيب المقيم",
       subtitle: "المراجعات التي تنتظر تقييم المقيم ونواقص المتابعة",
       cards: [
-        { label: "ينتظرون تقييمي", value: myStationWaiting + myStationInProgress, href: HUB_LINKS.journey, perm: "journey.view" },
+        { label: "ينتظرون تقييمي", value: myStationWaiting + myStationInProgress, href: "/my-work", perm: "dashboard.view" },
         { label: "تشخيصات اليوم", value: diagnosesToday, href: HUB_LINKS.patients, perm: "clinical.diagnosis" },
         { label: "تحتاج متابعة", value: followupsDue, href: HUB_LINKS.patients, perm: "patients.view" },
         { label: "قائمة عملي", value: "فتح", href: "/my-work?type=stage", perm: "dashboard.view" },
@@ -264,7 +284,7 @@ export default async function Dashboard() {
       title: "مساحة طبيب الاختصاص",
       subtitle: "الإحالات والنتائج والملفات التي تنتظر قراراً",
       cards: [
-        { label: "إحالات تنتظر القرار", value: specialistPending, href: "/patients-care?tab=referrals", perm: "referrals.view" },
+        { label: "إحالات تنتظر القرار", value: specialistPending, href: "/referrals", perm: "referrals.view" },
         { label: "تشخيصات اليوم", value: diagnosesToday, href: HUB_LINKS.patients, perm: "clinical.diagnosis" },
         { label: "متابعات مستحقة", value: followupsDue, href: HUB_LINKS.patients, perm: "patients.view" },
         { label: "قائمة عملي", value: "فتح", href: "/my-work?type=referral", perm: "dashboard.view" },
@@ -275,7 +295,7 @@ export default async function Dashboard() {
       title: "مساحة رئيس المعالجين",
       subtitle: "الإسناد والجدولة والتقييمات وحمل الفريق ضمن العضوية",
       cards: [
-        { label: "خطط ناقصة الإسناد", value: headUnassigned, href: "/therapy-centers?tab=plans", perm: "therapy.plan.manage" },
+        { label: "خطط ناقصة الإسناد", value: headUnassigned, href: "/therapy", perm: "therapy.plan.manage" },
         { label: "خطط فعالة", value: activePlans, href: "/workload", perm: "workload.view" },
         { label: "حمل المعالجين", value: "فتح", href: "/workload", perm: "workload.view" },
         { label: "قائمة عملي", value: "فتح", href: "/my-work?type=plan", perm: "dashboard.view" },
@@ -288,7 +308,7 @@ export default async function Dashboard() {
       cards: [
         { label: "جلساتي اليوم", value: therapistToday, href: HUB_LINKS.therapyToday, perm: "therapy.session.record" },
         { label: "نتائج غير مسجلة", value: therapistUnlogged, href: HUB_LINKS.therapyToday, perm: "therapy.session.record" },
-        { label: "محطتي", value: myStationWaiting + myStationInProgress, href: HUB_LINKS.journey, perm: "journey.view" },
+        { label: "مراجعون عندي", value: myStationWaiting + myStationInProgress, href: "/my-work", perm: "dashboard.view" },
         { label: "قائمة عملي", value: "فتح", href: "/my-work?type=session", perm: "dashboard.view" },
       ],
     },
@@ -311,7 +331,7 @@ export default async function Dashboard() {
       cards: [
         { label: "تنتظر الاعتماد", value: submittedExpenses, href: "/my-work?type=expense&status=submitted", perm: "expenses.approve" },
         { label: "جاهزة للتنفيذ", value: payableExpenses, href: "/my-work?type=expense&status=ready_for_payment", perm: "expenses.pay" },
-        { label: "الموافقات", value: "فتح", href: "/reports-finance?tab=approvals", perm: "approvals.view" },
+        { label: "الموافقات", value: "فتح", href: "/approvals", perm: "approvals.view" },
         { label: "قائمة عملي", value: "فتح", href: "/my-work?type=expense", perm: "dashboard.view" },
       ],
     },
@@ -333,8 +353,8 @@ export default async function Dashboard() {
       title: `مساحة ${myStation?.name ?? "المحطة"}`,
       subtitle: "الحالات المحولة إلى دورك وروابط العمل المصرح بها",
       cards: [
-        { label: "بانتظار المحطة", value: myStationWaiting, href: HUB_LINKS.journey, perm: "journey.view" },
-        { label: "قيد التنفيذ", value: myStationInProgress, href: HUB_LINKS.journey, perm: "journey.view" },
+        { label: "بانتظار استلامي", value: myStationWaiting, href: "/my-work", perm: "dashboard.view" },
+        { label: "استلمتهم", value: myStationInProgress, href: "/my-work", perm: "dashboard.view" },
         { label: "قائمة عملي", value: "فتح", href: "/my-work?type=stage", perm: "dashboard.view" },
       ],
     },
@@ -382,7 +402,7 @@ export default async function Dashboard() {
         </div>
       )}
 
-      {(stats.length > 0 || roleCards.length > 0) && <h2 className="font-semibold text-gray-900">ملخص اليوم</h2>}
+      {((stats.length > 0 && roleCards.length === 0) || roleCards.length > 0) && <h2 className="font-semibold text-gray-900">ملخص اليوم</h2>}
 
       {roleCards.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -416,15 +436,15 @@ export default async function Dashboard() {
         </form>
       )}
 
-      {focus.length > 0 && (
+      {attention.length > 0 && (
         <div>
           <div className="mb-2">
             <h2 className="font-semibold text-gray-900">يحتاج انتباهك</h2>
             <p className="text-sm text-gray-500">عناصر المتابعة الموجودة حالياً ضمن صلاحياتك.</p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {focus.map((f) => (
-              <Link key={f.label} href={f.href} className="card flex items-center gap-3 p-4 transition hover:shadow-md hover:ring-1 hover:ring-brand-200">
+            {attention.map((f) => (
+              <Link key={`${f.label}-${f.href}`} href={f.href} className="card flex items-center gap-3 p-4 transition hover:shadow-md hover:ring-1 hover:ring-brand-200">
                 <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${f.color} text-white`}>{f.icon}</div>
                 <div>
                   <div className="text-xl font-bold text-gray-800">{f.value}</div>
@@ -436,18 +456,7 @@ export default async function Dashboard() {
         </div>
       )}
 
-      {alerts.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {alerts.map((a) => (
-            <Link key={a.label} href={a.href} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${a.cls} transition hover:brightness-95`}>
-              <span className="text-sm font-medium">⚠ {a.label}</span>
-              <span className="text-lg font-bold">{a.value}</span>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {stats.length > 0 && (
+      {stats.length > 0 && roleCards.length === 0 && (
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {stats.map((s) => (
           <Link key={s.label} href={s.href} className="card flex items-center gap-4 p-5 transition hover:shadow-md hover:ring-1 hover:ring-brand-200">
@@ -494,10 +503,11 @@ export default async function Dashboard() {
 
       {perms.has("beds.view") && (<>
       {/* الرقود الحالية */}
-      <div id="admissions" className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-          <span className="font-semibold text-gray-700">الرقود الحالية {admOver > 0 && <span className="ms-1 rounded bg-red-50 px-2 py-0.5 text-xs text-red-700">{admOver} انتهى وقته</span>}</span>
-        </div>
+      <details id="admissions" className="card overflow-hidden" open={admOver > 0}>
+        <summary className="flex cursor-pointer items-center justify-between border-b border-gray-200 px-5 py-3">
+          <span className="font-semibold text-gray-700">الرقود الحالية ({admittedList.length}) {admOver > 0 && <span className="ms-1 rounded bg-red-50 px-2 py-0.5 text-xs text-red-700">{admOver} انتهى وقته</span>}</span>
+          <Link href={HUB_LINKS.therapyBeds} className="text-sm text-brand-700 hover:underline">الرقود والفندقة</Link>
+        </summary>
         <table className="w-full">
           <thead><tr><th className="th">المريض</th><th className="th">المركز</th><th className="th">تاريخ الدخول</th><th className="th">المدة (أيام)</th><th className="th">ينتهي بتاريخ</th><th className="th">الحالة</th></tr></thead>
           <tbody>
@@ -517,16 +527,16 @@ export default async function Dashboard() {
             })}
           </tbody>
         </table>
-      </div>
+      </details>
       </>)}
 
       {perms.has("patients.view") && (<>
       {/* أحدث المراجعين */}
-      <div className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-          <span className="font-semibold text-gray-700">أحدث المراجعين</span>
+      <details className="card overflow-hidden">
+        <summary className="flex cursor-pointer items-center justify-between border-b border-gray-200 px-5 py-3">
+          <span className="font-semibold text-gray-700">أحدث المراجعين ({recent.length})</span>
           <Link href={HUB_LINKS.patients} className="text-sm text-brand-700 hover:underline">كل المراجعين</Link>
-        </div>
+        </summary>
         <table className="w-full">
           <thead><tr><th className="th">رقم الملف</th><th className="th">الاسم الرباعي</th><th className="th">المحافظة</th><th className="th">تاريخ التسجيل</th></tr></thead>
           <tbody>
@@ -550,7 +560,7 @@ export default async function Dashboard() {
             })}
           </tbody>
         </table>
-      </div>
+      </details>
       </>)}
     </div>
   );

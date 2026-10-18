@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { pharmacyPrescriptionWhere } from "@/lib/pharmacy-scope";
 import { getOrg } from "@/lib/org";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
@@ -19,6 +20,8 @@ export default async function PrescriptionPrint({ params }: { params: Promise<{ 
     include: { patient: true, medication: true },
   });
   if (!rx) notFound();
+  // Only the originating branch's pharmacy (ADMIN: read-only all) may open or print a prescription.
+  if (!(await prisma.prescription.findFirst({ where: { id, AND: [await pharmacyPrescriptionWhere()] }, select: { id: true } }))) notFound();
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">

@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { PatientSearchField } from "@/components/PatientSearchField";
+import { invoiceViewWhere } from "@/lib/patient-guard";
 import { requirePerm } from "@/lib/access";
 import { Combobox } from "@/components/Combobox";
 import { PageHeader } from "@/components/PageHeader";
@@ -19,7 +21,7 @@ export default async function Payments({ searchParams }: { searchParams: Promise
   const to = sp.to ? new Date(sp.to + "T23:59:59") : null;
   const where: any = {};
   if (from || to) where.paidAt = { gte: from ?? undefined, lte: to ?? undefined };
-  const invoiceFilter: any = {};
+  const invoiceFilter: any = { AND: [await invoiceViewWhere()] };
   if (sp.patientId) invoiceFilter.patientId = sp.patientId;
   if (sp.q) invoiceFilter.patient = { fullName: { contains: sp.q, mode: "insensitive" } };
   if (Object.keys(invoiceFilter).length) where.invoice = invoiceFilter;
@@ -32,7 +34,7 @@ export default async function Payments({ searchParams }: { searchParams: Promise
       take: 500,
     }),
     prisma.payment.aggregate({ _sum: { amount: true }, _count: true, where }),
-    prisma.patient.findMany({ orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
+    Promise.resolve([] as Array<{ id: string; fullName: string; fileNumber: number; phone?: string | null; status?: string }>),
   ]);
   const totalCollected = agg._sum.amount ?? 0;
   const count = agg._count ?? 0;
@@ -52,7 +54,7 @@ export default async function Payments({ searchParams }: { searchParams: Promise
       <form action="/finance/payments" className="card flex flex-wrap items-end gap-2 p-3">
         <div>
           <label className="label">المريض</label>
-<Combobox name="patientId" allowFree={false} defaultValue={sp.patientId ?? ""} placeholder="كل المرضى" options={patients.map((p:any)=>({value:String(p.id),label:`${p.fullName} (#${p.fileNumber})`}))} />
+<PatientSearchField name="patientId" defaultValue={sp.patientId ?? ""} placeholder="كل المرضى" scope="administrative" />
         </div>
         <div><label className="label">بحث بالاسم</label><input name="q" defaultValue={sp.q ?? ""} className="input" placeholder="اسم المريض..." /></div>
         <div><label className="label">من تاريخ</label><input name="from" type="date" className="input" defaultValue={sp.from ?? ""} /></div>

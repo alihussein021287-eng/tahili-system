@@ -1,0 +1,81 @@
+# Standalone local stack: use -p tahili-original or -p tahili-dev with separate env files.
+# Host-header validation cannot enforce the network boundary; keep this loopback binding.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:?set DB_USER for this local copy}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD for this local copy}
+      POSTGRES_DB: ${DB_NAME:?set DB_NAME for this local copy}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    # This loopback-only local copy needs root to write its project-scoped volume.
+    user: "0:0"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:?set MINIO_USER for this local copy}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?set MINIO_PASSWORD for this local copy}
+    volumes:
+      - miniodata:/data
+
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    # Freshclam needs internet to download signatures on a new local machine.
+    volumes:
+      - clamavdata:/var/lib/clamav
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      clamav:
+        condition: service_started
+    environment:
+      TAHILI_ENVIRONMENT: development
+      FARO_ENABLED: "false"
+      OTEL_ENABLED: "false"
+      DATABASE_URL: postgresql://${DB_USER:?set DB_USER for this local copy}:${DB_PASSWORD:?set DB_PASSWORD for this local copy}@postgres:5432/${DB_NAME:?set DB_NAME for this local copy}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set a unique NEXTAUTH_SECRET for this local copy}
+      TAHILI_LOCAL_ACCESS: ${TAHILI_LOCAL_ACCESS:-false}
+      TAHILI_LOCAL_PORT: "${APP_PORT}"
+      NEXTAUTH_URL: http://localhost:${APP_PORT}
+      NEXTAUTH_URL_INTERNAL: http://localhost:${APP_PORT}
+      NEXTAUTH_ALLOW_HTTP_LOGIN: "true"
+      AUTH_TRUST_HOST: "true"
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?set ADMIN_INITIAL_PASSWORD for this local copy}
+      ALLOW_INITIAL_SETUP: ${ALLOW_INITIAL_SETUP:-false}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_ACCESS_KEY: ${MINIO_USER:?set MINIO_USER for this local copy}
+      MINIO_SECRET_KEY: ${MINIO_PASSWORD:?set MINIO_PASSWORD for this local copy}
+      COLLABORATION_MINIO_BUCKET: ${COLLABORATION_MINIO_BUCKET:-tahili-collaboration}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      UPLOAD_DIR: /app/uploads
+      TZ: Asia/Baghdad
+      REMINDER_KEY: ${REMINDER_KEY:?set REMINDER_KEY for this local copy}
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "127.0.0.1:${APP_PORT}:3000"
+
+volumes:
+  pgdata:
+  miniodata:
+  clamavdata:
+  uploads:

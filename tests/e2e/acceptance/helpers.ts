@@ -2,20 +2,27 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 
-export const ROOT = "/tahili-system/test-results/role-workflow-acceptance";
+// Output lives outside Playwright's default test-results directory so earlier evidence is never wiped.
+export const ROOT = path.resolve(process.env.ACCEPTANCE_OUTPUT_DIR || "release-evidence/acceptance-run");
 export const STATES = path.join(ROOT, "storage-states");
 export const EVIDENCE = path.join(ROOT, "screenshots");
 export const RUN_ID = process.env.ACCEPTANCE_RUN_ID || `RUN-${Date.now()}`;
-export const BASE_URL = process.env.E2E_BASE_URL || "http://192.168.17.20:3000";
-export const CREDENTIALS_PATH = process.env.QA_CREDENTIALS_PATH || "/root/tahili-role-acceptance-credentials.tsv";
+// The only authorized target is the isolated rehearsal runtime.
+export const REHEARSAL_ORIGIN = "http://localhost:3101";
+export const BASE_URL = process.env.E2E_BASE_URL || REHEARSAL_ORIGIN;
+export const CREDENTIALS_PATH = process.env.QA_CREDENTIALS_PATH || "";
 
 export const BATCH_TAG = process.env.ACCEPTANCE_BATCH || "QA-ROLE-20260724";
 export type Credential = { role: string; username: string; password: string; fullName: string };
 
 function assertDevelopmentTarget() {
   const url = new URL(BASE_URL);
-  if (url.origin !== "http://192.168.17.20:3000" || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error("Acceptance tests may run only against the approved development LAN URL");
+  if (url.origin !== REHEARSAL_ORIGIN || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error(`Acceptance tests may run only against the isolated rehearsal runtime ${REHEARSAL_ORIGIN}`);
+  }
+  const db = process.env.DATABASE_URL ?? "";
+  if (!db.includes("@127.0.0.1:55432/")) {
+    throw new Error("DATABASE_URL must point to the isolated rehearsal database (127.0.0.1:55432)");
   }
 }
 
@@ -24,7 +31,7 @@ assertDevelopmentTarget();
 export function credentials(): Credential[] {
   if (!path.isAbsolute(CREDENTIALS_PATH)) throw new Error("QA_CREDENTIALS_PATH must be absolute");
   const metadata = fs.statSync(CREDENTIALS_PATH);
-  if ((metadata.mode & 0o077) !== 0) throw new Error("QA credentials must not be accessible by group or others");
+  if (process.platform !== "win32" && (metadata.mode & 0o077) !== 0) throw new Error("QA credentials must not be accessible by group or others");
   return fs.readFileSync(CREDENTIALS_PATH, "utf8")
     .split("\n").filter((line) => line && !line.startsWith("#"))
     .map((line) => {
@@ -52,10 +59,24 @@ export async function contextFor(browser: Browser, role: string, suffix?: string
   return browser.newContext({ storageState: statePath(user), baseURL: BASE_URL });
 }
 
+/**
+ * Next.js streams Suspense boundaries: right after navigation the DOM can briefly hold the streamed copy in a hidden
+ * container next to the final node, which breaks strict locators. Wait for the swap before the test touches the page.
+ */
+export function settleAfterNavigation(page: Page) {
+  const original = page.goto.bind(page);
+  page.goto = (async (...args: Parameters<Page["goto"]>) => {
+    const response = await original(...args);
+    await page.waitForFunction(() => !document.querySelector("template[id^=\"B:\"], div[hidden][id^=\"S:\"]"), undefined, { timeout: 10_000 }).catch(() => undefined);
+    return response;
+  }) as Page["goto"];
+}
+
 export async function pageFor(browser: Browser, role: string, suffix?: string) {
   const user = credential(role, suffix);
   const context = await contextFor(browser, role, suffix);
   const page = await context.newPage();
+  settleAfterNavigation(page);
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   page.on("pageerror", (error) => errors.push(error.message));
@@ -133,5 +154,8 @@ export async function screenshot(page: Page, name: string) {
 
 export async function closeChecked(context: BrowserContext, errors: string[]) {
   await context.close();
-  expect(errors.filter((error) => !error.includes("403")), "unexpected browser/HTTP errors").toEqual([]);
+  // A next-auth session poll that is still in flight when the context closes surfaces as a client fetch error; it is a
+  // teardown artifact of the test, not an application failure (real session/5xx failures are recorded by the other handlers).
+  const teardownNoise = (error: string) => /CLIENT_FETCH_ERROR/.test(error) && //api/auth/session/.test(error) && /Failed to fetch/.test(error);
+  expect(errors.filter((error) => !error.includes("403") && !teardownNoise(error)), "unexpected browser/HTTP errors").toEqual([]);
 }

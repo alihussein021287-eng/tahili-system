@@ -27,11 +27,12 @@ export interface PatientTabRepository {
 }
 
 export interface TabDeps {
-  session: () => Promise<{ user?: { id?: string | null } } | null>;
+  session: () => Promise<{ user?: { id?: string | null; role?: string | null } } | null>;
   patientsView: () => Promise<void>;
   perms: () => Promise<Set<string>>;
   prisma: PatientTabRepository;
   memberships: (id: string) => Promise<number[]>;
+  referralScope: (actor: { userId: string; role: string; permissions: ReadonlySet<string> }) => Promise<Prisma.ReferralRequestWhereInput>;
 }
 
 const idOk = (id: string) => /^[\w-]{8,128}$/.test(id);
@@ -67,14 +68,13 @@ export async function loadPatientTabData(
     case "resident":
       return deps.prisma.residentReview.findMany({ where: { patientId }, orderBy: { date: "desc" } });
     case "referrals":
+      const referralWhere = await deps.referralScope({ userId, role: session.user?.role || "", permissions });
       return deps.prisma.referralRequest.findMany({
         where: {
           patientId,
           status: "ACCEPTED",
           destinationScope: "INTERNAL_CENTER",
-          ...(centers
-            ? { OR: [{ destinationCenterId: null }, { destinationCenterId: { in: centers } }] }
-            : {}),
+          AND: [referralWhere],
         },
         include: {
           destinationCenter: { select: { name: true } },

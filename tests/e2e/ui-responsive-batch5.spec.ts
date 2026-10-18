@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
-const baseURL = "http://192.168.17.20:3000";
-const credentialPath = process.env.QA_CREDENTIALS_PATH || "/root/tahili-role-acceptance-credentials.tsv";
+import { REHEARSAL_ORIGIN } from "./acceptance/helpers";
+const baseURL = REHEARSAL_ORIGIN;
+const credentialPath = process.env.QA_CREDENTIALS_PATH || "";
 const roles = [
   "ADMIN",
   "RECEPTION",
@@ -56,8 +57,8 @@ async function login(page: Page, role: string) {
 }
 
 async function firstPatientRoute(page: Page) {
-  await page.goto(`${baseURL}/patients-care?tab=patients`, { waitUntil: "domcontentloaded" });
-  const link = page.locator('main a[href^="/patients/"]').filter({ hasNot: page.locator('[href*="/new"]') }).first();
+  await page.goto(`${baseURL}/patients`, { waitUntil: "domcontentloaded" });
+  const link = page.locator('main a[href^="/patients/c"]:not([href*="/new"])').first();
   await expect(link).toBeVisible();
   const href = await link.getAttribute("href");
   if (!href) throw new Error("No visible QA patient route");
@@ -89,7 +90,8 @@ test("patient file keeps its role contract across responsive layouts and themes"
     const context = await browser.newContext({ viewport: viewports[0] });
     const page = await context.newPage();
     const errors: string[] = [];
-    page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+    // A session poll cut off by navigation is teardown noise, not an application error (same filter as the acceptance helpers).
+    page.on("console", (message) => { const text = message.text(); if (message.type() === "error" && !(/CLIENT_FETCH_ERROR/.test(text) && /\/api\/auth\/session/.test(text) && /Failed to fetch/.test(text))) errors.push(text); });
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("response", (response) => {
       if (response.status() >= 500) errors.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`);

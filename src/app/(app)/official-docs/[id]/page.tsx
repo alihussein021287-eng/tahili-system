@@ -1,5 +1,7 @@
 import { currentPerms, requirePerm } from "@/lib/access";
+import { PatientSearchField } from "@/components/PatientSearchField";
 import { prisma } from "@/lib/db";
+import { currentPatientScope } from "@/lib/patient-guard";
 import { DOC_DIRECTION, DOC_TYPE, fmtDate } from "@/lib/labels";
 import { getOrg } from "@/lib/org";
 import { Combobox } from "@/components/Combobox";
@@ -28,7 +30,7 @@ export default async function OfficialDocView({ params, searchParams }: { params
       where: { id },
       include: { patient: { select: { id: true, fullName: true, fileNumber: true, phone: true } }, referralRequest: { select: { id: true } } },
     }),
-    canManage ? prisma.patient.findMany({ where: { archivedAt: null }, select: { id: true, fullName: true, fileNumber: true }, orderBy: { fullName: "asc" }, take: 500 }) : Promise.resolve([]),
+    canManage ? Promise.resolve([] as Array<{ id: string; fullName: string; fileNumber: number; phone?: string | null; status?: string }>) : Promise.resolve([]),
     getOrg(),
   ]);
   if (!doc) notFound();
@@ -82,7 +84,7 @@ export default async function OfficialDocView({ params, searchParams }: { params
           <Combobox name="direction" label="الاتجاه" allowFree={false} defaultValue={doc.direction} options={Object.entries(DOC_DIRECTION).map(([value, label]: any) => ({ value, label }))} />
           <div className="md:col-span-2"><label className="label">الموضوع *</label><input name="subject" className="input" defaultValue={doc.subject} required /></div>
           <div><label className="label">الجهة</label><input name="entity" className="input" defaultValue={doc.entity ?? ""} /></div>
-          <Combobox name="patientId" label="المراجع المرتبط" allowFree={false} defaultValue={doc.patientId ?? ""} placeholder="وثيقة عامة" options={[{ value: "", label: "وثيقة عامة" }, ...patients.map((p: any) => ({ value: String(p.id), label: `${p.fullName} (#${p.fileNumber})` }))]} />
+          <PatientSearchField name="patientId" label="المراجع المرتبط" defaultValue={doc.patientId ?? ""} placeholder="وثيقة عامة" scope="record" />
           <div className="md:col-span-3"><label className="label">ملاحظات</label><textarea name="body" className="input" rows={3} defaultValue={doc.body ?? ""} /></div>
           <div><label className="label">استبدال المرفق</label><input name="attachment" type="file" className="input" /></div>
           <div className="md:col-span-4"><button className="btn-primary" type="submit">حفظ التعديلات</button></div>

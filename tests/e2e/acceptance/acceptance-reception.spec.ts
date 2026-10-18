@@ -22,7 +22,7 @@ test("workflow 01: attendance, queue and care-stage deduplication", async ({ bro
     browser,
     context,
     page,
-    submit: form.getByRole("button", { name: /تسجيل زيارة/ }),
+    submit: form.getByRole("button", { name: "تسجيل الحضور والتوجيه", exact: true }),
     dbExpectation: async () => Boolean(await prisma.visit.findFirst({ where: { patientId, visitDate: { gte: start, lt: end } } })),
     confirmation: async (fresh) => (await fresh.locator("body").innerText()).includes(patient),
     recoveryUrl: `/visits?q=${encodeURIComponent(patient)}`,

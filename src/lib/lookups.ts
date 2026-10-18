@@ -12,7 +12,8 @@ export const getLookups = unstable_cache(
       prisma.governorate.findMany({ include: { districts: { orderBy: { name: "asc" } } }, orderBy: { name: "asc" } }),
       prisma.injuryType.findMany({ orderBy: { name: "asc" } }),
       prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-      prisma.medication.findMany({ orderBy: { name: "asc" } }),
+      // Shared cache: never carries the all-branch aggregate (quantity is overlaid per viewer by withViewerQuantities).
+      prisma.medication.findMany({ orderBy: { name: "asc" } }).then((rows) => rows.map((m) => ({ ...m, quantity: 0 }))),
       prisma.formation.findMany({ orderBy: { name: "asc" } }),
       prisma.rank.findMany({ orderBy: { name: "asc" } }),
       prisma.employee.findMany({ orderBy: { name: "asc" } }),
@@ -41,7 +42,7 @@ export const getCenters = unstable_cache(
   ["lookups-centers"], { revalidate: TTL, tags: TAG }
 );
 export const getMedicationsList = unstable_cache(
-  async () => prisma.medication.findMany({ orderBy: { name: "asc" } }),
+  async () => (await prisma.medication.findMany({ orderBy: { name: "asc" } })).map((m) => ({ ...m, quantity: 0 })),
   ["lookups-medications"], { revalidate: TTL, tags: TAG }
 );
 export const getRooms = unstable_cache(

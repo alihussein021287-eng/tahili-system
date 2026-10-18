@@ -37,23 +37,23 @@ describe("UX route inventory", () => {
   it("lists every page.tsx exactly once", () => {
     const actual = findFiles("src/app", "page.tsx").map(pageRoute).sort();
     const documented = documentedRoutes(pagesSection);
-    expect(actual).toHaveLength(94);
+    expect(actual).toHaveLength(99);
     expect(documented).toEqual(actual);
   });
 
   it("lists every route.ts exactly once", () => {
     const actual = findFiles("src/app", "route.ts").map(apiRoute).sort();
     const documented = documentedRoutes(apiSection);
-    expect(actual).toHaveLength(21);
+    expect(actual).toHaveLength(26);
     expect(documented).toEqual(actual);
   });
 
   it("keeps the reviewed category totals explicit", () => {
-    expect(doc).toContain("| `VISUAL` | 74 |");
+    expect(doc).toContain("| `VISUAL` | 78 |");
     expect(doc).toContain("| `UNCHANGED` | 4 |");
     expect(doc).toContain("| `PRINT` | 13 |");
     expect(doc).toContain("| `LEGACY` | 3 |");
-    expect(doc).toContain("| `API` | 21 |");
+    expect(doc).toContain("| `API` | 26 |");
     expect(doc).toContain("| غير مفحوص | 0 |");
   });
 });

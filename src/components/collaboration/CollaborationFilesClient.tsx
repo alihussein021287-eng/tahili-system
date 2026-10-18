@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PatientSearchField } from "@/components/PatientSearchField";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
@@ -1218,6 +1219,20 @@ function ShareModal({ open, onClose, files, users, conversations, centers, canAd
   };
   return (
     <Modal title="مشاركة الملفات" open={open} onClose={onClose}>
+      <div className="grid gap-3">
+        {files[0]?.shares.length > 0 && (
+          <div className="rounded-xl border border-gray-200 p-3">
+            <h3 className="mb-2 text-sm font-bold">مشاركات الملف الأول</h3>
+            <div className="flex flex-wrap gap-2">
+              {files[0].shares.map((share) => (
+                <form key={share.id} action={revokeShareAction.bind(null, share.id)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-2 py-1 text-xs">
+                  <span>{shareTargetLabel(share)}</span>
+                  <button className="text-red-600">إلغاء</button>
+                </form>
+              ))}
+            </div>
+          </div>
+        )}
       <form onSubmit={submit} className="grid gap-3">
         <p className="text-sm text-gray-500">{files.length} ملف محدد. الملفات قيد الفحص أو المرفوضة لا يمكن مشاركتها.</p>
         <select name="targetType" className="input">
@@ -1234,21 +1249,9 @@ function ShareModal({ open, onClose, files, users, conversations, centers, canAd
           <select name="targetCenterId" className="input"><option value="">المركز</option>{centers.map((center) => <option key={center.id} value={center.id}>{center.name}</option>)}</select>
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" name="canEdit" /> السماح بالتعديل عند دعمه خادمياً</label>
-        {files[0]?.shares.length > 0 && (
-          <div className="rounded-xl border border-gray-200 p-3">
-            <h3 className="mb-2 text-sm font-bold">مشاركات الملف الأول</h3>
-            <div className="flex flex-wrap gap-2">
-              {files[0].shares.map((share) => (
-                <form key={share.id} action={revokeShareAction.bind(null, share.id)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-2 py-1 text-xs">
-                  <span>{shareTargetLabel(share)}</span>
-                  <button className="text-red-600">إلغاء</button>
-                </form>
-              ))}
-            </div>
-          </div>
-        )}
         <div className="flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={onClose}>إلغاء</button><button disabled={isPending} className="btn-primary">مشاركة</button></div>
       </form>
+      </div>
     </Modal>
   );
 }
@@ -1470,10 +1473,7 @@ function PatientLinkInline({ file, patients }: { file: FileItem; patients: Patie
   return (
     <form action={linkPatientAction.bind(null, file.id)} className="grid gap-2 rounded-xl border border-gray-200 p-3">
       <h3 className="font-bold text-gray-900">ربط بمراجع</h3>
-      <select name="patientId" className="input" required>
-        <option value="">اختر المراجع</option>
-        {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.fullName}، ملف #{patient.fileNumber}</option>)}
-      </select>
+      <PatientSearchField name="patientId" required scope="record" />
       <label className="flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" name="confirm" required /> تأكيد الربط بالمراجع</label>
       <button className="btn-ghost btn-sm">ربط</button>
     </form>

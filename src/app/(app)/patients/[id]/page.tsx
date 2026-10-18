@@ -5,45 +5,48 @@ import Link from "next/link";
 import { currentPerms, getSession, requirePerm } from "@/lib/access";
 import { Zoom } from "@/components/Zoom";
 import { PatientTabs } from "@/components/PatientTabs";
+import { eligiblePrescriptionVisitIds } from "@/lib/pharmacy-scope";
 import { getCenters, getMedicationsList, getRooms } from "@/lib/lookups";
+import { withViewerQuantities } from "@/lib/pharmacy-stock";
 import { generatePortalToken, revokePortalToken, archivePatient, restorePatient } from "../actions";
 import { createTask } from "../../tasks/actions";
-import { GENDER, MARITAL, PATIENT_STATUS, CASE_TYPE, ADMISSION, APPT_STATUS, THERAPY, fmtDate } from "@/lib/labels";
+import { GENDER, MARITAL, PATIENT_STATUS, CASE_TYPE, fmtDate } from "@/lib/labels";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { getAdminConfig } from "@/lib/admin-config";
 import { activeCenterHallOptions } from "@/lib/center-halls";
 import { patientCenterScope } from "@/lib/patient-center-scope";
-import { derivePatientJourney, nextPatientStep, type DerivedJourneyStage } from "@/lib/patient-journey";
+import { derivePatientPath } from "@/lib/patient-path";
+import { currentHandoffStep } from "@/lib/handoff-timeline";
+import { ToolsMenu } from "@/components/hub/ToolsMenu";
+import { PatientHandoffJourney } from "@/components/handoffs/PatientHandoffJourney";
+import { SecretaryHandoffHistory } from "@/components/handoffs/SecretaryHandoffHistory";
+import { loadSecretaryHandoffHistory } from "@/lib/secretary-handoff-history";
+import { activeMembershipWhere } from "@/lib/center-membership";
+import { BRANCH_LEVEL_ROLES, CENTER_ROLE_FOR_TARGET } from "@/lib/handoff-rules";
+import { buildPatientDetailInclude, patientClientPayload } from "@/lib/patient-detail-include";
+import { referralAccessScope } from "@/lib/referral-access";
+import { canAccessPatientRecord } from "@/lib/patient-access";
+import { ConfirmActionForm } from "@/components/patients/ConfirmActionForm";
+import { CareStageConfirmations } from "@/components/patients/CareStageConfirmations";
 
 export const dynamic = "force-dynamic";
 
-export default async function PatientDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function PatientDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ handoff?: string }> }) {
   const { id } = await params;
   await requirePerm("patients.view");
-  const [patient, centers, medications, rooms, halls, centerHalls, adminConfig] = await Promise.all([
+  const perms = await currentPerms();
+  const _sess = await getSession();
+  if (!(await canAccessPatientRecord(prisma, { userId: (_sess?.user as any)?.id ?? "", role: (_sess?.user as any)?.role, permissions: perms }, id))) notFound();
+  const referralScope = perms.has("referrals.view")
+    ? await referralAccessScope(prisma, { userId: (_sess!.user as any).id, role: (_sess!.user as any).role, permissions: perms })
+    : null;
+  const myRole = (_sess?.user as any)?.role ?? "";
+  const myUserId = (_sess?.user as any)?.id as string | undefined;
+  const isSecretary = myRole === "SECRETARY";
+  const [patientResult, centers, medicationsCatalog, rooms, halls, centerHalls, adminConfig] = await Promise.all([
     prisma.patient.findUnique({
       where: { id },
-      include: {
-        governorate: true, district: true, injuryType: true, formation: true, branch: true,
-        diagnoses: { orderBy: { date: "desc" } },
-        careStages: { orderBy: { sequence: "asc" } },
-        officialDocuments: { orderBy: { docDate: "desc" } },
-        sickLeaves: { orderBy: { startDate: "desc" } },
-        medicalReports: { orderBy: { date: "desc" } },
-        visits: { orderBy: { visitDate: "desc" }, take: 5 },
-        therapySessions: { include: { center: true }, orderBy: { createdAt: "desc" } },
-        treatmentPlans: { include: { therapist: true, specialistDoctor: true, createdBy: true, center: true, hall: true, sessions: { include: { appointments: { orderBy: { scheduledAt: "asc" } } } }, periodicEvaluations: { include: { evaluatedBy: true }, orderBy: { evaluatedAt: "asc" } }, referralRequest: true }, orderBy: { createdAt: "desc" } },
-        centerPrograms: { include: { center: true, assignedTo: true }, orderBy: { createdAt: "desc" } },
-        referralRequests: { where: { status: "ACCEPTED", destinationScope: "INTERNAL_CENTER" }, include: { treatmentPlan: true, destinationCenter: true }, orderBy: { acceptedAt: "desc" }, take: 100 },
-        therapySessionLogs: { include: { session: true, appointment: true }, orderBy: { performedAt: "desc" }, take: 25 },
-        prescriptions: { include: { medication: true }, orderBy: { prescribedAt: "desc" } },
-        admissions: { include: { center: true, room: true, bed: true }, orderBy: { admissionDate: "desc" } },
-        woundAssessments: { include: { photos: true }, orderBy: { assessmentDate: "desc" } },
-        residentReviews: { orderBy: { date: "desc" }, take: 25 },
-        correspondence: { orderBy: { bookDate: "desc" } },
-        appointments: { orderBy: { scheduledAt: "desc" } },
-        _count: { select: { treatmentPlans: true } },
-      },
+      include: buildPatientDetailInclude(perms, referralScope?.where),
     }),
     getCenters(),
     getMedicationsList(),
@@ -52,10 +55,40 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     activeCenterHallOptions(prisma),
     getAdminConfig(),
   ]);
+  const medications = await withViewerQuantities(medicationsCatalog);
   const taskUsers = await prisma.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true }, orderBy: { fullName: "asc" } });
   const therapyStaff = await prisma.user.findMany({ where: { isActive: true, role: "THERAPIST" }, include: { centerMemberships: { where: { role: "THERAPIST", status: "ACTIVE" }, select: { centerId: true } }, _count: { select: { therapyPlansAssigned: { where: { status: "ACTIVE" } }, therapyAppointmentsAssigned: { where: { status: "SCHEDULED", scheduledAt: { gte: new Date(new Date().setHours(0,0,0,0)), lt: new Date(new Date().setHours(24,0,0,0)) } } } } } }, orderBy: { fullName: "asc" } });
-  if (!patient) notFound();
-  const perms = await currentPerms();
+  if (!patientResult) notFound();
+  const patient = {
+    ...patientResult,
+    diagnoses: patientResult.diagnoses ?? [],
+    medicalReports: patientResult.medicalReports ?? [],
+    residentReviews: patientResult.residentReviews ?? [],
+    correspondence: patientResult.correspondence ?? [],
+    woundAssessments: patientResult.woundAssessments ?? [],
+    prescriptions: patientResult.prescriptions ?? [],
+    admissions: patientResult.admissions ?? [],
+    sickLeaves: patientResult.sickLeaves ?? [],
+    officialDocuments: patientResult.officialDocuments ?? [],
+  };
+  const [handoffHistory, secretaryHistory, query] = await Promise.all([
+    !isSecretary && perms.has("journey.view") ? prisma.patientHandoff.findMany({
+      where: { patientId: id },
+      select: {
+        id: true, sentAt: true, acceptedAt: true, acceptedById: true, fromUserId: true, toUserId: true,
+        fromRole: true, toRole: true, status: true, note: true, returnReason: true,
+        fromUser: { select: { fullName: true } }, toUser: { select: { fullName: true } },
+        acceptedBy: { select: { fullName: true } },
+        fromCenter: { select: { name: true } }, toCenter: { select: { name: true } },
+        toCenterId: true,
+      },
+      orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+    }) : Promise.resolve([]),
+    isSecretary && myUserId
+      ? loadSecretaryHandoffHistory({ userId: myUserId, role: "SECRETARY", permissions: perms }, id)
+      : Promise.resolve([]),
+    searchParams,
+  ]);
   let visibleCenters = centers;
   let visibleCenterHalls = centerHalls;
   let visibleTherapyStaff = therapyStaff;
@@ -65,7 +98,6 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     const allowed = new Set(memberships.map((membership) => membership.centerId));
     (patient as any).centerPrograms = patientCenterScope((patient.centerPrograms || []), allowed, false);
     (patient as any).treatmentPlans = patientCenterScope((patient.treatmentPlans || []), allowed, false, true);
-    (patient as any).referralRequests = (patient.referralRequests || []).filter((request: any) => !request.destinationCenterId || allowed.has(request.destinationCenterId));
     visibleCenters = centers.filter((center: any) => allowed.has(center.id));
     visibleCenterHalls = centerHalls.filter((hall) => allowed.has(hall.centerId));
     visibleTherapyStaff = therapyStaff.filter((user) => user.centerMemberships.some((membership) => allowed.has(membership.centerId)));
@@ -73,8 +105,25 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
   const slApprovals = patient?.sickLeaves?.length
     ? await prisma.reportApproval.findMany({ where: { kind: "sick-leave", refKey: { in: patient.sickLeaves.map((l: any) => l.id) } } })
     : [];
-  const _sess = await getSession();
-  const myRole = (_sess?.user as any)?.role ?? "";
+  const visibleHandoffs = isSecretary ? secretaryHistory : handoffHistory;
+  const openHandoff = visibleHandoffs.find((handoff) => handoff.status === "SENT" || handoff.status === "ACCEPTED");
+  const viewerBranchId = openHandoff?.status === "SENT" && myUserId && (BRANCH_LEVEL_ROLES as readonly string[]).includes(myRole)
+    ? (await prisma.user.findUnique({ where: { id: myUserId }, select: { branchId: true } }))?.branchId
+    : null;
+  const memberships = openHandoff?.status === "SENT" && perms.has("handoff.receive") && myUserId
+    ? await prisma.centerMembership.findMany({ where: { userId: myUserId, ...activeMembershipWhere() }, select: { centerId: true, role: true } })
+    : [];
+  const recipientRole = openHandoff ? CENTER_ROLE_FOR_TARGET[openHandoff.toRole as keyof typeof CENTER_ROLE_FOR_TARGET] : undefined;
+  const canAcceptHandoff = !!openHandoff && openHandoff.status === "SENT" && perms.has("handoff.receive") && !!myUserId && (
+    openHandoff.toUserId === myUserId || (openHandoff.toUserId == null && (
+      (recipientRole && memberships.some((membership) => membership.role === recipientRole && membership.centerId === openHandoff.toCenterId)) ||
+      ((BRANCH_LEVEL_ROLES as readonly string[]).includes(myRole) && myRole === openHandoff.toRole && viewerBranchId != null && patient.branchId === viewerBranchId)
+    ))
+  );
+  const canFinishHandoff = !!openHandoff && openHandoff.status === "ACCEPTED" && openHandoff.acceptedById === myUserId;
+  const canCancelHandoff = !!openHandoff && openHandoff.status === "SENT" && !!myUserId && (
+    openHandoff.fromUserId === myUserId || perms.has("handoff.manage") || myRole === "MANAGER" || myRole === "ADMIN"
+  );
   const expenseRows = perms.has("expenses.view") ? await prisma.woundedExpense.findMany({ where: { patientId: id }, select: { id: true, voucherNo: true, expenseType: true, status: true, requestDate: true, ...(perms.has("expenses.amounts") ? { amount: true, currency: true } : {}) }, orderBy: { requestDate: "desc" } }) : [];
   const cEdit = perms.has("patients.edit");
   const cArchive = perms.has("patients.archive");
@@ -84,41 +133,8 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
   const cPortal = perms.has("patients.portal");
   const cTask = perms.has("tasks.create");
   const cClinical = perms.has("clinical.view");
-  const cTherapy = perms.has("therapy.view") || perms.has("clinical.session");
-  const cAdmission = perms.has("clinical.admission") || perms.has("beds.view");
-  const journeyReferrals = perms.has("journey.view") ? await prisma.referralRequest.findMany({
-    where: { patientId: id },
-    select: { status: true, createdAt: true, updatedAt: true, acceptedAt: true, reviewedAt: true },
-    orderBy: { updatedAt: "desc" },
-    take: 100,
-  }) : [];
-  const derivedJourney = derivePatientJourney({ ...patient, referralRequests: journeyReferrals });
-  const nextStep = nextPatientStep(derivedJourney, perms);
-  const lastVisit = patient.visits?.[0];
-  const lastAppointment = patient.appointments?.[0];
-  const lastSession = patient.therapySessions?.[0];
-  const activeAdmission = patient.admissions?.find((a: any) => a.status === "ADMITTED");
-  const latestAdmission = activeAdmission ?? patient.admissions?.[0];
-  const summary = [
-    ["رقم الملف", `#${patient.fileNumber}`],
-    ["الفرع", patient.branch?.name || "بدون فرع"],
-    ["الحالة", PATIENT_STATUS[patient.status as keyof typeof PATIENT_STATUS] ?? patient.status],
-    ["آخر زيارة", lastVisit ? fmtDate(lastVisit.visitDate) : "لا توجد"],
-    ["آخر موعد", lastAppointment ? `${fmtDate(lastAppointment.scheduledAt)} - ${APPT_STATUS[lastAppointment.status as keyof typeof APPT_STATUS] ?? lastAppointment.status}` : "لا يوجد"],
-    ["آخر جلسة", lastSession ? `${fmtDate(lastSession.createdAt)} - ${THERAPY[lastSession.therapyType as keyof typeof THERAPY] ?? "جلسة"}` : "لا توجد"],
-    ["حالة الرقود", latestAdmission ? `${ADMISSION[latestAdmission.status as keyof typeof ADMISSION] ?? latestAdmission.status}${latestAdmission.center?.name ? ` - ${latestAdmission.center.name}` : ""}` : "لا يوجد رقود"],
-  ];
-  const quickEvents = [
-    { date: patient.registrationDate, type: "تسجيل", title: `فتح ملف رقم ${patient.fileNumber}` },
-    ...((patient.visits || []).slice(0, 2).map((v: any) => ({ date: v.visitDate, type: "زيارة", title: v.center || v.notes || "زيارة مسجلة" }))),
-    ...((patient.appointments || []).slice(0, 2).map((a: any) => ({ date: a.scheduledAt, type: "موعد", title: `${a.type || "موعد"} - ${APPT_STATUS[a.status as keyof typeof APPT_STATUS] ?? a.status}` }))),
-    ...((patient.therapySessions || []).slice(0, 2).map((s: any) => ({ date: s.createdAt, type: "جلسة", title: `${THERAPY[s.therapyType as keyof typeof THERAPY] ?? "جلسة علاجية"}${s.therapist ? ` - ${s.therapist}` : ""}` }))),
-    ...((patient.admissions || []).slice(0, 2).map((a: any) => ({ date: a.admissionDate, type: "رقود", title: `${ADMISSION[a.status as keyof typeof ADMISSION] ?? a.status}${a.dischargeDate ? ` - خروج ${fmtDate(a.dischargeDate)}` : ""}` }))),
-    ...((patient.diagnoses || []).slice(0, 2).map((d: any) => ({ date: d.date, type: "تشخيص", title: d.text || "تشخيص" }))),
-  ]
-    .filter((e: any) => e.date)
-    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 7);
+  // One path, one source: the open handoff says where the patient is; recorded work marks what's done.
+  const path = derivePatientPath({ ...patient, handoffs: handoffHistory });
 
   const info = [
     ["اسم الأم", patient.motherName], ["الجنس", GENDER[patient.gender as keyof typeof GENDER]],
@@ -142,103 +158,155 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
     ["المركز المُحال له", patient.referredToCenter],
     ["مدخل البيانات", patient.dataEntryBy],
   ];
+  const filledInfo = info.filter(([, value]) => value !== null && value !== undefined && value !== "");
+  const emptyInfo = info.filter(([, value]) => value === null || value === undefined || value === "");
 
   return (
     <div className="space-y-5">
-      <div className="no-print flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-3">
-          <Link href="/patients" className="text-sm text-gray-500 hover:underline">→ رجوع للقائمة</Link>
-          <Link href="/patients-care?tab=patients" className="text-sm text-brand-700 hover:underline">لوحة المرضى والرعاية</Link>
+      <section className="card overflow-visible p-4 sm:p-5" aria-labelledby="patient-name">
+        <div className="no-print mb-3 flex flex-wrap items-center justify-between gap-2">
+          <Link href="/patients" className="text-sm text-gray-500 hover:underline">→ قائمة المراجعين</Link>
+          {patient.archivedAt && <span className="badge bg-amber-50 text-amber-700">مؤرشف — {fmtDate(patient.archivedAt)}</span>}
         </div>
-        {patient.archivedAt && <span className="badge bg-amber-50 text-amber-700">مؤرشف — {fmtDate(patient.archivedAt)}</span>}
-        <div className="flex flex-wrap justify-end gap-2">
-          {cPrint && <Link href={`/patients/${id}/report`} className="btn-ghost">تقرير قابل للطباعة</Link>}
-          {cDevices && <Link href={`/devices?patientId=${id}`} className="btn-ghost">🔧 الأجهزة والصيانة</Link>}
-          {cFinance && <Link href={`/finance?patientId=${id}`} className="btn-ghost">💰 السجل المالي</Link>}
-          {cTask && (
-            <details className="relative">
-              <summary className="btn-ghost cursor-pointer list-none">📌 مهمة سريعة</summary>
-              <div className="fixed inset-x-3 top-24 z-40 rounded-xl border border-gray-200 bg-white p-3 shadow-lg sm:absolute sm:left-0 sm:right-auto sm:top-auto sm:mt-1 sm:w-72">
-                <form action={createTask} className="space-y-2">
-                  <input type="hidden" name="patientId" value={id} />
-                  <input name="title" className="input" placeholder="عنوان المهمة / التحويل" required />
-                  <textarea name="description" className="input" rows={2} placeholder="تفاصيل مختصرة" />
-                  <div className="grid grid-cols-2 gap-2">
-<Combobox name="priority" allowFree={false} defaultValue="NORMAL" options={[{value:"URGENT",label:"عاجلة"},{value:"HIGH",label:"مهمة"},{value:"NORMAL",label:"عادية"},{value:"LOW",label:"منخفضة"}]} />
-<Combobox name="assignedToId" allowFree={false} placeholder="بلا إسناد" options={taskUsers.map((u:any)=>({value:String(u.id),label:u.fullName}))} />
-                  </div>
-                  <Combobox name="assignedRole" allowFree={false} placeholder="أو إسناد لدور" options={Object.entries(ROLE_LABELS).map(([value,label]:any)=>({value,label}))} />
-                  <div>
-                    <label className="label">موعد الاستحقاق</label>
-                    <input name="dueDate" type="date" className="input" />
-                  </div>
-                  <button className="btn-primary w-full" type="submit">إضافة المهمة</button>
-                </form>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            {patient.photoUrl
+              ? <Zoom src={patient.photoUrl} className="h-16 w-16 shrink-0 rounded-lg border border-gray-200 object-cover" />
+              : <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-2xl font-bold text-brand-700">{patient.fullName?.[0] ?? "؟"}</div>}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 id="patient-name" className="text-2xl font-bold text-gray-900">{patient.fullName}</h1>
+                <span className="badge-brand">ملف #{patient.fileNumber}</span>
+                <span className="badge-neutral">{PATIENT_STATUS[patient.status as keyof typeof PATIENT_STATUS]}</span>
+                {patient.archivedAt && <span className="rounded-full bg-amber-300 px-2.5 py-0.5 text-xs font-medium text-amber-950">مؤرشف</span>}
               </div>
-            </details>
-          )}
-          {cEdit && <Link href={`/patients/${id}/edit`} className="btn-primary">تعديل البيانات</Link>}
-          {cArchive && (patient.archivedAt
-            ? <form action={restorePatient.bind(null, id)}><button className="btn-ghost text-emerald-700">↩ استرجاع من الأرشيف</button></form>
-            : <form action={archivePatient.bind(null, id)}><button className="btn-ghost text-amber-700">🗄 أرشفة</button></form>)}
-        </div>
-      </div>
-
-      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm" aria-labelledby="patient-name">
-        <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
-          {patient.photoUrl
-            ? <Zoom src={patient.photoUrl} className="h-20 w-20 shrink-0 rounded-lg border border-gray-200 object-cover" />
-            : <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-3xl font-bold text-brand-700">{patient.fullName?.[0] ?? "؟"}</div>}
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 id="patient-name" className="text-2xl font-bold text-gray-900">{patient.fullName}</h1>
-              <span className="badge-brand">ملف #{patient.fileNumber}</span>
-              <span className="badge-neutral">{PATIENT_STATUS[patient.status as keyof typeof PATIENT_STATUS]}</span>
-              {patient.archivedAt && <span className="rounded-full bg-amber-300 px-2.5 py-0.5 text-xs font-medium text-amber-950">مؤرشف</span>}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-600">
-              {patient.phone && <span>الهاتف: {patient.phone}</span>}
-              {patient.governorate?.name && <span>السكن: {patient.governorate.name}{patient.district?.name ? ` - ${patient.district.name}` : ""}</span>}
-              <span>سُجّل {fmtDate(patient.registrationDate)}</span>
+              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                {patient.phone && <span>{patient.phone}</span>}
+                {patient.governorate?.name && <span>{patient.governorate.name}{patient.district?.name ? ` - ${patient.district.name}` : ""}</span>}
+                <span>الفرع: {patient.branch?.name || "بدون فرع"}</span>
+                <span>سُجّل {fmtDate(patient.registrationDate)}</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="grid grid-cols-2 border-t border-gray-100 bg-gray-50/60 sm:grid-cols-4">
-          {[
-            ["الزيارات", patient.visits?.length ?? 0, true],
-            ["الجلسات", patient.therapySessions?.length ?? 0, cTherapy],
-            ["التشخيصات", patient.diagnoses?.length ?? 0, cClinical],
-            ["حالات الرقود", patient.admissions?.length ?? 0, cAdmission],
-          ].filter((item) => item[2]).map(([l, v], i) => (
-            <div key={l as string} className={`px-4 py-3 text-center ${i > 0 ? "border-r border-gray-200" : ""}`}>
-              <div className="text-xl font-bold text-gray-900">{v as number}</div>
-              <div className="text-xs text-gray-500">{l}</div>
-            </div>
-          ))}
+          <div className="no-print flex flex-wrap items-center gap-2">
+            {cEdit && <Link href={`/patients/${id}/edit`} className="btn-primary">تعديل البيانات</Link>}
+            {cTask && (
+              <details className="relative">
+                <summary className="btn-ghost cursor-pointer list-none">📌 مهمة سريعة</summary>
+                <div className="fixed inset-x-3 top-24 z-40 rounded-xl border border-gray-200 bg-white p-3 shadow-lg sm:absolute sm:left-0 sm:right-auto sm:top-auto sm:mt-1 sm:w-72">
+                  <form action={createTask} className="space-y-2">
+                    <input type="hidden" name="patientId" value={id} />
+                    <input name="title" className="input" placeholder="عنوان المهمة / التحويل" required />
+                    <textarea name="description" className="input" rows={2} placeholder="تفاصيل مختصرة" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Combobox name="priority" allowFree={false} defaultValue="NORMAL" options={[{value:"URGENT",label:"عاجلة"},{value:"HIGH",label:"مهمة"},{value:"NORMAL",label:"عادية"},{value:"LOW",label:"منخفضة"}]} />
+                      <Combobox name="assignedToId" allowFree={false} placeholder="بلا إسناد" options={taskUsers.map((u:any)=>({value:String(u.id),label:u.fullName}))} />
+                    </div>
+                    <Combobox name="assignedRole" allowFree={false} placeholder="أو إسناد لدور" options={Object.entries(ROLE_LABELS).map(([value,label]:any)=>({value,label}))} />
+                    <div>
+                      <label className="label">موعد الاستحقاق</label>
+                      <input name="dueDate" type="date" className="input" />
+                    </div>
+                    <button className="btn-primary w-full" type="submit">إضافة المهمة</button>
+                  </form>
+                </div>
+              </details>
+            )}
+            {cPrint || cDevices || cFinance || cArchive ? (
+              <ToolsMenu>
+                {cPrint && <Link href={`/patients/${id}/report`}>تقرير قابل للطباعة</Link>}
+                {cDevices && <Link href={`/devices?patientId=${id}`}>الأجهزة والصيانة</Link>}
+                {cFinance && <Link href={`/finance?patientId=${id}`}>السجل المالي (الفواتير)</Link>}
+                {cArchive && (patient.archivedAt
+                  ? <ConfirmActionForm action={restorePatient.bind(null, id)} message="استرجاع هذا المراجع إلى القوائم النشطة؟"><button className="w-full rounded-lg px-3 py-2 text-right text-sm text-emerald-700 hover:bg-gray-50">↩ استرجاع من الأرشيف</button></ConfirmActionForm>
+                  : <ConfirmActionForm action={archivePatient.bind(null, id)} message="أرشفة هذا المراجع؟ سيختفي من قوائم العمل اليومية ويمكن استرجاعه لاحقًا."><button className="w-full rounded-lg px-3 py-2 text-right text-sm text-amber-700 hover:bg-gray-50">🗄 أرشفة الملف</button></ConfirmActionForm>)}
+              </ToolsMenu>
+            ) : null}
+          </div>
         </div>
       </section>
 
-      {perms.has("journey.view") ? <PatientJourneySummary stages={derivedJourney} nextStep={nextStep} canExecuteResidentReview={perms.has("clinical.metrics")} /> : null}
+      <PatientHandoffJourney
+        step={currentHandoffStep(visibleHandoffs)} handoffId={openHandoff?.id ?? null}
+        patientId={id} patientName={patient.fullName} fileNumber={String(patient.fileNumber)} autoOpen={query.handoff === "1"}
+        canSend={perms.has("handoff.send")} canAccept={canAcceptHandoff} canFinish={canFinishHandoff} canCancel={canCancelHandoff}
+        path={isSecretary ? [] : path.stages} next={isSecretary ? null : path.next} showPath={!isSecretary}
+      />
 
-      {(cEdit || cClinical) && <details className="card p-5">
-        <summary className="cursor-pointer list-none font-semibold text-gray-700">البيانات التفصيلية <span className="mr-1 text-xs font-normal text-gray-400">اضغط للعرض</span></summary>
+      {!isSecretary && perms.has("journey.view") ? (
+        <CareStageConfirmations
+          patientId={id}
+          patientName={patient.fullName}
+          fileNumber={String(patient.fileNumber)}
+          stages={await (async () => {
+            const openStages = await prisma.careStage.findMany({
+            where: { patientId: id, status: { in: ["WAITING", "IN_PROGRESS"] } },
+            orderBy: { sequence: "asc" },
+            select: {
+              id: true, station: true, responsibleRole: true, status: true, responsibilityScope: true, assignedUserId: true, responsibleCenterId: true,
+              assignedUser: { select: { fullName: true } },
+              referralRequest: { select: { destinationScope: true, assignedReviewerId: true, acceptedById: true } },
+            },
+            });
+            const managedCenters = myRole === "MANAGER" && myUserId && perms.has("journey.manage")
+              ? (await prisma.centerMembership.findMany({ where: { userId: myUserId, ...activeMembershipWhere("CENTER_MANAGEMENT"), center: { active: true } }, select: { centerId: true } })).map((m) => m.centerId)
+              : [];
+            return Promise.all(openStages.map(async (stage) => {
+              let reassignCandidates: { id: string; name: string }[] | null = null;
+              if (stage.responsibilityScope === "CENTER" && stage.responsibleCenterId != null && stage.responsibleRole
+                && managedCenters.includes(stage.responsibleCenterId)) {
+                const memberRole = CENTER_ROLE_FOR_TARGET[stage.responsibleRole as keyof typeof CENTER_ROLE_FOR_TARGET];
+                reassignCandidates = memberRole ? (await prisma.centerMembership.findMany({
+                  where: { centerId: stage.responsibleCenterId, ...activeMembershipWhere(memberRole), user: { isActive: true, role: stage.responsibleRole } },
+                  select: { user: { select: { id: true, fullName: true } } },
+                })).map((m) => ({ id: m.user.id, name: m.user.fullName })) : [];
+              }
+              return {
+                id: stage.id, station: stage.station, responsibleRole: stage.responsibleRole, status: stage.status,
+                responsibilityScope: stage.responsibilityScope, assignedUserId: stage.assignedUserId,
+                assignedName: stage.assignedUser?.fullName ?? null,
+                specialistBound: stage.responsibilityScope === "SPECIALIST_REVIEW" && !!stage.assignedUserId
+                  && stage.referralRequest?.destinationScope === "INTERNAL_SPECIALIST"
+                  && stage.referralRequest.assignedReviewerId === stage.assignedUserId
+                  && stage.referralRequest.acceptedById === stage.assignedUserId,
+                reassignCandidates,
+              };
+            }));
+          })()}
+          userRole={myRole}
+          userId={myUserId ?? ""}
+          canConfirm={perms.has("journey.confirm")}
+          canSend={perms.has("handoff.send")}
+          canAssign={perms.has("journey.manage")}
+        />
+      ) : null}
+
+      {isSecretary ? <SecretaryHandoffHistory rows={secretaryHistory} /> : null}
+
+      <PatientTabs rxVisitIds={perms.has("clinical.prescription") ? await eligiblePrescriptionVisitIds(prisma, id, (_sess?.user as any)?.id) : []} currentUserName={(_sess?.user as any)?.name ?? ""} currentUserId={(_sess?.user as any)?.id ?? ""} infoPanel={<div className="space-y-5">
+      {(cEdit || cClinical) && <section className="space-y-3">
+        <h3 className="font-semibold text-gray-800">البيانات الشخصية</h3>
         <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:grid-cols-4">
-          {info.map(([k, v]) => (
+          {filledInfo.map(([k, v]) => (
             <div key={k as string} className="border-r-2 border-gray-100 pr-3">
               <div className="text-xs text-gray-400">{k}</div>
-              <div className="text-sm font-medium text-gray-800">{v || "—"}</div>
+              <div className="text-sm font-medium text-gray-800">{v}</div>
             </div>
           ))}
         </div>
-        {patient.notes && <p className="mt-5 rounded-xl border-r-4 border-amber-300 bg-amber-50 p-3 text-sm text-gray-700">📝 {patient.notes}</p>}
-      </details>}
-
+        {emptyInfo.length ? <details className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
+          <summary className="cursor-pointer font-medium text-amber-800">حقول ناقصة ({emptyInfo.length})</summary>
+          <p className="mt-2 text-amber-900">{emptyInfo.map(([k]) => k).join("، ")}</p>
+          {cEdit ? <Link href={`/patients/${id}/edit`} className="btn-ghost mt-2 inline-flex">إكمال البيانات</Link> : null}
+        </details> : null}
+        {patient.notes && <p className="rounded-xl border-r-4 border-amber-300 bg-amber-50 p-3 text-sm text-gray-700">📝 {patient.notes}</p>}
+      </section>}
       {cPortal && (() => {
         const base = process.env.NEXTAUTH_URL || "";
         const url = patient.accessToken ? `${base}/portal/${patient.accessToken}` : "";
         const wa = patient.phone ? `https://wa.me/${String(patient.phone).replace(/\D/g, "").replace(/^0/, "964")}?text=${encodeURIComponent("مرحباً " + patient.fullName + "، رابط بوابتك في المجمع التأهيلي: " + url)}` : "";
         return (
-          <details className="no-print card p-5">
+          <details className="no-print rounded-lg border border-gray-200 p-4">
             <summary className="cursor-pointer list-none font-semibold text-gray-700">بوابة المراجع والمشاركة</summary>
             <div className="mt-4">
             {patient.accessToken ? (
@@ -261,8 +329,7 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
           </details>
         );
       })()}
-
-      <PatientTabs patient={JSON.parse(JSON.stringify(patient))} editable={cEdit} perms={Array.from(perms)} role={myRole} slApprovals={JSON.parse(JSON.stringify(slApprovals))}
+      </div>} missingInfo={emptyInfo.length} patient={patientClientPayload(patient, perms)} editable={cEdit} perms={Array.from(perms)} role={myRole} handoffHistory={handoffHistory} slApprovals={JSON.parse(JSON.stringify(slApprovals))}
         centers={visibleCenters} medications={medications} rooms={rooms} halls={JSON.parse(JSON.stringify(halls))} centerHalls={JSON.parse(JSON.stringify(visibleCenterHalls))} therapyDefaults={{
           defaultSessions: adminConfig.defaultSessions,
           defaultPlanDays: adminConfig.defaultPlanDays,
@@ -271,55 +338,5 @@ export default async function PatientDetail({ params }: { params: Promise<{ id: 
           workStart: adminConfig.workStart,
         }} therapyStaff={visibleTherapyStaff.map((u:any)=>({id:u.id,fullName:u.fullName,centerIds:u.centerMemberships.map((membership: any) => membership.centerId),activePlans:u._count.therapyPlansAssigned,todaySessions:u._count.therapyAppointmentsAssigned}))} expenseRows={JSON.parse(JSON.stringify(expenseRows))} staffNames={taskUsers.map((u:any)=>u.fullName)} staffUsers={JSON.parse(JSON.stringify(taskUsers))} />
     </div>
-  );
-}
-
-function PatientJourneySummary({ stages, nextStep, canExecuteResidentReview }: { stages: DerivedJourneyStage[]; nextStep: DerivedJourneyStage | null; canExecuteResidentReview: boolean }) {
-  const status = {
-    complete: { label: "مكتملة", className: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-600" },
-    current: { label: "حالية", className: "bg-brand-50 text-brand-700", dot: "bg-brand-600" },
-    upcoming: { label: "قادمة", className: "bg-sky-50 text-sky-700", dot: "bg-sky-500" },
-    blocked: { label: "متوقفة", className: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
-    not_required: { label: "غير مطلوبة", className: "bg-gray-100 text-gray-500", dot: "bg-gray-300" },
-  } as const;
-  const roleNames = (roles: string[]) => roles.map((role) => ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role).join("، ");
-  return (
-    <section className="card space-y-4 p-5" aria-labelledby="patient-derived-journey">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 id="patient-derived-journey" className="font-semibold text-gray-900">رحلة المراجع</h2>
-          <p className="mt-1 text-sm text-gray-500">عرض مشتق من الزيارات والإحالات والخطط والجلسات والتقييمات؛ لا يخزن حالة جديدة.</p>
-        </div>
-        <Link href={`/patients/${stages[0]?.href.split("/patients/")[1]?.split("?")[0]}?tab=journey`} className="btn-ghost">فتح مسار المحطات</Link>
-      </div>
-      <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {stages.map((stage) => {
-          const meta = status[stage.status];
-          return (
-            <li key={stage.key} className="rounded-lg border border-gray-100 p-3">
-              <div className="flex items-center justify-between gap-2"><span className="font-medium text-gray-800">{stage.label}</span><span className={`rounded-full px-2 py-0.5 text-[11px] ${meta.className}`}>{meta.label}</span></div>
-              <div className="mt-2 text-xs text-gray-500">المسؤول: {roleNames(stage.responsibleRoles)}</div>
-              {stage.lastActionAt ? <div className="mt-1 text-xs text-gray-400">آخر إجراء: {fmtDate(stage.lastActionAt)}</div> : null}
-              {stage.reason ? <div className="mt-2 text-xs leading-5 text-amber-700">{stage.reason}</div> : null}
-            </li>
-          );
-        })}
-      </ol>
-      {nextStep ? (
-        <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4">
-          <div className="text-xs font-medium text-brand-700">الخطوة التالية</div>
-          <div className="mt-1 font-semibold text-gray-900">{nextStep.label}</div>
-          <div className="mt-1 text-sm text-gray-600">{nextStep.reason ?? "فتح المرحلة الحالية ومتابعة الإجراء من مكانه الأصلي."}</div>
-          <div className="mt-2 text-xs text-gray-500">يمكن تنفيذها بواسطة: {roleNames(nextStep.responsibleRoles)}</div>
-          {nextStep.key === "intake" && !canExecuteResidentReview ? (
-            <p className="mt-3 text-sm text-amber-800">يتطلب تسجيل مراجعة الطبيب المقيم صلاحية الطبيب المقيم أو الصلاحية الفعلية `clinical.metrics`؛ لا يملك حسابك هذا الإجراء.</p>
-          ) : (
-            <Link href={nextStep.href} className="btn-primary mt-3 inline-flex">الانتقال إلى التبويب</Link>
-          )}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">لا توجد خطوة تالية متاحة ضمن صلاحيات حسابك الحالية.</div>
-      )}
-    </section>
   );
 }

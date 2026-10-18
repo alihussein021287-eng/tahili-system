@@ -9,6 +9,9 @@ import { maintenanceOn } from "@/lib/maintenance";
 import { getOrg } from "@/lib/org";
 import { getLibreOfficeStatus } from "@/lib/collaboration-office-preview";
 import { activeCenterHallOptions, mapCenterHallResources } from "@/lib/center-halls";
+import { activeMembershipWhere } from "@/lib/center-membership";
+import { centerStaffingGaps } from "@/lib/center-staffing";
+import { CenterStaffingAlerts } from "@/components/settings/CenterStaffingAlerts";
 import { PageHeader } from "@/components/PageHeader";
 import { DisplaySettings } from "./DisplaySettings";
 import {
@@ -159,7 +162,7 @@ export default async function Settings({
 
       {activeTab === "identity" ? <IdentityTab org={org} canEdit={canEdit} message={params} /> : null}
       {activeTab === "operations" ? <OperationsTab cfg={cfg} canEdit={canEdit} /> : null}
-      {activeTab === "therapy" ? <TherapyTab cfg={cfg} canEdit={canEdit} message={params} /> : null}
+      {activeTab === "therapy" ? <TherapyTab cfg={cfg} canEdit={canEdit} canManageMembers={perms.has("centers.memberships.manage") && perms.has("centers.central.view")} message={params} /> : null}
       {activeTab === "security" ? <SecurityTab cfg={cfg} canEdit={canEdit} isAdmin={isAdmin} message={params} /> : null}
       {activeTab === "notifications" ? <NotificationsTab cfg={cfg} orgRow={orgRow} canEdit={canEdit} /> : null}
       {activeTab === "files" ? <FilesTab cfg={cfg} canEdit={canEdit} isAdmin={isAdmin} /> : null}
@@ -362,10 +365,17 @@ function OperationsTab({ cfg, canEdit }: { cfg: Awaited<ReturnType<typeof getAdm
   );
 }
 
-async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean; message: any }) {
-  const [centers, resources] = await Promise.all([
+async function TherapyTab({ cfg, canEdit, canManageMembers, message }: { cfg: Awaited<ReturnType<typeof getAdminConfig>>; canEdit: boolean; canManageMembers: boolean; message: any }) {
+  const now = new Date();
+  const [centers, resources, staffingMemberships] = await Promise.all([
     prisma.center.findMany({
       include: {
+        // The settings card is a read-only roster of effective members. Keep the
+        // same active/date scope used by handoff recipient resolution.
+        memberships: {
+          where: activeMembershipWhere(undefined, now),
+          select: { id: true, role: true, specialty: true, user: { select: { id: true, fullName: true } } },
+        },
         _count: { select: { memberships: true, resources: true, programs: true, centerSessions: true, treatmentPlans: true, sessions: true, appointments: true, queueEntries: true, referralRequests: true } },
       },
       orderBy: [{ active: "desc" }, { name: "asc" }],
@@ -380,7 +390,15 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
       },
       orderBy: [{ centerId: "asc" }, { name: "asc" }],
     }),
+    prisma.centerMembership.findMany({
+      where: { center: { active: true } },
+      select: { centerId: true, role: true, status: true, startDate: true, endDate: true, user: { select: { isActive: true } } },
+    }),
   ]);
+  const staffingGaps = centerStaffingGaps(centers, staffingMemberships, now).map((gap) => ({
+    ...gap,
+    centerName: centers.find((center) => center.id === gap.centerId)!.name,
+  }));
   const hallOptions = mapCenterHallResources(resources);
   const resourcesByCenter = new Map<number, any[]>();
   for (const resource of resources) {
@@ -394,6 +412,13 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
   const selectedCenter = centers.find((center) => center.id === requestedCenterId) ?? centers[0] ?? null;
   const selectedResources = selectedCenter ? resourcesByCenter.get(selectedCenter.id) ?? [] : [];
   const activeCenters = centers.filter((center) => center.active);
+  const secretaryCount = (center: typeof centers[number]) => center.memberships.filter((member) => member.role === "SECRETARY").length;
+  const selectedSecretaries = selectedCenter?.memberships.filter((member) => member.role === "SECRETARY") ?? [];
+  const incompleteCenterCount = staffingGaps.filter((gap) => gap.missingRoles.length > 0).length;
+  const centerRoleLabels: Record<string, string> = {
+    CENTER_MANAGEMENT: "إدارة مركز", HEAD_THERAPIST: "رئيس المعالجين", THERAPIST: "معالج", DEVICE_OPERATOR: "مشغّل جهاز",
+    SECRETARY: "سكرتارية", RESIDENT: "طبيب مقيم", SPECIALIST: "طبيب اختصاص",
+  };
   return (
     <div className="space-y-5">
       <Card id="therapy-defaults" title="افتراضيات الخطط العلاجية" description="تستخدم كنقطة بداية عند إنشاء الخطط ولا تغيّر الخطط القديمة تلقائياً.">
@@ -416,20 +441,6 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
           <span className="badge-neutral">{hallOptions.length} ربط مركز/قاعة</span>
         </div>
 
-        {canEdit ? (
-          <div className="grid gap-3 lg:grid-cols-2">
-            <form action={createTherapyCenter} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[1fr_auto]">
-              <TextInput label="اسم مركز جديد" name="name" required />
-              <div className="self-end"><SmallSubmitButton>إضافة مركز</SmallSubmitButton></div>
-            </form>
-            <form action={addCenterHall} className="grid gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-[220px_1fr_auto]">
-              <SelectInput label="المركز" name="centerId" defaultValue={selectedCenter?.active ? selectedCenter.id : activeCenters[0]?.id ?? ""} options={activeCenters.map((center) => ({ value: center.id, label: center.name }))} />
-              <TextInput label="اسم الفرع/القاعة / مكان العلاج الجديد" name="name" required />
-              <div className="self-end"><SmallSubmitButton>إضافة قاعة</SmallSubmitButton></div>
-            </form>
-          </div>
-        ) : null}
-
         <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
             <CenterFilterSelect centers={centers.map((center) => ({ id: center.id, name: `${center.name}${center.active ? "" : " - معطل"}` }))} selectedId={selectedCenter?.id ?? null} />
@@ -437,14 +448,16 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
               {centers.map((center) => {
                 const isSelected = center.id === selectedCenter?.id;
                 const count = resourcesByCenter.get(center.id)?.length ?? 0;
+                const secretaryTotal = secretaryCount(center);
                 return (
                   <Link
                     key={center.id}
                     href={`/settings?tab=therapy&card=center-halls&center=${center.id}`}
                     className={`flex items-center justify-between gap-2 rounded-md px-3 py-2 transition ${isSelected ? "bg-brand-700 text-white" : "bg-white text-gray-700 hover:bg-gray-100"} ${center.active ? "" : "opacity-75"}`}
                   >
-                    <span className="min-w-0 truncate">{center.name}</span>
-                    <span className="flex shrink-0 items-center gap-1">
+                      <span className="min-w-0 truncate">{center.name}</span>
+                      <span className="flex shrink-0 items-center gap-1">
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`} aria-label={`${secretaryTotal} سكرتارية فعالة`}>{secretaryTotal} سكرتارية</span>
                       {!center.active ? <span className={`rounded-full px-2 py-0.5 text-xs ${isSelected ? "bg-white/20 text-white" : "bg-gray-200 text-gray-600"}`}>معطل</span> : null}
                       <span className={`rounded-full px-2 py-0.5 text-xs ${isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>{count}</span>
                     </span>
@@ -452,6 +465,14 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
                 );
               })}
             </div>
+            {incompleteCenterCount ? <details className="mt-4 border-t border-gray-200 pt-3">
+              <summary className="cursor-pointer rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">نواقص ملاك المراكز ({incompleteCenterCount})</summary>
+              <div className="mt-2"><CenterStaffingAlerts gaps={staffingGaps} /></div>
+            </details> : null}
+            {canEdit ? <form action={createTherapyCenter} className="mt-4 grid gap-2 rounded-lg border border-dashed border-gray-300 bg-white p-3 sm:grid-cols-[1fr_auto]">
+              <TextInput label="إضافة مركز جديد" name="name" required />
+              <div className="self-end"><SmallSubmitButton>إضافة مركز</SmallSubmitButton></div>
+            </form> : null}
           </div>
 
           {selectedCenter ? (
@@ -477,6 +498,7 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
               <div className="mt-2 flex flex-wrap gap-1 text-xs">
                 <span className={selectedCenter.active ? "badge-success" : "badge-neutral"}>{selectedCenter.active ? "مركز فعال" : "مركز معطل"}</span>
                 <span className="badge-neutral">{selectedCenter._count.memberships} عضوية</span>
+                <span className="badge-neutral">{selectedSecretaries.length} سكرتارية فعالة</span>
                 <span className="badge-neutral">{selectedResources.length} قاعة</span>
                 <span className="badge-neutral">{selectedCenter._count.programs} برنامج</span>
                 <span className="badge-neutral">{selectedCenter._count.centerSessions + selectedCenter._count.treatmentPlans + selectedCenter._count.sessions} علاج</span>
@@ -484,6 +506,17 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
                 <span className="badge-neutral">{selectedCenter._count.queueEntries} طابور</span>
                 <span className="badge-neutral">{selectedCenter._count.referralRequests} إحالة</span>
               </div>
+              <section className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3" aria-labelledby="center-team-title">
+                <div className="flex flex-wrap items-center justify-between gap-2"><h4 id="center-team-title" className="font-semibold text-gray-900">فريق المركز</h4><span className="text-xs text-gray-500">الأعضاء الفعّالون فقط</span></div>
+                {selectedCenter.memberships.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {selectedCenter.memberships.map((member) => <div key={member.id} className="rounded-md border border-gray-200 bg-white px-3 py-2">
+                    <div className="font-medium text-gray-900">{member.user.fullName}</div>
+                    <div className="mt-1 text-xs text-gray-500">{centerRoleLabels[member.role]}{member.specialty ? ` · ${member.specialty}` : ""}</div>
+                  </div>)}
+                </div> : <p role="alert" className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">لا توجد سكرتارية لهذا المركز</p>}
+                {selectedSecretaries.length === 0 && selectedCenter.memberships.length > 0 ? <p role="alert" className="mt-2 text-sm text-amber-800">لا توجد سكرتارية لهذا المركز</p> : null}
+              </section>
+              {canManageMembers && selectedCenter.active ? <p className="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3 text-sm text-gray-600">إضافة الموظف أو نقله أو إنهاء ارتباطه تتم من <Link className="font-medium text-brand-700 underline" href="/staff?tab=employees">ملف الموظف</Link> حتى يبقى له سجل واحد واضح.</p> : null}
               <div className="mt-3 space-y-2">
                 {selectedResources.map((resource) => {
                   const hall = resource.therapyHall;
@@ -519,6 +552,11 @@ async function TherapyTab({ cfg, canEdit, message }: { cfg: Awaited<ReturnType<t
                 })}
                 {selectedResources.length === 0 ? <div className="rounded-md border border-dashed border-gray-200 p-3 text-sm text-gray-400">لا توجد فروع/قاعات لهذا المركز بعد</div> : null}
               </div>
+              {canEdit && selectedCenter.active ? <form action={addCenterHall} className="mt-3 grid gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3 md:grid-cols-[1fr_auto]">
+                <input type="hidden" name="centerId" value={selectedCenter.id} />
+                <TextInput label="إضافة فرع/قاعة / مكان علاج" name="name" required />
+                <div className="self-end"><SmallSubmitButton>إضافة قاعة</SmallSubmitButton></div>
+              </form> : null}
             </article>
           ) : (
             <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400">أضف مركزاً أولاً لإدارة فروعه وقاعاته.</div>

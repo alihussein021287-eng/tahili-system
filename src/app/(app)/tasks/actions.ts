@@ -1,5 +1,6 @@
 "use server";
 import { requireSession } from "@/lib/access";
+import { assertOptionalPatientScope } from "@/lib/patient-guard";
 import { prisma } from "@/lib/db";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { logAudit } from "@/lib/audit";
@@ -28,6 +29,7 @@ export async function createTask(fd: FormData) {
   const assignedToId = fd.get("assignedToId")?.toString() || null;
   const assignedRole = fd.get("assignedRole")?.toString() || null;
   const patientId = fd.get("patientId")?.toString() || null;
+  await assertOptionalPatientScope(patientId);
   const t = await prisma.task.create({
     data: {
       title: v.title,

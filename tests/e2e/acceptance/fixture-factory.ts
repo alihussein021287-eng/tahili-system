@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { RUN_ID } from "./helpers";
 
 let sequence = 0;
+// Rehearsal fixtures belong to one branch so branch-scoped roles keep working on them (set by the fixture seed).
+const ACCEPTANCE_BRANCH_ID = process.env.ACCEPTANCE_BRANCH_ID ? Number(process.env.ACCEPTANCE_BRANCH_ID) : undefined;
 
 export async function referralPatient(label: string) {
   sequence += 1;
@@ -15,6 +17,7 @@ export async function referralPatient(label: string) {
       notes: `ACCEPTANCE-20260713 ${RUN_ID} بيانات إحالة تجريبية`,
       dataEntryBy: creator.fullName,
       createdById: creator.id,
+      branchId: ACCEPTANCE_BRANCH_ID,
     },
   });
 }
@@ -26,7 +29,8 @@ export async function acceptanceDoctor() {
 export async function clinicalPatient(label: string, eligible: boolean) {
   sequence += 1;
   const creator = await prisma.user.findUniqueOrThrow({ where: { username: "acceptance-20260713-data-entry" } });
-  return prisma.patient.create({
+  // A prescription needs an explicit Visit: every clinical fixture patient has a visit today in the acceptance branch.
+  const patient = await prisma.patient.create({
     data: {
       fullName: `ACCEPTANCE-20260713 ${RUN_ID} ${label}`,
       phone: `0778${Date.now().toString().slice(-6)}${sequence}`.slice(0, 11),
@@ -35,8 +39,11 @@ export async function clinicalPatient(label: string, eligible: boolean) {
       notes: `ACCEPTANCE-20260713 ${RUN_ID} بيانات سريرية تجريبية`,
       dataEntryBy: creator.fullName,
       createdById: creator.id,
+      branchId: ACCEPTANCE_BRANCH_ID,
     },
   });
+  await prisma.visit.create({ data: { patientId: patient.id, visitDate: new Date(), branchId: ACCEPTANCE_BRANCH_ID, notes: "ACCEPTANCE-20260713 fixture visit" } });
+  return patient;
 }
 
 export async function ensureAcceptancePatientFixture(id: string, fullName: string, fileNumber?: number) {
@@ -51,7 +58,13 @@ export async function ensureAcceptancePatientFixture(id: string, fullName: strin
     notes: `ACCEPTANCE-20260713 ${RUN_ID} fixture`,
     dataEntryBy: creator.fullName,
     createdById: creator.id,
+    branchId: ACCEPTANCE_BRANCH_ID,
   };
+  // The file number is cosmetic for the fixture; skip it when another patient already owns it (rehearsal data is shared).
+  if (fileNumber) {
+    const owner = await prisma.patient.findUnique({ where: { fileNumber }, select: { id: true } });
+    if (owner && owner.id !== id) fileNumber = undefined;
+  }
   return prisma.patient.upsert({
     where: { id },
     update: { ...base, ...(fileNumber ? { fileNumber } : {}) },
@@ -68,7 +81,7 @@ export async function ensureLegacyAcceptancePatients() {
 
 export async function stockedMedication(label: string) {
   const medication = await prisma.medication.create({ data: { name: `ACCEPTANCE-20260713 ${RUN_ID} ${label}`, quantity: 20, minQuantity: 2, unit: "حبة" } });
-  const batch = await prisma.medicationBatch.create({ data: { medicationId: medication.id, batchNo: `${RUN_ID}-${label}`, quantity: 20, expiryDate: new Date("2027-12-31") } });
+  const batch = await prisma.medicationBatch.create({ data: { medicationId: medication.id, branchId: ACCEPTANCE_BRANCH_ID, batchNo: `${RUN_ID}-${label}`, quantity: 20, expiryDate: new Date("2027-12-31") } });
   return { medication, batch };
 }
 

@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
 
-const prisma = new PrismaClient();
+// Created on first use, so importing the lists does not open a database connection.
+let client: PrismaClient | undefined;
+const db = () => (client ??= new PrismaClient());
 
 export const IRAQ_LOCATIONS: Record<string, string[]> = {
   "بغداد": ["الرصافة", "الكرخ", "الأعظمية", "الكاظمية", "مدينة الصدر", "المنصور", "الكرادة", "الدورة", "المدائن", "أبو غريب", "التاجي", "الطارمية", "المحمودية", "اليوسفية", "اللطيفية", "النهروان", "الشعلة", "الحرية", "الغزالية", "البياع", "زيونة", "الجادرية"],
@@ -28,9 +30,9 @@ export const IRAQ_LOCATIONS: Record<string, string[]> = {
 export async function seedIraqLocations() {
   let districtCount = 0;
   for (const [name, districts] of Object.entries(IRAQ_LOCATIONS)) {
-    const governorate = await prisma.governorate.upsert({ where: { name }, update: {}, create: { name } });
+    const governorate = await db().governorate.upsert({ where: { name }, update: {}, create: { name } });
     for (const district of districts) {
-      await prisma.district.upsert({
+      await db().district.upsert({
         where: { name_governorateId: { name: district, governorateId: governorate.id } },
         update: {}, create: { name: district, governorateId: governorate.id },
       });
@@ -41,5 +43,5 @@ export async function seedIraqLocations() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  seedIraqLocations().finally(() => prisma.$disconnect());
+  seedIraqLocations().finally(() => db().$disconnect());
 }

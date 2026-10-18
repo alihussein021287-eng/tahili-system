@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertOptionalPatientScope } from "@/lib/patient-guard";
 import { redirect } from "next/navigation";
 import {
   createChannelConversation,
@@ -153,6 +154,7 @@ export async function transferOwnerAction(fileId: string, formData: FormData) {
 
 export async function linkPatientAction(fileId: string, formData: FormData) {
   if (formData.get("confirm") !== "on") throw new Error("يجب تأكيد ربط الملف بالمراجع");
+  await assertOptionalPatientScope(String(formData.get("patientId") || ""));
   await linkFileToPatient(fileId, String(formData.get("patientId") || ""));
   refresh();
 }

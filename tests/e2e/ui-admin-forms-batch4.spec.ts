@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-const baseURL = "http://192.168.17.20:3000";
-const credentialPath = process.env.QA_CREDENTIALS_PATH || "/root/tahili-role-acceptance-credentials.tsv";
+import { REHEARSAL_ORIGIN } from "./acceptance/helpers";
+const baseURL = REHEARSAL_ORIGIN;
+const credentialPath = process.env.QA_CREDENTIALS_PATH || "";
 const settingsTabs = ["identity", "operations", "therapy", "security", "notifications", "files", "backup", "lookups"];
 const routes = [
   "/users?tab=create",
-  "/users?tab=list",
+  "/staff?tab=employees",
   ...settingsTabs.map((tab) => `/settings?tab=${tab}`),
   "/permissions?tab=matrix",
   "/collaboration/admin?tab=settings",
@@ -100,7 +101,7 @@ test("administrative form contracts and responsive presentation", async ({ brows
     await page.setViewportSize({ width: 1440, height: 1000 });
   }
 
-  await page.goto(`${baseURL}/users?tab=list`);
+  await page.goto(`${baseURL}/staff?tab=employees`);
   const firstUser = page.locator('main a[href^="/users/"]').first();
   if (await firstUser.isVisible()) {
     await firstUser.click();

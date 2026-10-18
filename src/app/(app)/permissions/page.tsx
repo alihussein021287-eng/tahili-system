@@ -1,7 +1,8 @@
 import { requireSession } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
 import { AdminIntro, AdminSection, AdminSectionTabs } from "@/components/AdminPageSections";
-import { canManageUsers } from "@/lib/permissions";
+import { canManageUsers, ROLE_LABELS } from "@/lib/permissions";
+import { ROLE_DEFAULTS } from "@/lib/perms";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { loadPerms } from "@/lib/access";
@@ -12,7 +13,7 @@ import { DataTable, EmptyState, StatusBadge } from "@/components/Ui";
 export const dynamic = "force-dynamic";
 type PermissionsTab = "matrix" | "changes";
 
-const ROLES = ["MANAGER", "DOCTOR", "HEAD_THERAPIST", "THERAPIST", "PHARMACIST", "ACCOUNTANT", "RECEPTION", "RESIDENT", "DATA_ENTRY", "LAB", "RADIOLOGY", "DRESSING", "PROSTHETICS", "VIEWER"] as const;
+const ROLES = Object.keys(ROLE_DEFAULTS).filter((role) => role !== "ADMIN" && role in ROLE_LABELS);
 const PERMISSIONS_TABS: { key: PermissionsTab; label: string; title: string; description: string }[] = [
   { key: "matrix", label: "المصفوفة", title: "مصفوفة الصلاحيات", description: "اختر بين صلاحيات الأدوار أو استثناءات المستخدمين، واستخدم البحث لتقليل المجموعات المعروضة." },
   { key: "changes", label: "سجل التغييرات", title: "سجل تغييرات الصلاحيات", description: "آخر عمليات التعديل على صلاحيات الأدوار أو استثناءات المستخدمين." },

@@ -1,0 +1,170 @@
+{
+  "_comment": "Header aliases are matched after Arabic normalization (diacritics/tatweel removed, alef/yeh/teh-marbuta unified). Extend only with evidence from the real files.",
+  "excludedSheets": [
+    "المواعيد",
+    "الجلسات",
+    "المخزون",
+    "الفواتير",
+    "الرقود",
+    "الأجهزة",
+    "الحضور",
+    "المناوبات",
+    "الإجازات",
+    "المهام",
+    "مؤشرات المعالجين"
+  ],
+  "patientSheetNames": [
+    "المراجعون",
+    "المراجعين",
+    "patients"
+  ],
+  "systemUserSheetNames": [
+    "المستخدمون",
+    "المستخدمين",
+    "users"
+  ],
+  "fileFamilies": {
+    "employees": [
+      "موظفين",
+      "موظفون",
+      "الموظفين"
+    ],
+    "residents": [
+      "التدرج"
+    ],
+    "specialists": [
+      "الاختصاص"
+    ]
+  },
+  "fields": {
+    "fileNumber": [
+      "رقم الملف",
+      "رقم الملف الطبي",
+      "file number",
+      "fileNumber"
+    ],
+    "fullName": [
+      "الاسم",
+      "الاسم الرباعي",
+      "اسم المراجع",
+      "اسم المريض",
+      "الاسم الكامل",
+      "اسم الموظف",
+      "اسم الطبيب",
+      "full name",
+      "fullName",
+      "name",
+      "الاسم الرباعي واللقب"
+    ],
+    "gender": [
+      "الجنس",
+      "gender"
+    ],
+    "birth": [
+      "التولد",
+      "سنة التولد",
+      "تاريخ التولد",
+      "تاريخ الميلاد",
+      "سنة الميلاد",
+      "birth year",
+      "birthYear",
+      "birth date",
+      "birthDate"
+    ],
+    "phone": [
+      "الهاتف",
+      "رقم الهاتف",
+      "هاتف",
+      "الموبايل",
+      "رقم الموبايل",
+      "phone",
+      "mobile"
+    ],
+    "motherName": [
+      "اسم الام",
+      "اسم الأم",
+      "mother name",
+      "motherName"
+    ],
+    "governorate": [
+      "المحافظة",
+      "governorate"
+    ],
+    "injuryType": [
+      "نوع الاصابة",
+      "نوع الإصابة",
+      "injury type"
+    ],
+    "status": [
+      "الحالة",
+      "status"
+    ],
+    "branch": [
+      "الفرع",
+      "المجمع",
+      "branch"
+    ],
+    "job": [
+      "الوظيفة",
+      "المسمى الوظيفي",
+      "العنوان الوظيفي",
+      "المهنة",
+      "job",
+      "job title",
+      "الوظيفة الأساسية"
+    ],
+    "specialty": [
+      "الاختصاص",
+      "التخصص",
+      "specialty"
+    ],
+    "center": [
+      "المركز",
+      "القسم",
+      "الشعبة",
+      "مكان العمل",
+      "center",
+      "department"
+    ],
+    "username": [
+      "اسم المستخدم",
+      "username"
+    ],
+    "role": [
+      "الدور",
+      "role"
+    ],
+    "active": [
+      "فعال",
+      "فعّال",
+      "active"
+    ],
+    "capacity": [
+      "الصفة"
+    ],
+    "serial": [
+      "ت"
+    ]
+  },
+  "userRoles": [
+    "ADMIN",
+    "MANAGER",
+    "DOCTOR",
+    "THERAPIST",
+    "VIEWER",
+    "ACCOUNTANT",
+    "PHARMACIST",
+    "RECEPTION",
+    "SECRETARY",
+    "LAB",
+    "RADIOLOGY",
+    "DRESSING",
+    "PROSTHETICS",
+    "HEAD_THERAPIST",
+    "DATA_ENTRY",
+    "RESIDENT"
+  ],
+  "privilegedRolesHeld": [
+    "ADMIN"
+  ]
+}

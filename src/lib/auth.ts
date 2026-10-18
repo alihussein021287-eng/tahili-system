@@ -37,8 +37,8 @@ export function loginLogWriteFailure(error: unknown) {
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: { signIn: "/login" },
-  // Server Components read the canonical secure name. LAN requests receive a
-  // request-only alias from proxy.ts; browsers never receive the secure alias.
+  // Server Components read the canonical secure name. LAN and local requests
+  // receive a request-only alias from proxy.ts; browsers never receive that alias.
   useSecureCookies: true,
   providers: [
     CredentialsProvider({
@@ -125,6 +125,13 @@ export function authOptionsForAccess(access: EnvironmentAccess): NextAuthOptions
   return {
     ...authOptions,
     useSecureCookies: access.secure,
+    cookies: {
+      ...authOptions.cookies,
+      sessionToken: {
+        name: access.sessionCookieName,
+        options: { httpOnly: true, sameSite: "lax", path: "/", secure: access.secure },
+      },
+    },
     callbacks: {
       ...authOptions.callbacks,
       redirect: ({ url }) => safeAuthRedirect(url, access.origin),

@@ -55,3 +55,5 @@
 تحسين UX لا يغير workflow. إذا احتاجت الواجهة تعديل Action أو transition أو permission أو schema، توقف وافصل الطلب كتغيير وظيفي.
 
 الروابط القديمة `/attendance`, `/shifts`, و`/tasks` تحول إلى تبويبات `/staff` وتحافظ على المعلمات. المسارات التشغيلية الأخرى القديمة تبقى فعالة ويحدد `AppShell` مجموعتها الجامعة النشطة.
+
+> مخزون مستقل لكل فرع: `MedicationBatch.branchId`, `StockMovement.branchId/actorId`, `Prescription.originBranchId/dispensingBranchId`, `PurchaseOrder.branchId`؛ المنطق في `src/lib/pharmacy-stock.ts` و`src/lib/pharmacy-scope.ts`.

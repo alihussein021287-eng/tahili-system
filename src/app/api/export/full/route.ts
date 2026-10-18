@@ -1,5 +1,6 @@
 import { getApiSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
+import { currentStockViewer, visibleQuantities } from "@/lib/pharmacy-stock";
 import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 import { GENDER, MARITAL, PATIENT_STATUS, INVOICE_STATUS, DEVICE_STATUS } from "@/lib/labels";
 
@@ -28,6 +29,10 @@ export async function GET() {
   const permission = await checkApiPermission(uid, role, "patients.export");
   if (permission.allowed === false) return apiPermissionResponse(permission);
   const perms = permission.permissions;
+  // The workbook spans every patient and several departments: only central scope (ADMIN, or a manager with central view).
+  if (!(role === "ADMIN" || (role === "MANAGER" && perms.has("centers.central.view")))) {
+    return new Response("التصدير الشامل متاح للمستوى المركزي فقط", { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
 
   const canAppointments = perms.has("appointments.view");
   const canFinance = perms.has("finance.view") || perms.has("finance.report");
@@ -54,6 +59,7 @@ export async function GET() {
     canShifts ? prisma.leave.findMany({ orderBy: { fromDate: "desc" }, take: 10000 }) : Promise.resolve([]),
     canClinical ? prisma.therapySession.groupBy({ by: ["therapist"], _count: { _all: true }, _sum: { actualSessions: true } }) : Promise.resolve([]),
   ]);
+  const medQty = canPharmacy ? await visibleQuantities(await currentStockViewer()) : new Map<number, number>();
 
   const TSTAT: Record<string,string> = { OPEN:"مفتوحة", IN_PROGRESS:"قيد التنفيذ", DONE:"منجزة", CANCELLED:"ملغاة" };
   const SHTYPE: Record<string,string> = { MORNING:"صباحية", EVENING:"مسائية", NIGHT:"ليلية", FULL:"دوام كامل" };
@@ -73,7 +79,7 @@ export async function GET() {
     canDevices ? sheet("الأجهزة", ["المريض", "الجهاز", "تاريخ التسليم", "الحالة"],
       devices.map((d) => [d.patient?.fullName, (d as any).name, fmt((d as any).deliveredAt), DEVICE_STATUS[d.status as keyof typeof DEVICE_STATUS] ?? d.status])) : "",
     canPharmacy ? sheet("المخزون", ["المادة", "الكمية", "حد التنبيه", "الوحدة"],
-      meds.map((m) => [m.name, m.quantity, m.minQuantity, (m as any).unit])) : "",
+      meds.map((m) => [m.name, medQty.get(m.id) ?? 0, m.minQuantity, (m as any).unit])) : "",
     canAttendance ? sheet("الحضور", ["الموظف", "التاريخ", "الحضور", "الانصراف"],
       attendance.map((a) => [a.name, fmt(a.date), a.checkIn ? fmt(a.checkIn) : "", a.checkOut ? fmt(a.checkOut) : ""])) : "",
     canUsers ? sheet("المستخدمون", ["الاسم", "اسم المستخدم", "الدور", "فعّال"],

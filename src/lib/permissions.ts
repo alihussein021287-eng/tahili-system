@@ -44,6 +44,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   ACCOUNTANT: "شعبة مالية",
   PHARMACIST: "صيدلي",
   RECEPTION: "استقبال",
+  SECRETARY: "سكرتارية",
   LAB: "مختبر",
   RADIOLOGY: "أشعة",
   DRESSING: "تضميد",

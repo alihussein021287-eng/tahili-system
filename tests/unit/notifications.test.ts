@@ -13,7 +13,7 @@ describe("notification helpers", () => {
   it("يصنف روابط اللوحات الجامعة حسب التبويب", () => {
     expect(notificationKind({ link: "/staff?tab=tasks" })).toBe("tasks");
     expect(notificationKind({ link: "/patients-care?tab=appointments" })).toBe("appointments");
-    expect(notificationKind({ link: "/pharmacy-inventory?tab=stock&stockState=low" })).toBe("inventory");
+    expect(notificationKind({ link: "/pharmacy/stock?state=low" })).toBe("inventory");
   });
 
   it("يحمي روابط اللوحات الجامعة بصلاحية التبويب المقصود", () => {
@@ -21,10 +21,10 @@ describe("notification helpers", () => {
     expect(canOpenNotification("/staff?tab=tasks", new Set(["users.view"]))).toBe(false);
     expect(canOpenNotification("/patients-care?tab=referrals", new Set(["referrals.view"]))).toBe(true);
     expect(canOpenNotification("/patients-care?tab=referrals", new Set(["patients.view"]))).toBe(false);
-    expect(canOpenNotification("/pharmacy-inventory?tab=stock", new Set(["inventory.view"]))).toBe(true);
-    expect(canOpenNotification("/pharmacy-inventory?tab=stock", new Set(["pharmacy.purchase.view"]))).toBe(false);
-    expect(canOpenNotification("/pharmacy-inventory?tab=dispense", new Set(["pharmacy.purchase.view"]))).toBe(false);
-    expect(canOpenNotification("/pharmacy-inventory?tab=purchases", new Set(["pharmacy.purchase.view"]))).toBe(true);
+    expect(canOpenNotification("/pharmacy/stock", new Set(["inventory.view"]))).toBe(true);
+    expect(canOpenNotification("/pharmacy/stock", new Set(["pharmacy.purchase.view"]))).toBe(false);
+    expect(canOpenNotification("/pharmacy", new Set(["pharmacy.purchase.view"]))).toBe(false);
+    expect(canOpenNotification("/pharmacy/purchases", new Set(["pharmacy.purchase.view"]))).toBe(true);
   });
 
   it("يبقي permissionForLink متوافقاً مع النداء القديم", () => {

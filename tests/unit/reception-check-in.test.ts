@@ -121,6 +121,10 @@ const db = vi.hoisted(() => ({
         return null;
       }),
     },
+    // Queue scope pre-check: the actor is an active reception user of the patient's branch (patients here have none).
+    patient: { findUnique: vi.fn(async () => ({ branchId: 1, birthDate: null, motherName: null, archivedAt: null })) },
+    user: { findUnique: vi.fn(async () => ({ role: "RECEPTION", branchId: 1, isActive: true, branch: { isActive: true } })) },
+    auditLog: { count: vi.fn(async () => 0), create: vi.fn(async () => ({})) },
     $transaction: vi.fn(async (work: (tx: any) => Promise<any>) => {
       const transactionError = transactionErrors.shift();
       if (transactionError) throw transactionError;

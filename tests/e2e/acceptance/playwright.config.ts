@@ -1,19 +1,21 @@
 import "dotenv/config";
 import { defineConfig } from "@playwright/test";
-import { BASE_URL } from "./helpers";
+import path from "node:path";
+import { BASE_URL, ROOT } from "./helpers";
 
-if (process.env.DATABASE_URL) process.env.DATABASE_URL = process.env.DATABASE_URL.replace("@postgres:", "@127.0.0.1:");
 
 export default defineConfig({
   testDir: ".",
   testMatch: /(acceptance-.*|resilient-probes)\.spec\.ts/,
   globalSetup: "./auth.setup.ts",
   workers: 1,
+  // A crashed headless browser (OS/GPU level) is the only reason to allow a bounded retry; default is none.
+  retries: Number(process.env.ACCEPTANCE_RETRIES || 0),
   fullyParallel: false,
   timeout: 180_000,
   expect: { timeout: 10_000 },
-  outputDir: "/tahili-system/test-results/role-workflow-acceptance/artifacts",
-  reporter: [["list"], ["json", { outputFile: "/tahili-system/test-results/role-workflow-acceptance/acceptance-results.json" }]],
+  outputDir: path.join(ROOT, "artifacts"),
+  reporter: [["list"], ["json", { outputFile: path.join(ROOT, "acceptance-results.json") }]],
   use: {
     baseURL: BASE_URL,
     launchOptions: { args: ["--disable-gpu", "--disable-software-rasterizer", "--mute-audio"] },

@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { pathToFileURL } from "node:url";
 
-const prisma = new PrismaClient();
+// Created on first use, so importing the lists does not open a database connection.
+let client: PrismaClient | undefined;
+const db = () => (client ??= new PrismaClient());
 
 export const COMMON_LOOKUPS = {
   mobilityAid: [
@@ -40,12 +42,12 @@ export const COMMON_LOOKUPS = {
 export async function seedCommonLookups() {
   for (const [model, values] of Object.entries(COMMON_LOOKUPS)) {
     for (const name of values) {
-      await (prisma[model as keyof typeof COMMON_LOOKUPS] as any).upsert({ where: { name }, update: {}, create: { name } });
+      await (db()[model as keyof typeof COMMON_LOOKUPS] as any).upsert({ where: { name }, update: {}, create: { name } });
     }
     console.log(`${model}: ${values.length}`);
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  seedCommonLookups().finally(() => prisma.$disconnect());
+  seedCommonLookups().finally(() => db().$disconnect());
 }

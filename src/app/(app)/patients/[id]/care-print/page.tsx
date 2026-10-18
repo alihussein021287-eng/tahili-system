@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { requirePatientPageScope } from "@/lib/patient-guard";
 import { getOrg } from "@/lib/org";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
@@ -12,6 +13,7 @@ export default async function CarePrint({ params }: { params: Promise<{ id: stri
   const perms = await currentPerms();
   if (!perms.has("clinical.view") && !perms.has("clinical.care")) redirect("/");
   const { id } = await params;
+  await requirePatientPageScope(id, "record");
   const org = await getOrg();
 
   const patient = await prisma.patient.findUnique({ where: { id } });

@@ -10,6 +10,7 @@ import { getOrg } from "@/lib/org";
 import { currentPerms } from "@/lib/access";
 import { fmtDate } from "@/lib/labels";
 import { approveOfficialReport, unapproveOfficialReport } from "./actions";
+import { invoiceViewWhere } from "@/lib/patient-guard";
 
 export const dynamic = "force-dynamic";
 const MONTHS = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"];
@@ -34,7 +35,7 @@ export default async function OfficialReport({ searchParams }: { searchParams: P
     prisma.admission.count({ where: { admissionDate: { gte: mStart, lt: mEnd } } }),
     prisma.admission.count({ where: { status: "ADMITTED" } }),
     prisma.device.count({ where: { deliveredAt: { gte: mStart, lt: mEnd } } }),
-    prisma.invoice.aggregate({ _sum: { amount: true, paidAmount: true }, where: { issuedAt: { gte: mStart, lt: mEnd } } }),
+    prisma.invoice.aggregate({ _sum: { amount: true, paidAmount: true }, where: { issuedAt: { gte: mStart, lt: mEnd }, AND: [await invoiceViewWhere()] } }),
   ]);
   const years = [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2];
 

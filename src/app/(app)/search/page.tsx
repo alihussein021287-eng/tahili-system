@@ -1,4 +1,5 @@
-import { currentPerms, requirePerm } from "@/lib/access";
+import { currentPerms, getSession, requirePerm } from "@/lib/access";
+import { patientScopeWhere } from "@/lib/patient-access";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
 import Link from "next/link";
@@ -16,6 +17,7 @@ import {
 import { receptionCheckIn } from "../visits/actions";
 import { activeCenterHallOptions } from "@/lib/center-halls";
 import { CenterHallSelect } from "@/components/CenterHallSelect";
+import { HandoffDialog } from "@/components/handoffs/HandoffDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +108,8 @@ function Badge({ children }: { children: React.ReactNode }) {
 export default async function SearchPage({ searchParams }: { searchParams: Promise<Params> }) {
   await requirePerm("patients.view");
   const perms = await currentPerms();
+  const searchSession = await getSession();
+  const searchPatientScope = await patientScopeWhere(prisma, { userId: (searchSession?.user as any)?.id ?? "", role: (searchSession?.user as any)?.role, permissions: perms });
   const sp = await searchParams;
   const tab = selectedTab(sp.tab);
   const q = text(sp.q);
@@ -119,6 +123,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const isNum = q !== "" && !Number.isNaN(asNum);
   const canVisit = perms.has("visits.manage");
   const canQueue = perms.has("queue.manage");
+  const canSendHandoff = perms.has("handoff.send");
   const availableTabs = TABS.filter((t) => allowed(perms, t.perm));
   const cleanSp: Params = { q, from: sp.from, to: sp.to, branch: sp.branch, status, tab };
 
@@ -128,6 +133,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
       ? prisma.patient.findMany({
           where: {
             AND: [
+              searchPatientScope,
               q ? { OR: [
                 { fullName: { contains: q, mode: "insensitive" } },
                 { phone: { contains: q } },
@@ -377,6 +383,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                           </form>
                         </details>
                       )}
+                      {canSendHandoff && <HandoffDialog patientId={p.id} patientName={p.fullName} fileNumber={String(p.fileNumber)} />}
                       <Link href={`/patients/${p.id}`} className="text-xs font-medium text-brand-700 hover:underline">فتح الملف</Link>
                     </div>
                   </td>

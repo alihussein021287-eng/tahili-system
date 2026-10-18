@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { assertPerm, currentPerms } from "@/lib/access";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
+import { assertOptionalPatientScope } from "@/lib/patient-guard";
 import { redirect } from "next/navigation";
 
 async function actor() {
@@ -13,6 +14,7 @@ async function actor() {
 
 export async function createApproval(fd: FormData) {
   await assertPerm("approvals.create");
+  await assertOptionalPatientScope(fd.get("patientId")?.toString() || null);
   const a = await actor();
   const title = fd.get("title")?.toString().trim();
   if (!title) redirect("/approvals?err=" + encodeURIComponent("عنوان الطلب مطلوب"));

@@ -3,11 +3,14 @@ import Link from "next/link";
 import { Combobox } from "@/components/Combobox";
 import { addCareRecord, deleteCareRecord } from "@/app/(app)/patients/actions";
 import { CARE_PERIOD, CARE_KIND, fmtDate } from "@/lib/labels";
+import { useContext } from "react";
+import { CurrentUserName } from "@/components/patient-file-context";
 
 const PERIOD_CLR: Record<string, string> = { MORNING: "bg-amber-50 text-amber-700", EVENING: "bg-indigo-50 text-indigo-700", NIGHT: "bg-slate-100 text-slate-700" };
 const KIND_CLR: Record<string, string> = { TREAT: "bg-sky-50 text-sky-700", DRESS: "bg-emerald-50 text-emerald-700", BOTH: "bg-brand-50 text-brand-700" };
 
 export function CareSection({ rows = [], editable, patientId, medications = [], afterMutate }: any) {
+  const me = useContext(CurrentUserName);
   const w = (action: any) => async (fd: FormData) => { await action(fd); afterMutate?.(); };
   const sorted = [...rows].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -19,7 +22,7 @@ export function CareSection({ rows = [], editable, patientId, medications = [], 
       </div>
 
       {editable && (
-        <form action={w(addCareRecord.bind(null, patientId))} className="grid grid-cols-2 gap-2 rounded-xl bg-gray-50 p-3 md:grid-cols-4">
+        <details className="patient-add-form"><summary className="btn-ghost inline-flex cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ تسجيل تداوي</summary><div className="mt-3"><form action={w(addCareRecord.bind(null, patientId))} className="grid grid-cols-2 gap-2 rounded-xl bg-gray-50 p-3 md:grid-cols-4">
           <label className="text-xs text-gray-500">التاريخ<input name="date" type="date" className="input mt-1 w-full" /></label>
           <label className="text-xs text-gray-500">الفترة
             <Combobox name="period" allowFree={false} options={Object.entries(CARE_PERIOD).map(([value,label]:any)=>({value,label}))} />
@@ -27,7 +30,7 @@ export function CareSection({ rows = [], editable, patientId, medications = [], 
           <label className="text-xs text-gray-500">النوع
             <Combobox name="kind" allowFree={false} options={Object.entries(CARE_KIND).map(([value,label]:any)=>({value,label}))} />
           </label>
-          <label className="text-xs text-gray-500">المنفّذ<input name="performedBy" className="input mt-1 w-full" placeholder="الممرض/المعالج" /></label>
+          <label className="text-xs text-gray-500">المنفّذ<input name="performedBy" className="input mt-1 w-full" placeholder="الممرض/المعالج" defaultValue={me} /></label>
 
           <label className="text-xs text-gray-500">المادة من المخزون
 <Combobox name="medicationId" allowFree={false} placeholder="لا شيء" options={medications.map((m:any)=>({value:String(m.id),label:`${m.name}${typeof m.quantity==="number"?` (${m.quantity})`:""}`}))} />
@@ -39,7 +42,7 @@ export function CareSection({ rows = [], editable, patientId, medications = [], 
           <label className="col-span-2 text-xs text-gray-500">حالة الجرح / الوصف<input name="woundState" className="input mt-1 w-full" placeholder="نظيف / التهاب / تحسّن..." /></label>
           <label className="col-span-2 text-xs text-gray-500">ملاحظات<input name="notes" className="input mt-1 w-full" /></label>
           <button className="btn-primary md:col-span-1" type="submit">تسجيل</button>
-        </form>
+        </form></div></details>
       )}
 
       {rows.length === 0 && <p className="text-sm text-gray-400">لا يوجد تداوي أو تضميد مُسجّل بعد.</p>}

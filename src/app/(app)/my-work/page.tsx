@@ -1,10 +1,20 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState, ResultCount } from "@/components/Ui";
+import { HandoffInboxItem, type HandoffInboxItemData } from "@/components/handoffs/HandoffInboxItem";
+import { HandoffSentToday, type SentTodayItem } from "@/components/handoffs/HandoffSentToday";
+import { AutoRefresh } from "@/components/handoffs/AutoRefresh";
 import { currentPerms, requirePerm, requireSession } from "@/lib/access";
 import { currentUserBranch } from "@/lib/branch-context";
 import { accessibleCenterIds } from "@/lib/center-access";
 import { prisma } from "@/lib/db";
+import { currentStockViewer, batchViewWhere, lowStockMedications } from "@/lib/pharmacy-stock";
+import { pharmacyPrescriptionWhere } from "@/lib/pharmacy-scope";
+import { listInbox, listSentToday } from "@/lib/handoff-service";
+import { listStagesAwaitingAssignment } from "@/lib/care-stage-service";
+import { referralAccessScope } from "@/lib/referral-access";
+import { workStatusLabel } from "@/lib/labels";
+import type { UserRole } from "@prisma/client";
 import {
   dedupeWorkItems,
   derivePriority,
@@ -26,9 +36,11 @@ type SearchParams = {
   center?: string;
   date?: string;
   page?: string;
+  inboxPage?: string;
 };
 
 const TYPE_LABELS: Record<WorkItemType, string> = {
+  handoff: "تحويلة",
   task: "مهمة",
   appointment: "موعد",
   queue: "طابور",
@@ -90,7 +102,8 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   ]);
   const filters = normalizeWorkFilters(rawParams);
   const userId = (session.user as any).id as string;
-  const role = (session.user as any).role as string;
+  const role = (session.user as any).role as UserRole;
+  const awaitingStages = await listStagesAwaitingAssignment(prisma, { userId, role, permissions: perms });
   const userName = session.user?.name ?? "";
   const now = new Date();
   const todayStart = new Date(now);
@@ -103,6 +116,50 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   const scopedCenterIds = centerScopedRole ? centerIds : null;
   const sourceLimit = 80;
   const canPatients = perms.has("patients.view");
+  const actor = { userId, role, permissions: perms };
+  const inboxPage = /^\d+$/.test(rawParams.inboxPage ?? "") ? Math.min(10000, Math.max(1, Number(rawParams.inboxPage))) : 1;
+  const [inboxResult, sentToday] = await Promise.all([
+    perms.has("handoff.receive") ? listInbox(actor, { centerId: filters.centerId ?? undefined, page: inboxPage, pageSize: 20 }) : Promise.resolve({ items: [], total: 0, page: inboxPage, pageSize: 20 }),
+    perms.has("handoff.send") ? listSentToday(actor) : Promise.resolve([]),
+  ]);
+  const inbox = inboxResult.items;
+  const inboxPatientIds = [...new Set(inbox.map((handoff) => handoff.patientId))];
+  const inboxSenderIds = [...new Set(inbox.map((handoff) => handoff.fromUserId))];
+  const inboxCenterIds = [...new Set(inbox.map((handoff) => handoff.toCenterId).filter((id): id is number => id != null))];
+  const previousHandoffIds = [...new Set(inbox.map((handoff) => handoff.previousHandoffId).filter((id): id is string => id != null))];
+  const [inboxPatients, inboxSenders, inboxCenters, previousHandoffs] = inbox.length ? await Promise.all([
+    prisma.patient.findMany({ where: { id: { in: inboxPatientIds } }, select: { id: true, fullName: true, fileNumber: true } }),
+    prisma.user.findMany({ where: { id: { in: inboxSenderIds } }, select: { id: true, fullName: true } }),
+    inboxCenterIds.length ? prisma.center.findMany({ where: { id: { in: inboxCenterIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+    previousHandoffIds.length ? prisma.patientHandoff.findMany({ where: { id: { in: previousHandoffIds }, patientId: { in: inboxPatientIds } }, select: { id: true, patientId: true, status: true, returnReason: true } }) : Promise.resolve([]),
+  ]) : [[], [], [], []];
+  const patientsById = new Map(inboxPatients.map((patient) => [patient.id, patient]));
+  const sendersById = new Map(inboxSenders.map((sender) => [sender.id, sender]));
+  const centersById = new Map(inboxCenters.map((center) => [center.id, center.name]));
+  const previousById = new Map(previousHandoffs.map((handoff) => [handoff.id, handoff]));
+  const handoffItems: HandoffInboxItemData[] = inbox.flatMap((handoff) => {
+    const patient = patientsById.get(handoff.patientId);
+    if (!patient) return [];
+    const previous = handoff.previousHandoffId ? previousById.get(handoff.previousHandoffId) : null;
+    const isReturn = previous?.patientId === handoff.patientId && previous.status === "RETURNED";
+    return [{
+      id: handoff.id, patientId: handoff.patientId, patientName: patient.fullName,
+      fileNumber: patient.fileNumber, senderName: sendersById.get(handoff.fromUserId)?.fullName ?? "موظف",
+      fromRole: handoff.fromRole, toRole: handoff.toRole,
+      fromCenterId: handoff.fromCenterId, toCenterId: handoff.toCenterId,
+      toCenterName: handoff.toCenterId == null ? null : centersById.get(handoff.toCenterId) ?? null,
+      status: handoff.status, sentAt: handoff.sentAt.toISOString(), acceptedAt: handoff.acceptedAt?.toISOString() ?? null,
+      note: handoff.note, returnReason: handoff.returnReason,
+      isReturn, previousReturnReason: isReturn ? previous.returnReason : null,
+    }];
+  });
+  const sentPatientIds = [...new Set(sentToday.map((handoff) => handoff.patientId))];
+  const sentPatients = sentPatientIds.length ? await prisma.patient.findMany({ where: { id: { in: sentPatientIds } }, select: { id: true, fullName: true } }) : [];
+  const sentPatientNames = new Map(sentPatients.map((patient) => [patient.id, patient.fullName]));
+  const sentItems: SentTodayItem[] = sentToday.flatMap((handoff) => {
+    const patientName = sentPatientNames.get(handoff.patientId);
+    return patientName ? [{ id: handoff.id, patientName, status: handoff.status, acceptorName: handoff.acceptorName }] : [];
+  });
   const patientSelect = canPatients
     ? { patient: { select: { fullName: true, branch: { select: { id: true, name: true } } } } }
     : {};
@@ -135,20 +192,14 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
       take: sourceLimit,
     }).then((rows) => ({ type: "queue" as const, rows })));
   }
-  if (wants("stage") && perms.has("journey.view")) {
-    queries.push(prisma.careStage.findMany({
-      where: { responsibleRole: role as any, status: { in: ["WAITING", "IN_PROGRESS"] }, patient: { archivedAt: null, ...(branchId ? { branchId } : {}) } },
-      select: { id: true, patientId: true, station: true, status: true, responsibleRole: true, createdAt: true, updatedAt: true, referralRequest: { select: { id: true } }, ...patientSelect },
-      orderBy: [{ status: "asc" }, { createdAt: "asc" }],
-      take: sourceLimit,
-    }).then((rows) => ({ type: "stage" as const, rows })));
-  }
+  // Station work items were replaced by the handoff inbox at the top of this page.
   if (wants("referral") && perms.has("referrals.view")) {
+    const referralScope = await referralAccessScope(prisma, actor);
     const destinationScope = centerScopedRole && centerIds
       ? { OR: [{ destinationCenterId: null }, { destinationCenterId: { in: centerIds } }] }
       : {};
     queries.push(prisma.referralRequest.findMany({
-      where: { status: { in: ["DRAFT", "PENDING_PRINT", "READY", "SENT", "RESULT_RECEIVED", "REVIEWED", "ACCEPTED"] }, ...branchPatientWhere, ...destinationScope },
+      where: { status: { in: ["DRAFT", "PENDING_PRINT", "READY", "SENT", "RESULT_RECEIVED", "REVIEWED", "ACCEPTED"] }, ...branchPatientWhere, ...destinationScope, AND: [referralScope.where] },
       select: { id: true, patientId: true, requestedService: true, status: true, createdAt: true, updatedAt: true, assignedReviewer: { select: { fullName: true } }, destinationCenterId: true, destinationCenter: { select: { name: true } }, ...patientSelect },
       orderBy: { updatedAt: "asc" },
       take: sourceLimit,
@@ -177,7 +228,7 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   }
   if (wants("prescription") && perms.has("pharmacy.view")) {
     queries.push(prisma.prescription.findMany({
-      where: { prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE", status: { in: ["PENDING", "PARTIAL"] }, ...branchPatientWhere },
+      where: { prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE", visitId: { not: null }, status: { in: ["PENDING", "PARTIAL"] }, AND: [await pharmacyPrescriptionWhere()] },
       select: { id: true, patientId: true, status: true, prescribedAt: true, dispensedBy: true, ...patientSelect },
       orderBy: { prescribedAt: "asc" },
       take: sourceLimit,
@@ -185,7 +236,7 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   }
   if (wants("stock") && (perms.has("pharmacy.batch") || perms.has("inventory.view"))) {
     queries.push(prisma.medicationBatch.findMany({
-      where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: new Date(now.getTime() + 60 * 86_400_000) } },
+      where: { ...batchViewWhere(await currentStockViewer()), quantity: { gt: 0 }, expiryDate: { not: null, lte: new Date(now.getTime() + 60 * 86_400_000) } },
       select: { id: true, batchNo: true, quantity: true, expiryDate: true, createdAt: true, medication: { select: { name: true } } },
       orderBy: { expiryDate: "asc" },
       take: sourceLimit,
@@ -242,17 +293,17 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
       ...branchFields(row),
     };
     if (type === "task") return { ...base, title: row.title, nextAction: nextAction(type, status), href: "/staff?tab=tasks", requiredPermission: "tasks.view" };
-    if (type === "appointment") return { ...base, title: row.type || "موعد مجدول", nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=overview` : "/patients-care?tab=appointments", requiredPermission: "appointments.view" };
-    if (type === "queue") return { ...base, title: row.hall ? `طابور ${row.hall}` : "الطابور الحالي", nextAction: nextAction(type, status), href: "/patients-care?tab=queue", requiredPermission: "queue.view" };
-    if (type === "stage") return { ...base, title: row.station, nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=journey` : "/patients-care?tab=journey", requiredPermission: "journey.view" };
-    if (type === "referral") return { ...base, title: row.requestedService, nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=referrals` : "/patients-care?tab=referrals", requiredPermission: "referrals.view" };
-    if (type === "plan") return { ...base, title: row.title, nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=therapyProgram` : "/therapy-centers?tab=plans", requiredPermission: perms.has("therapy.view") ? "therapy.view" : "therapy.plan.manage" };
-    if (type === "session") return { ...base, title: "جلسة علاجية اليوم", nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=sessions` : "/therapy-centers?tab=today", requiredPermission: "therapy.session.record" };
-    if (type === "prescription") return { ...base, title: "وصفة داخلية مؤهلة", nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=rx` : "/pharmacy-inventory?tab=dispense", requiredPermission: "pharmacy.view" };
+    if (type === "appointment") return { ...base, title: row.type || "موعد مجدول", nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=overview` : "/appointments", requiredPermission: "appointments.view" };
+    if (type === "queue") return { ...base, title: row.hall ? `طابور ${row.hall}` : "الطابور الحالي", nextAction: nextAction(type, status), href: "/queue", requiredPermission: "queue.view" };
+    if (type === "stage") return { ...base, title: row.station, nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=journey` : "/care-board", requiredPermission: "journey.view" };
+    if (type === "referral") return { ...base, title: row.requestedService, nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=referrals` : "/referrals", requiredPermission: "referrals.view" };
+    if (type === "plan") return { ...base, title: row.title, nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=therapyProgram` : "/therapy", requiredPermission: perms.has("therapy.view") ? "therapy.view" : "therapy.plan.manage" };
+    if (type === "session") return { ...base, title: "جلسة علاجية اليوم", nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=sessions` : "/therapy/today", requiredPermission: "therapy.session.record" };
+    if (type === "prescription") return { ...base, title: "وصفة داخلية مؤهلة", nextAction: nextAction(type, status), href: patientName ? `/patients/${row.patientId}?tab=rx` : "/pharmacy", requiredPermission: "pharmacy.view" };
     if (type === "stock") return { ...base, title: `${row.medication.name}${row.batchNo ? ` · ${row.batchNo}` : ""}`, nextAction: "فتح الدفعات", href: "/pharmacy-inventory?tab=batches&batchState=soon", requiredPermission: perms.has("inventory.view") ? "inventory.view" : "pharmacy.batch" };
     if (type === "purchase") return { ...base, title: `${row.orderNo} · ${row.supplier.name}`, nextAction: nextAction(type, status), href: `/pharmacy/purchases/${row.id}`, requiredPermission: "pharmacy.purchase.view" };
     if (type === "expense") return { ...base, title: `${row.voucherNo} · ${row.expenseType}`, nextAction: nextAction(type, status), href: `/finance/expenses/${row.id}`, requiredPermission: "expenses.view" };
-    return { ...base, title: row.title, nextAction: nextAction(type, status), href: "/reports-finance?tab=approvals", requiredPermission: "approvals.view" };
+    return { ...base, title: row.title, nextAction: nextAction(type, status), href: "/approvals", requiredPermission: "approvals.view" };
   }));
 
   const visible = items.filter((item) => perms.has(item.requiredPermission));
@@ -271,25 +322,64 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
     query.set("page", String(number));
     return `/my-work?${query}`;
   };
+  const inboxHref = (number: number) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(rawParams)) if (value && key !== "inboxPage") query.set(key, value);
+    query.set("inboxPage", String(number));
+    return `/my-work?${query}`;
+  };
   const attentionItems = page.items.filter((item) => item.priority === "urgent" || item.priority === "high");
   const remainingItems = page.items.filter((item) => item.priority !== "urgent" && item.priority !== "high");
 
   return (
     <div className="min-w-0 space-y-5">
+      <AutoRefresh />
       <PageHeader title="قائمة عملي" subtitle="حالات موجودة فعلياً تنتظر دورك، مرتبة حسب الاستحقاق والأولوية" icon="☑">
-        <Link href="/workspaces" className="btn-ghost bg-white text-brand-700">مساحاتي</Link>
+        {perms.has("clinical.view") ? <Link href="/my-work/authored" className="btn-ghost bg-white text-brand-700">سجلاتي المؤلَّفة</Link> : null}
+        <Link href="/" className="btn-ghost bg-white text-brand-700">الرئيسية</Link>
       </PageHeader>
 
+      {perms.has("handoff.receive") && (filters.type === "all" || filters.type === "handoff") ? (
+        <section className="min-w-0 space-y-3" aria-labelledby="handoff-inbox-title">
+          <div>
+            <h2 id="handoff-inbox-title" className="font-semibold text-gray-900 dark:text-slate-100">التحويلات الواردة</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">تحويلات تنتظر استلامك أو إجراءك التالي.</p>
+          </div>
+          {handoffItems.length ? <div className="grid gap-3">{handoffItems.map((item) => <HandoffInboxItem key={item.id} item={item} canSend={perms.has("handoff.send")} canCancel={inbox.find((handoff) => handoff.id === item.id)?.fromUserId === userId || perms.has("handoff.manage") || role === "MANAGER" || role === "ADMIN"} canRedirect={perms.has("handoff.send") && (role === "SECRETARY" || perms.has("handoff.manage") || role === "MANAGER" || role === "ADMIN")} now={now.toISOString()} />)}</div>
+            : <EmptyState title="لا توجد تحويلات واردة" description="ستظهر التحويلات هنا عندما تصل إلى صندوقك." />}
+          {inboxResult.total > 20 ? <nav className="flex flex-wrap items-center justify-center gap-2" aria-label="صفحات التحويلات الواردة">
+            {inboxPage > 1 ? <Link href={inboxHref(inboxPage - 1)} className="btn-ghost min-h-11">السابق</Link> : null}
+            <span className="px-3 text-sm text-gray-500">{inboxPage} / {Math.ceil(inboxResult.total / 20)}</span>
+            {inboxPage * 20 < inboxResult.total ? <Link href={inboxHref(inboxPage + 1)} className="btn-ghost min-h-11">التالي</Link> : null}
+          </nav> : null}
+        </section>
+      ) : null}
+
+      {perms.has("handoff.send") && (filters.type === "all" || filters.type === "handoff") ? <HandoffSentToday items={sentItems} /> : null}
+      {awaitingStages.length ? (
+        <section className="min-w-0 space-y-3" aria-labelledby="awaiting-assignment-title" data-testid="awaiting-assignment">
+          <h2 id="awaiting-assignment-title" className="text-base font-semibold">محطات بانتظار الإسناد</h2>
+          <ul className="grid gap-2">
+            {awaitingStages.map((stage) => (
+              <li key={stage.id} className="card flex flex-wrap items-center justify-between gap-2 p-3">
+                <span><bdi>{stage.patient.fullName}</bdi> · {stage.station}</span>
+                <Link href={`/patients/${stage.patientId}`} className="btn-ghost min-h-11">فتح الملف للإسناد</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <form className="card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-6" autoComplete="off">
-        <label className="label">النوع<select name="type" className="input mt-1" defaultValue={filters.type}><option value="all">الكل</option>{Object.entries(TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="label">الحالة<input name="status" className="input mt-1" defaultValue={filters.status === "all" ? "" : filters.status} placeholder="كل الحالات" /></label>
-        <label className="label">الأولوية<select name="priority" className="input mt-1" defaultValue={filters.priority}><option value="all">الكل</option>{Object.entries(PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="label">النوع<select name="type" className="input mt-1" defaultValue={filters.type}><option value="all">الكل</option>{Object.entries(TYPE_LABELS).filter(([value]) => value !== "handoff" || perms.has("handoff.receive") || perms.has("handoff.send")).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        {filters.type !== "handoff" ? <><label className="label">الحالة<input name="status" className="input mt-1" defaultValue={filters.status === "all" ? "" : filters.status} placeholder="كل الحالات" /></label>
+        <label className="label">الأولوية<select name="priority" className="input mt-1" defaultValue={filters.priority}><option value="all">الكل</option>{Object.entries(PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></> : null}
         <label className="label">المركز<select name="center" className="input mt-1" defaultValue={filters.centerId ?? ""}><option value="">كل المتاح</option>{centers.map((center) => <option key={center.id} value={center.id}>{center.name}</option>)}</select></label>
-        <label className="label">التاريخ<select name="date" className="input mt-1" defaultValue={filters.date}><option value="all">الكل</option><option value="overdue">متأخر</option><option value="today">اليوم</option><option value="week">خلال أسبوع</option></select></label>
+        {filters.type !== "handoff" ? <label className="label">التاريخ<select name="date" className="input mt-1" defaultValue={filters.date}><option value="all">الكل</option><option value="overdue">متأخر</option><option value="today">اليوم</option><option value="week">خلال أسبوع</option></select></label> : null}
         <div className="flex items-end gap-2"><button className="btn-primary" type="submit">تطبيق</button><Link href="/my-work" className="btn-ghost">مسح</Link></div>
       </form>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {filters.type !== "handoff" ? <><div className="flex flex-wrap items-center justify-between gap-2">
         <ResultCount count={page.total} label={`عنصر مطابق · صفحة ${page.page} من ${page.pageCount}`} />
         <span>{branchId && userBranch?.branch ? `النطاق الافتراضي: ${userBranch.branch.name}` : "النطاق حسب صلاحيات الحساب وعضويات المراكز"}</span>
       </div>
@@ -309,7 +399,7 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
           <span className="px-3 text-sm text-gray-500">{page.page} / {page.pageCount}</span>
           {page.page < page.pageCount ? <Link href={pageHref(page.page + 1)} className="btn-ghost">التالي</Link> : null}
         </nav>
-      ) : null}
+      ) : null}</> : null}
     </div>
   );
 }
@@ -343,7 +433,7 @@ function WorkRow({ item, now }: { item: WorkItem; now: Date }) {
       <td className="td"><Priority item={item} /></td>
       <td className="td"><div className="font-medium text-gray-900">{TYPE_LABELS[item.type]} · {item.title}</div></td>
       <td className="td">{item.patientName ?? "محجوب/غير مرتبط"}</td>
-      <td className="td">{item.status}</td>
+      <td className="td">{workStatusLabel(item.status)}</td>
       <td className="td">{item.assignee ?? "حسب الدور"}</td>
       <td className="td"><div>{waitLabel(item.waitingSince, now)}</div>{item.dueAt ? <div className="text-xs text-gray-400">{item.dueAt.toLocaleString("ar-IQ")}</div> : null}</td>
       <td className="td">{item.centerName ?? item.branchName ?? "عام"}</td>
@@ -357,7 +447,7 @@ function WorkCard({ item, now }: { item: WorkItem; now: Date }) {
     <article className={`card p-4 ${item.priority === "urgent" ? "ring-1 ring-red-200" : ""}`}>
       <div className="flex items-start justify-between gap-3"><div><div className="text-xs text-gray-500">{TYPE_LABELS[item.type]}</div><h2 className="mt-1 font-semibold text-gray-900">{item.title}</h2></div><Priority item={item} /></div>
       {item.patientName ? <div className="mt-2 text-sm text-gray-700">{item.patientName}</div> : null}
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-500"><span>الحالة: {item.status}</span><span>الانتظار: {waitLabel(item.waitingSince, now)}</span><span>المسؤول: {item.assignee ?? "حسب الدور"}</span><span>النطاق: {item.centerName ?? item.branchName ?? "عام"}</span></div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-500"><span>الحالة: {workStatusLabel(item.status)}</span><span>الانتظار: {waitLabel(item.waitingSince, now)}</span><span>المسؤول: {item.assignee ?? "حسب الدور"}</span><span>النطاق: {item.centerName ?? item.branchName ?? "عام"}</span></div>
       <Link href={item.href} className="btn-primary mt-4 inline-flex">{item.nextAction}</Link>
     </article>
   );

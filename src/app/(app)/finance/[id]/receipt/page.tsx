@@ -9,6 +9,7 @@ import Link from "next/link";
 import { INVOICE_STATUS, fmtMoney, fmtDate, fmtDateTime } from "@/lib/labels";
 import { PrintButton } from "@/components/PrintButton";
 import { updateInvoiceDate } from "../../actions";
+import { requireInvoiceReadScope } from "@/lib/patient-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export default async function Receipt({ params }: { params: Promise<{ id: string
     include: { patient: true, payments: { orderBy: { paidAt: "asc" } } },
   });
   if (!inv) notFound();
+  await requireInvoiceReadScope(inv.id);
 
   const remaining = inv.amount - inv.paidAmount;
 

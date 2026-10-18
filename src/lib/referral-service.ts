@@ -1,7 +1,10 @@
-import type { ReferralRequestStatus, ReferralRequestType, ReferralDestinationScope, UserRole } from "@prisma/client";
+import type { Prisma, ReferralRequestStatus, ReferralRequestType, ReferralDestinationScope, UserRole } from "@prisma/client";
+import { withSerializableRetry } from "@/lib/serializable-retry";
 import { prisma } from "@/lib/db";
 import { notifyRoleInTransaction, notifyUserInTransaction } from "@/lib/notify";
 import { validateReferralPatch, validateReferralTransition } from "@/lib/referral-workflow";
+import { referralAccessScope } from "@/lib/referral-access";
+import { loadPermissionsFromStore } from "@/lib/permission-store";
 
 export type ReferralActorContext = {
   userId: string;
@@ -19,6 +22,8 @@ export type ReferralDraftInput = {
   clinicalReason: string;
   assignedReviewerId?: string | null;
   destinationCenterId?: number | null;
+  /** Optional therapist the doctor suggests for an internal-centre referral; the head therapist still decides. */
+  suggestedTherapistId?: string | null;
 };
 
 export type ReferralTransitionInput = {
@@ -31,9 +36,23 @@ export type ReferralTransitionInput = {
 
 const clean = (value?: string | null) => value?.trim() || null;
 
+async function currentTransactionActor(tx: Prisma.TransactionClient, actor: ReferralActorContext): Promise<ReferralActorContext> {
+  const permissions = await loadPermissionsFromStore(actor.userId, actor.role, {
+    findRolePermissions: (role) => tx.rolePermission.findMany({ where: { role } }),
+    findUserPermissions: (userId) => tx.userPermission.findMany({ where: { userId } }),
+  });
+  return { ...actor, permissions };
+}
+
 function assertCreateActor(actor: ReferralActorContext) {
   if (!actor.permissions.has("referrals.create")) throw new Error("لا تملك صلاحية إنشاء طلب إحالة");
   if (actor.role !== "RESIDENT" && actor.role !== "DOCTOR") throw new Error("إنشاء القرار الطبي متاح للطبيب فقط");
+}
+
+// A suggested therapist must be an active therapist of the destination centre.
+async function assertSuggestedTherapist(tx: any, therapistId: string, centerId?: number | null) {
+  const therapist = centerId ? await tx.user.findFirst({ where: { id: therapistId, isActive: true, role: "THERAPIST", centerMemberships: { some: { centerId, role: "THERAPIST", status: "ACTIVE" } } }, select: { id: true } }) : null;
+  if (!therapist) throw new Error("المعالج المقترح ليس معالجاً فعالاً في هذا المركز");
 }
 
 function validateDraft(input: ReferralDraftInput) {
@@ -52,24 +71,30 @@ function validateDraft(input: ReferralDraftInput) {
     if (input.type !== "TREATMENT_CENTER" || !input.destinationCenterId) throw new Error("حدد المركز العلاجي الداخلي");
     if (input.externalEntity) throw new Error("لا تستخدم جهة خارجية للإحالة الداخلية");
   }
+  if (input.suggestedTherapistId && input.destinationScope !== "INTERNAL_CENTER") throw new Error("اقتراح المعالج للإحالة إلى مركز داخلي فقط");
 }
 
 export async function createReferralRequest(input: ReferralDraftInput, actor: ReferralActorContext) {
-  assertCreateActor(actor);
   validateDraft(input);
-  return prisma.$transaction(async (tx) => {
-    const patient = await tx.patient.findUnique({ where: { id: input.patientId }, select: { id: true, archivedAt: true } });
+  return withSerializableRetry(() => prisma.$transaction(async (tx) => {
+    actor = await currentTransactionActor(tx, actor);
+    assertCreateActor(actor);
+    const access = await referralAccessScope(tx, actor);
+    const patient = await tx.patient.findUnique({ where: { id: input.patientId }, select: { id: true, branchId: true, archivedAt: true } });
     if (!patient || patient.archivedAt) throw new Error("ملف المراجع غير متاح");
+    if (!access.branchId || patient.branchId !== access.branchId) throw new Error("غير مصرح");
     if (input.residentReviewId) {
       const review = await tx.residentReview.findFirst({ where: { id: input.residentReviewId, patientId: input.patientId }, select: { id: true } });
       if (!review) throw new Error("تقييم الطبيب المقيم لا يخص هذا المراجع");
     }
+    if (input.suggestedTherapistId) await assertSuggestedTherapist(tx, input.suggestedTherapistId, input.destinationCenterId);
     const request = await tx.referralRequest.create({ data: {
       patientId: input.patientId,
       residentReviewId: input.residentReviewId || null,
       createdById: actor.userId,
       assignedReviewerId: input.assignedReviewerId || null,
       destinationCenterId: input.destinationCenterId || null,
+      suggestedTherapistId: input.suggestedTherapistId || null,
       type: input.type,
       destinationScope: input.destinationScope,
       externalEntity: clean(input.externalEntity),
@@ -79,19 +104,23 @@ export async function createReferralRequest(input: ReferralDraftInput, actor: Re
     } });
     await tx.auditLog.create({ data: { userId: actor.userId, action: "CREATE", tableName: "referral_requests", recordId: request.id, newValue: { status: "DRAFT", type: request.type, destinationScope: request.destinationScope } } });
     return request;
-  });
+  }, { isolationLevel: "Serializable" }));
 }
 
 export async function updateReferralDraft(id: string, patch: Partial<ReferralDraftInput>, actor: ReferralActorContext) {
-  return prisma.$transaction(async (tx) => {
-    const current = await tx.referralRequest.findUnique({ where: { id } });
-    if (!current) throw new Error("طلب الإحالة غير موجود");
+  return withSerializableRetry(() => prisma.$transaction(async (tx) => {
+    actor = await currentTransactionActor(tx, actor);
+    const access = await referralAccessScope(tx, actor);
+    const current = await tx.referralRequest.findFirst({ where: { id, AND: [access.where] } });
+    if (!current) throw new Error("غير مصرح");
+    if (!actor.permissions.has("referrals.create")) throw new Error("غير مصرح");
     if (current.status !== "DRAFT") throw new Error("لا يمكن تعديل القرار الطبي بعد مغادرة المسودة");
     if (current.createdById !== actor.userId && actor.role !== "DOCTOR") throw new Error("لا يمكنك تعديل هذه المسودة");
     const lock = validateReferralPatch(current, patch as any);
     if (!lock.ok) throw new Error("يتضمن التعديل حقولاً مقفلة");
     const next = { ...current, ...patch } as ReferralDraftInput;
     validateDraft(next);
+    if (patch.suggestedTherapistId) await assertSuggestedTherapist(tx, patch.suggestedTherapistId, next.destinationCenterId);
     const updated = await tx.referralRequest.update({ where: { id }, data: {
       type: patch.type,
       destinationScope: patch.destinationScope,
@@ -100,16 +129,27 @@ export async function updateReferralDraft(id: string, patch: Partial<ReferralDra
       clinicalReason: patch.clinicalReason?.trim(),
       assignedReviewerId: patch.assignedReviewerId,
       destinationCenterId: patch.destinationCenterId,
+      suggestedTherapistId: patch.suggestedTherapistId === undefined ? undefined : patch.suggestedTherapistId || null,
     } });
     await tx.auditLog.create({ data: { userId: actor.userId, action: "UPDATE", tableName: "referral_requests", recordId: id, oldValue: { status: current.status }, newValue: { status: updated.status, draftUpdated: true } } });
     return updated;
-  });
+  }, { isolationLevel: "Serializable" }));
 }
 
 export async function transitionReferralRequest(id: string, toStatus: ReferralRequestStatus, input: ReferralTransitionInput, actor: ReferralActorContext) {
-  return prisma.$transaction(async (tx) => {
-    const current = await tx.referralRequest.findUnique({ where: { id }, include: { patient: { select: { fileNumber: true } }, destinationCenter: { select: { name: true } } } });
-    if (!current) throw new Error("طلب الإحالة غير موجود");
+  return withSerializableRetry(() => prisma.$transaction(async (tx) => {
+    actor = await currentTransactionActor(tx, actor);
+    const access = await referralAccessScope(tx, actor);
+    const current = await tx.referralRequest.findFirst({ where: { id, AND: [access.where] }, include: { patient: { select: { fileNumber: true } }, destinationCenter: { select: { name: true } } } });
+    if (!current) throw new Error("غير مصرح");
+
+    // The destination center owns acceptance; a generic permission or a
+    // different center membership does not establish destination eligibility.
+    const destinationMembershipVerified = current.destinationScope === "INTERNAL_CENTER"
+      && current.destinationCenterId != null
+      && access.centerIds.includes(current.destinationCenterId);
+    if (toStatus === "ACCEPTED" && current.destinationScope === "INTERNAL_CENTER"
+      && !destinationMembershipVerified && actor.role !== "ADMIN") throw new Error("غير مصرح");
 
     let officialDocumentId = current.officialDocumentId;
     if (current.status === "PENDING_PRINT" && toStatus === "READY") {
@@ -139,7 +179,7 @@ export async function transitionReferralRequest(id: string, toStatus: ReferralRe
         cancellationReason: input.cancellationReason,
         officialDocumentId,
         acceptedById: input.acceptedById,
-        centerMembershipVerified: current.destinationScope === "INTERNAL_CENTER" && actor.permissions.has("referrals.accept"),
+        centerMembershipVerified: destinationMembershipVerified || actor.role === "ADMIN",
       },
     });
     if (!validation.ok) throw new Error(`انتقال غير صالح: ${validation.errors.join(", ")}`);
@@ -152,9 +192,16 @@ export async function transitionReferralRequest(id: string, toStatus: ReferralRe
         patientId: current.patientId,
         station: current.destinationCenter?.name || current.requestedService,
         responsibleRole: current.destinationScope === "INTERNAL_SPECIALIST" ? "DOCTOR" : "HEAD_THERAPIST",
+        ...(current.destinationScope === "INTERNAL_CENTER" && current.destinationCenterId != null
+          ? { responsibilityScope: "CENTER" as const, responsibleCenterId: current.destinationCenterId }
+          : {}),
         sequence: (last._max.sequence ?? -1) + 1,
         note: "ناتجة عن إحالة داخلية مقبولة",
         createdById: actor.userId,
+        // Bound to the authenticated assigned reviewer, who must be the acceptor (validated above).
+        ...(current.destinationScope === "INTERNAL_SPECIALIST"
+          ? { responsibilityScope: "SPECIALIST_REVIEW" as const, assignedUserId: actor.userId, assignedAt: new Date() }
+          : {}),
       } });
       careStageId = stage.id;
     }
@@ -195,5 +242,5 @@ export async function transitionReferralRequest(id: string, toStatus: ReferralRe
     if (toStatus === "SENT") await notifyUserInTransaction(tx as any, current.createdById, "تم إرسال طلب الفحص أو الإحالة", { link });
     await tx.auditLog.create({ data: { userId: actor.userId, action: "UPDATE", tableName: "referral_requests", recordId: id, oldValue: { status: current.status }, newValue: { status: toStatus, officialDocumentId, careStageId, resultRecorded: toStatus === "RESULT_RECEIVED", cancellationReason: toStatus === "CANCELLED" ? input.cancellationReason : undefined } } });
     return updated;
-  }, { isolationLevel: "Serializable" });
+  }, { isolationLevel: "Serializable" }));
 }

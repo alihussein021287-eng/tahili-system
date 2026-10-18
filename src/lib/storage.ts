@@ -4,6 +4,7 @@ import path from "path";
 import crypto from "crypto";
 import { getAdminConfig } from "@/lib/admin-config";
 import { DEFAULT_BLOCKED_FILE_TYPES } from "@/lib/collaboration-rules";
+import { scanBufferWithClamAv } from "@/lib/collaboration-scan";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "uploads";
 
@@ -16,12 +17,14 @@ export async function saveFile(file: File): Promise<{ key: string; name: string 
   }
   if (!config.fileTypes.includes(extension)) throw new Error("نوع الملف غير مسموح وفق إعدادات النظام");
   if (file.size > config.maxUploadMb * 1024 * 1024) throw new Error(`حجم الملف يتجاوز الحد المسموح (${config.maxUploadMb} MB)`);
-  if (!existsSync(UPLOAD_DIR)) await mkdir(UPLOAD_DIR, { recursive: true });
   const originalName = path.basename(file.name || "file");
   const ext = path.extname(originalName).slice(0, 16) || "";
   const key = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${ext}`;
   const buf = Buffer.from(await file.arrayBuffer());
-  await writeFile(path.join(UPLOAD_DIR, key), buf);
+  const scan = await scanBufferWithClamAv(buf);
+  if (scan.status !== "SAFE") throw new Error("فشل فحص الملف أو رُفض لعدم سلامته");
+  if (!existsSync(UPLOAD_DIR)) await mkdir(UPLOAD_DIR, { recursive: true });
+  await writeFile(path.join(UPLOAD_DIR, key), buf, { flag: "wx" });
   return { key, name: originalName };
 }
 

@@ -1,5 +1,5 @@
 export const WORK_ITEM_TYPES = [
-  "task", "appointment", "queue", "stage", "referral", "plan", "session",
+  "handoff", "task", "appointment", "queue", "stage", "referral", "plan", "session",
   "prescription", "stock", "purchase", "expense", "approval",
 ] as const;
 
@@ -70,7 +70,8 @@ const priorityRank: Record<WorkPriority, number> = { urgent: 0, high: 1, normal:
 
 export function sortWorkItems(items: WorkItem[]) {
   return [...items].sort((a, b) =>
-    priorityRank[a.priority] - priorityRank[b.priority]
+    Number(b.type === "handoff") - Number(a.type === "handoff")
+    || priorityRank[a.priority] - priorityRank[b.priority]
     || (a.dueAt?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.dueAt?.getTime() ?? Number.MAX_SAFE_INTEGER)
     || a.waitingSince.getTime() - b.waitingSince.getTime()
     || a.key.localeCompare(b.key),

@@ -1,6 +1,7 @@
 "use server";
 
 import { assertPerm } from "@/lib/access";
+import { assertOptionalPatientScope } from "@/lib/patient-guard";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { saveFile } from "@/lib/storage";
@@ -23,6 +24,7 @@ export async function addOfficialDocument(fd: FormData) {
   const file = fd.get("attachment") as File | null;
   const attachmentUrl = file && file.size > 0 ? `/api/files/${(await saveFile(file)).key}` : null;
   const patientId = clean(fd.get("patientId"));
+  await assertOptionalPatientScope(patientId);
   const doc = await prisma.officialDocument.create({
     data: {
       patientId,
@@ -53,6 +55,8 @@ export async function updateOfficialDocument(id: string, fd: FormData) {
     redirect(`/official-docs/${id}?err=` + encodeURIComponent("رقم الكتاب والتاريخ والموضوع مطلوبة"));
   }
   const old = await prisma.officialDocument.findUnique({ where: { id }, select: { patientId: true, attachmentUrl: true } });
+  await assertOptionalPatientScope(old?.patientId);
+  await assertOptionalPatientScope(clean(fd.get("patientId")));
   const file = fd.get("attachment") as File | null;
   const attachmentUrl = file && file.size > 0 ? `/api/files/${(await saveFile(file)).key}` : old?.attachmentUrl;
   const doc = await prisma.officialDocument.update({

@@ -1,8 +1,10 @@
-import { requireSession } from "@/lib/access";
+import { currentPerms, requireSession } from "@/lib/access";
 import { Combobox } from "@/components/Combobox";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSectionTabs as StaffTabsBar } from "@/components/AdminPageSections";
+import { staffNavTabs } from "@/lib/staff-nav";
 import { DataTable, FormField, ResultCount, TableEmptyRow } from "@/components/Ui";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
 import { canManageUsers, ROLE_LABELS } from "@/lib/permissions";
@@ -21,13 +23,12 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-type UserTab = "overview" | "create" | "list";
+type UserTab = "overview" | "create";
 
 const ROLE_OPTIONS = Object.entries(ROLE_LABELS).map(([value, label]: any) => ({ value, label }));
 const USER_TABS: { key: UserTab; label: string; title: string; description: string }[] = [
   { key: "overview", label: "نظرة عامة", title: "لوحة المستخدمين", description: "ملخص سريع لحجم الحسابات وحالتها قبل الدخول إلى الإنشاء أو الإدارة التفصيلية." },
   { key: "create", label: "إضافة مستخدم", title: "إضافة مستخدم", description: "أنشئ الحساب ببياناته الأساسية وحدد الدور والفرع قبل تسليم كلمة المرور المؤقتة خارج النظام." },
-  { key: "list", label: "قائمة الحسابات", title: "قائمة الحسابات", description: "ابحث وصفّ الحسابات الحالية، ثم افتح صفحة الإدارة التفصيلية للبيانات أو الأمان أو الصلاحيات." },
 ];
 
 function normalizeTab(raw?: string): UserTab {
@@ -50,8 +51,19 @@ function presenceWhere(status: PresenceStatus, onlineSince: Date, idleSince: Dat
 
 export default async function Users({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string; role?: string; status?: string; branch?: string; presence?: string }> }) {
   const session = await requireSession();
+  const dcPerms = await currentPerms();
   if (!canManageUsers((session?.user as any)?.role)) redirect("/");
   const sp = await searchParams;
+  // The accounts list lives in one place: the employees tab of the staff section.
+  if (sp.tab === "list") {
+    const params = new URLSearchParams({ tab: "employees" });
+    if (sp.q) params.set("q", sp.q);
+    if (sp.role) params.set("role", sp.role);
+    if (sp.status) params.set("userStatus", sp.status);
+    if (sp.branch) params.set("branch", sp.branch);
+    if (sp.presence) params.set("presence", sp.presence);
+    redirect(`/staff?${params.toString()}`);
+  }
   const activeTab = normalizeTab(sp.tab);
   const activeInfo = USER_TABS.find((tab) => tab.key === activeTab)!;
   const navTabs = USER_TABS.map((tab) => ({ key: tab.key, label: tab.label, href: tabHref(tab.key) }));
@@ -79,22 +91,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
 
   const [branches, users, total, active, disabled, onlineCount, idleCount, offlineCount] = await Promise.all([
     prisma.branch.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    prisma.user.findMany({
-      where: filteredWhere,
-      select: {
-        id: true,
-        username: true,
-        fullName: true,
-        role: true,
-        isActive: true,
-        lastLoginAt: true,
-        lastSeenAt: true,
-        department: true,
-        jobTitle: true,
-        branch: { select: { name: true } },
-      },
-      orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
-    }),
+    Promise.resolve([] as any[]),
     prisma.user.count(),
     prisma.user.count({ where: { isActive: true } }),
     prisma.user.count({ where: { isActive: false } }),
@@ -104,10 +101,18 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
   ]);
   return (
     <div className="min-w-0 space-y-6">
-      <PageHeader title="إدارة المستخدمين" subtitle="الحسابات والأدوار والصلاحيات" icon="⚙" />
+      <PageHeader title="إدارة الحسابات" subtitle="الأدوار والصلاحيات والأمان" icon="⚙">
+        {dcPerms.has("datacenter.view") && (dcPerms.has("datacenter.import.accounts") || dcPerms.has("datacenter.export.users")) ? <a className="btn-ghost" href="/data-center?tab=import">🗄 استيراد/تصدير الحسابات</a> : null}
+      </PageHeader>
+      <StaffTabsBar tabs={staffNavTabs(dcPerms, (session?.user as any)?.role)} active="accounts" label="أقسام الموظفين والمهام" />
       <AdminSectionTabs tabs={navTabs} active={activeTab} label="تبويبات إدارة المستخدمين" />
 
       <AdminIntro title={activeInfo.title} description={activeInfo.description} />
+
+      {activeTab === "overview" ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">
+        <span>قائمة الموظفين وإدارتهم اليومية موجودة في صفحة الموظفين.</span>
+        <Link href="/staff?tab=employees" className="btn-primary">فتح قائمة الموظفين</Link>
+      </div> : null}
 
       {activeTab === "overview" ? (
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
@@ -167,95 +172,13 @@ export default async function Users({ searchParams }: { searchParams: Promise<{ 
             </fieldset>
 
             <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4">
-              <Link href="/users?tab=list" className="btn-ghost">العودة إلى الحسابات</Link>
+              <Link href="/staff?tab=employees" className="btn-ghost">العودة إلى الحسابات</Link>
               <button className="btn-primary" type="submit">إضافة مستخدم</button>
             </div>
           </form>
         </AdminSection>
       ) : null}
 
-      {activeTab === "list" ? (
-        <>
-          <section className="grid gap-3 sm:grid-cols-3">
-            <StatCard label="المتصلون الآن" value={onlineCount} tone="text-emerald-700" description={`آخر ${presenceConfig.onlineMinutes} دقيقة`} />
-            <StatCard label="الخاملون" value={idleCount} tone="text-amber-700" description={`آخر ${presenceConfig.idleMinutes} دقيقة`} />
-            <StatCard label="غير المتصلين" value={offlineCount} tone="text-gray-700" description={`أقدم من ${presenceConfig.idleMinutes} دقيقة أو بدون ظهور`} />
-          </section>
-
-          <AdminSection id="filters" title="البحث والتصفية" description="استخدم الحقول التالية لتقليل النتائج قبل الدخول إلى إدارة حساب محدد.">
-            <form action="/users" className="grid gap-2 md:grid-cols-6">
-              <input type="hidden" name="tab" value="list" />
-              <div className="md:col-span-2">
-                <label className="label">بحث</label>
-                <input name="q" defaultValue={sp.q ?? ""} className="input" placeholder="اسم، مستخدم، قسم، مسمى وظيفي" />
-              </div>
-              <Combobox name="role" label="الدور" allowFree={false} defaultValue={sp.role ?? ""} placeholder="كل الأدوار" options={[{ value: "", label: "كل الأدوار" }, ...ROLE_OPTIONS]} />
-              <Combobox name="status" label="الحالة" allowFree={false} defaultValue={sp.status ?? ""} options={[{ value: "", label: "كل الحالات" }, { value: "active", label: "فعّال" }, { value: "disabled", label: "معطّل" }]} />
-              <Combobox name="branch" label="الفرع" allowFree={false} defaultValue={sp.branch ?? ""} placeholder="كل الفروع" options={[{ value: "", label: "كل الفروع" }, ...branches.map((b: any) => ({ value: String(b.id), label: b.name }))]} />
-              <Combobox name="presence" label="التواجد" allowFree={false} defaultValue={presence} options={[{ value: "", label: "الكل" }, { value: "online", label: "أونلاين" }, { value: "idle", label: "خامل" }, { value: "offline", label: "أوفلاين" }]} />
-              <div className="flex flex-wrap items-end gap-2 md:col-span-6">
-                <button className="btn-primary" type="submit">تصفية</button>
-                <Link href="/users?tab=list" className="btn-ghost">مسح</Link>
-                <ResultCount count={users.length} label="حساب معروض" />
-              </div>
-            </form>
-          </AdminSection>
-
-          <AdminSection id="users-list" title="الحسابات" description="كل نتيجة تفتح صفحة إدارة مفصلة للبيانات، الأمان، والصلاحيات الخاصة بالمستخدم." className="overflow-hidden">
-            <DataTable label="قائمة حسابات المستخدمين" className="-mx-5 -mb-5 rounded-none border-x-0 border-b-0">
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className="th">المستخدم</th>
-                    <th className="th">الاسم</th>
-                    <th className="th">الدور</th>
-                    <th className="th">القسم/الفرع</th>
-                    <th className="th">الحالة</th>
-                    <th className="th">التواجد</th>
-                    <th className="th">آخر ظهور</th>
-                    <th className="th">إجراءات</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => {
-                    const userPresence = getPresenceStatus(u.lastSeenAt, now, presenceConfig);
-                    return (
-                      <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="td">{u.username}</td>
-                        <td className="td">
-                          <Link href={`/users/${u.id}`} className="font-medium text-brand-700 hover:underline">{u.fullName}</Link>
-                          {u.jobTitle ? <div className="text-xs text-gray-400">{u.jobTitle}</div> : null}
-                        </td>
-                        <td className="td">{ROLE_LABELS[u.role]}</td>
-                        <td className="td">
-                          <div>{u.department || "—"}</div>
-                          <div className="text-xs text-gray-400">{u.branch?.name || "بدون فرع"}</div>
-                        </td>
-                        <td className="td">{u.isActive ? <span className="badge-success">فعّال</span> : <span className="badge-danger">معطّل</span>}</td>
-                        <td className="td">
-                          <span className={presenceBadgeClass(userPresence)}>{PRESENCE_LABELS[userPresence]}</span>
-                        </td>
-                        <td className="td">
-                          <div>{fmtDateTime(u.lastSeenAt)}</div>
-                          <div className="text-xs text-gray-400">آخر دخول: {fmtDateTime(u.lastLoginAt)}</div>
-                        </td>
-                        <td className="td">
-                          <div className="flex flex-wrap gap-2">
-                            <Link href={`/users/${u.id}`} className="rounded bg-brand-50 px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100">إدارة</Link>
-                            <Link href={`/users/${u.id}?tab=security`} className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200">الأمان</Link>
-                            <Link href={`/users/${u.id}?tab=perms`} className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200">الصلاحيات</Link>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {users.length === 0 ? <TableEmptyRow colSpan={8} title="لا توجد حسابات مطابقة" description="امسح بعض الفلاتر أو استخدم بحثاً أوسع." /> : null}
-                </tbody>
-              </table>
-            </DataTable>
-          </AdminSection>
-        </>
-      ) : null}
     </div>
   );
 }
