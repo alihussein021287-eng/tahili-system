@@ -19,6 +19,34 @@
 - IP يستخدم `next-auth.session-token` بدون `Secure` وبدون `Domain`.
 - لا تقبل المصادقة Host أو callback خارج زوج البيئة المحدد.
 
+## وضع loopback المحلي الاختياري
+
+[دليل التشغيل المحلي على Windows باستخدام Docker](docs/LOCAL_WINDOWS_DOCKER.md)
+
+- يُفعّل فقط عند `TAHILI_LOCAL_ACCESS=true`، ولا يغيّر مصفوفة التطوير والإنتاج أعلاه.
+- `TAHILI_LOCAL_PORT` مطلوب: عدد صحيح من `1` إلى `65535`.
+- يجب أن يكون كل من `NEXTAUTH_URL` و`NEXTAUTH_URL_INTERNAL` أصل HTTP على `localhost` أو `127.0.0.1` وبالمنفذ المحدد، مع `NEXTAUTH_ALLOW_HTTP_LOGIN=true` و`AUTH_TRUST_HOST=true`.
+- يقبل الطلبات فقط على `localhost:<port>` أو `127.0.0.1:<port>`؛ يجب أن يطابق `X-Forwarded-Host` قيمة `Host` إن وُجد، وأن يكون `X-Forwarded-Proto` هو `http` إن وُجد.
+- يستخدم `next-auth.session-token-<port>-local` بدون `Secure` ومع `HttpOnly` و`SameSite=Lax` وبدون `Domain`؛ مثل `next-auth.session-token-3000-local` و`next-auth.session-token-3001-local`. اللاحقة تمنع التباس بادئة المنفذ `3001` مع `30010` في NextAuth. المتصفح يشارك cookies عبر المنافذ، لذلك تقرأ كل نسخة اسمها فقط، بما فيه الأجزاء، ويُنشأ alias داخلي لطلب الخادم فقط. يلزم تسجيل الدخول مجدداً بعد الانتقال من الاسم المحلي القديم.
+- لا يقبل Host خاصاً بـLAN أو الدومينات أو IPv6 أو HTTPS في هذا الوضع. لكن `Host` قابل للتزوير ولا يثبت مصدر الاتصال: تقييد loopback يعتمد على ربط التطبيق في `docker-compose.local.yml` حصراً بـ`"127.0.0.1:${APP_PORT}:3000"`، مع بقاء PostgreSQL وMinIO دون منافذ منشورة. لا تستبدل الربط بـ`0.0.0.0` أو `"${APP_PORT}:3000"` ولا تستخدم host networking.
+- غياب العلم أو أي قيمة غير `true` يُبقي التحقق الحالي للتطوير والإنتاج ويرفض loopback.
+
+لكل نسخة ملف `.env` مستقل مأخوذ من `.env.local.example`، واسم مشروع Compose مستقل. شغّل الملف المحلي وحده (`-f docker-compose.local.yml`) مع `-p tahili-original` أو `-p tahili-dev` في مجلد النسخة المناسبة. استبدل القيم الوهمية بأسرار عشوائية مستقلة؛ **يجب ألا تتساوى قيمتا `NEXTAUTH_SECRET` أبداً** ولا تنسخ السر من نسخة إلى الأخرى. أسماء cookies تمنع خلط جلسات المتصفح، والأسرار المختلفة تمنع قبول JWT من قاعدة بيانات النسخة الأخرى حتى عند تغيير اسم cookie يدوياً.
+
+`tahili-original`:
+
+```dotenv
+APP_PORT=3000
+NEXTAUTH_SECRET=change-me-tahili-original-secret-at-least-32-characters
+```
+
+`tahili-dev` (في ملفها الخاص فقط):
+
+```dotenv
+APP_PORT=3001
+NEXTAUTH_SECRET=change-me-tahili-dev-secret-at-least-32-characters
+```
+
 ## قاعدة الفحص
 
 - كل health check أو smoke test أو Playwright بعد النشر يستخدم عنوان LAN فقط.

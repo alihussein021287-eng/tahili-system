@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Item = { id: string; name: string; hall: string | null; time: string; queueNumber: number; eventId?: string };
 type Data = {
   device: { id: string; name: string; centerName: string; callDisplaySeconds: number };
-  called: Item | null; inSession: Item[]; waiting: Item[]; inSessionTotal: number; waitingTotal: number; updatedAt: string;
+  called: Item | null; activeCalls: Item[]; inSession: Item[]; waiting: Item[]; inSessionTotal: number; waitingTotal: number; updatedAt: string;
 };
 
 function playCall(ctx: AudioContext) {
@@ -16,6 +16,22 @@ function playCall(ctx: AudioContext) {
     oscillator.connect(gain); gain.connect(ctx.destination);
     oscillator.start(ctx.currentTime + index * 0.2); oscillator.stop(ctx.currentTime + index * 0.2 + 0.17);
   });
+}
+
+function speak(text: string) {
+  if (!("speechSynthesis" in window)) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "ar-IQ";
+  utterance.rate = 0.9;
+  const arabicVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith("ar"));
+  if (arabicVoice) utterance.voice = arabicVoice;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+}
+
+function speakCall(item: Item) {
+  const spokenHall = item.hall ? `التوجه إلى ${item.hall}` : "التوجه إلى الاستقبال";
+  speak(`يرجى من المراجع ${item.name} ${spokenHall}`);
 }
 
 export default function QueueDisplayClient({ deviceId, deviceName }: { deviceId: string; deviceName: string }) {
@@ -47,7 +63,10 @@ export default function QueueDisplayClient({ deviceId, deviceName }: { deviceId:
         firstLoad.current = false;
       } else if (eventId && eventId !== previous) {
         localStorage.setItem(callKey, eventId);
-        if (started && audio.current) playCall(audio.current);
+        if (started && audio.current) {
+          playCall(audio.current);
+          speakCall(next.called!);
+        }
       }
       setData(next); setConnected(true); lastSuccess.current = Date.now();
     } catch {
@@ -59,7 +78,7 @@ export default function QueueDisplayClient({ deviceId, deviceName }: { deviceId:
 
   useEffect(() => {
     alive.current = true; void load();
-    const poll = setInterval(() => void load(), 5_000);
+    const poll = setInterval(() => void load(), 2_000);
     const watchdog = setInterval(() => { if (Date.now() - lastSuccess.current > 10 * 60_000) window.location.reload(); }, 60_000);
     return () => { alive.current = false; clearInterval(poll); clearInterval(watchdog); };
   }, [load]);
@@ -76,33 +95,46 @@ export default function QueueDisplayClient({ deviceId, deviceName }: { deviceId:
     return () => { window.removeEventListener("mousemove", activity); window.removeEventListener("touchstart", activity); if (cursorTimer.current) clearTimeout(cursorTimer.current); };
   }, []);
 
+  async function enableAudio() {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (Ctx) { audio.current = audio.current ?? new Ctx(); await audio.current.resume(); }
+  }
+
   async function start() {
     try {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-      if (Ctx) { audio.current = audio.current ?? new Ctx(); await audio.current.resume(); }
+      await enableAudio();
       await document.documentElement.requestFullscreen?.();
     } catch {}
     setStarted(true);
+  }
+
+  async function testSound() {
+    try {
+      await enableAudio();
+      if (audio.current) playCall(audio.current);
+      speak("اختبار صوت شاشة الانتظار");
+    } catch {}
   }
 
   const time = new Intl.DateTimeFormat("ar-IQ", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Asia/Baghdad" }).format(clock);
   const date = new Intl.DateTimeFormat("ar-IQ", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Baghdad" }).format(clock);
   const lastUpdate = data?.updatedAt ? new Intl.DateTimeFormat("ar-IQ", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Asia/Baghdad" }).format(new Date(data.updatedAt)) : "—";
 
-  if (!started) return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white" dir="rtl"><div className="max-w-xl text-center"><div className="text-7xl">📺</div><h1 className="mt-5 text-4xl font-black">{deviceName}</h1><p className="mt-3 text-lg text-slate-300">ابدأ العرض لتفعيل صوت المناداة ومحاولة ملء الشاشة.</p><button onClick={start} className="mt-8 rounded-2xl bg-teal-400 px-8 py-4 text-2xl font-black text-slate-950 shadow-xl hover:bg-teal-300">تشغيل شاشة الانتظار</button></div></main>;
+  if (!started) return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white" dir="rtl"><div className="max-w-xl text-center"><div className="text-7xl">📺</div><h1 className="mt-5 text-4xl font-black">{deviceName}</h1><p className="mt-3 text-lg text-slate-300">ابدأ العرض لتفعيل صوت المناداة ومحاولة ملء الشاشة.</p><div className="mt-8 flex flex-wrap justify-center gap-3"><button onClick={start} className="rounded-2xl bg-teal-400 px-8 py-4 text-2xl font-black text-slate-950 shadow-xl hover:bg-teal-300">تشغيل شاشة الانتظار</button><button onClick={testSound} className="rounded-2xl border border-teal-200/50 px-6 py-4 text-lg font-bold text-teal-100 hover:bg-white/10">اختبار الصوت</button></div><p className="mt-4 text-sm text-slate-400">الاختبار محلي داخل هذا الحاسوب ولا يحتاج إنترنت.</p></div></main>;
 
   return <main className={`h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 p-[clamp(1rem,2vw,3rem)] text-white ${cursorHidden ? "cursor-none" : ""}`} dir="rtl">
-    <header className="flex h-[12%] items-start justify-between gap-6">
+    <header className="flex h-[14%] items-start justify-between gap-6">
       <div><h1 className="text-[clamp(1.6rem,3vw,4rem)] font-black">{data?.device.centerName || deviceName}</h1><p className="text-[clamp(.9rem,1.3vw,1.5rem)] text-teal-100/70">{deviceName}</p></div>
       <div className="text-left"><div dir="ltr" className="font-mono text-[clamp(2rem,4vw,5rem)] font-black tabular-nums">{time}</div><div className="text-[clamp(.8rem,1.3vw,1.4rem)] text-slate-300">{date}</div></div>
     </header>
 
-    <section className="flex h-[47%] flex-col items-center justify-center rounded-[2rem] border border-white/10 bg-white/10 px-6 text-center shadow-2xl">
+    <section className="flex h-[42%] flex-col items-center justify-center rounded-[2rem] border border-white/10 bg-white/10 px-6 text-center shadow-2xl">
       <div className="text-[clamp(1rem,1.6vw,2rem)] font-bold text-teal-200">تتم الآن مناداة</div>
-      {data?.called ? <><div className="mt-3 max-w-full truncate text-[clamp(3rem,7vw,8rem)] font-black leading-tight">{data.called.name}</div><div className="mt-4 rounded-2xl bg-amber-300 px-[clamp(1rem,3vw,3rem)] py-3 text-[clamp(1.5rem,3vw,3.5rem)] font-black text-slate-950">← {data.called.hall || "يرجى التوجه إلى الاستقبال"}</div></> : <div className="mt-6 text-[clamp(2rem,4vw,5rem)] font-bold text-white/30">بانتظار المناداة</div>}
+      {data?.called ? <><div className="mt-2 max-w-full truncate text-[clamp(2.5rem,5vw,6rem)] font-black leading-tight">{data.called.name}</div><div className="mt-3 rounded-2xl bg-amber-300 px-[clamp(1rem,3vw,3rem)] py-3 text-[clamp(1.3rem,2.4vw,3rem)] font-black text-slate-950">← {data.called.hall || "يرجى التوجه إلى الاستقبال"}</div></> : <div className="mt-6 text-[clamp(2rem,4vw,5rem)] font-bold text-white/30">بانتظار المناداة</div>}
+      {(data?.activeCalls.length ?? 0) > 1 && <div className="mt-4 flex w-full max-w-5xl flex-wrap justify-center gap-3" aria-label="استدعاءات أخرى ما زالت ظاهرة">{data!.activeCalls.slice(1).map((item) => <div key={item.eventId} className="rounded-xl bg-white/10 px-5 py-2 text-right"><span className="font-bold">{item.name}</span><span className="mr-3 text-teal-100/75">{item.hall || "الاستقبال"}</span></div>)}</div>}
     </section>
 
-    <section className="grid h-[35%] grid-cols-2 gap-[clamp(.75rem,1.5vw,2rem)] pt-[clamp(.75rem,1.5vw,2rem)]">
+    <section className="grid h-[38%] grid-cols-2 gap-[clamp(.75rem,1.5vw,2rem)] pt-[clamp(.75rem,1.5vw,2rem)]">
       <QueueList title="داخل الجلسة" items={data?.inSession ?? []} total={data?.inSessionTotal ?? 0} tone="amber" />
       <QueueList title="قائمة الانتظار" items={data?.waiting ?? []} total={data?.waitingTotal ?? 0} tone="teal" />
     </section>

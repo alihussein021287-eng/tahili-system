@@ -8,6 +8,15 @@ import {
   sortWorkItems,
   type WorkItem,
 } from "@/lib/my-work";
+import { workStatusLabel } from "@/lib/labels";
+
+describe("my-work status labels", () => {
+  it("translates stored workflow statuses for display without changing their values", () => {
+    expect(workStatusLabel("SCHEDULED")).toBe("مجدول");
+    expect(workStatusLabel("IN_SESSION")).toBe("داخل الجلسة");
+    expect(workStatusLabel("UNKNOWN_STATUS")).toBe("UNKNOWN_STATUS");
+  });
+});
 
 const now = new Date("2026-07-24T09:00:00.000Z");
 
@@ -50,6 +59,17 @@ describe("my work rules", () => {
       item({ key: "urgent", dedupeKey: "urgent", priority: "urgent" }),
     ]);
     expect(rows.map((row) => row.key)).toEqual(["urgent", "normal"]);
+  });
+
+  it("sorts every handoff before other work regardless of priority", () => {
+    const rows = sortWorkItems([
+      item({ key: "urgent-task", priority: "urgent" }),
+      item({ key: "low-handoff", type: "handoff", priority: "low" }),
+      item({ key: "high-referral", type: "referral", priority: "high" }),
+      item({ key: "normal-handoff", type: "handoff", priority: "normal" }),
+    ]);
+    expect(rows.map((row) => row.key)).toEqual(["normal-handoff", "low-handoff", "urgent-task", "high-referral"]);
+    expect(normalizeWorkFilters({ type: "handoff" }).type).toBe("handoff");
   });
 
   it("bounds pagination and ignores unknown filters safely", () => {

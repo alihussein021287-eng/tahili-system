@@ -103,6 +103,7 @@ enum UserRole {
   ACCOUNTANT // شعبة مالية
   PHARMACIST // صيدلي
   RECEPTION // موظف استقبال
+  SECRETARY // سكرتارية
   LAB // مختبر
   RADIOLOGY // أشعة
   DRESSING // تضميد
@@ -110,6 +111,14 @@ enum UserRole {
   HEAD_THERAPIST // رئيس المعالجين
   DATA_ENTRY // مدخل بيانات
   RESIDENT // طبيب مقيم
+}
+
+enum HandoffStatus {
+  SENT
+  ACCEPTED
+  DONE
+  RETURNED
+  CANCELLED
 }
 
 enum PrescriptionStatus {
@@ -243,6 +252,9 @@ enum CenterMembershipRole {
   HEAD_THERAPIST
   THERAPIST
   DEVICE_OPERATOR
+  SECRETARY
+  RESIDENT
+  SPECIALIST
 }
 
 enum CenterMembershipStatus {
@@ -351,6 +363,9 @@ enum CollaborationQuotaTarget {
 // =====================================================================
 
 model User {
+  employeeRecord       Employee?                 @relation("EmployeeLogin")
+  dataOperations       DataOperation[]           @relation("DataOperationActor")
+  notificationReceipts NotificationReadReceipt[] @relation("UserNotificationReceipts")
   branchId         Int?
   branch           Branch?   @relation(fields: [branchId], references: [id])
   id               String    @id @default(cuid())
@@ -376,6 +391,9 @@ model User {
   // العلاقات: السجلات التي أنشأها هذا المستخدم
   auditLogs                   AuditLog[]
   createdPatients             Patient[]                   @relation("PatientCreatedBy")
+  handoffsSent                PatientHandoff[]            @relation("HandoffFromUser")
+  handoffsAssigned            PatientHandoff[]            @relation("HandoffToUser")
+  handoffsAccepted            PatientHandoff[]            @relation("HandoffAcceptedBy")
   tasksAssigned               Task[]                      @relation("TaskAssignee")
   tasksCreated                Task[]                      @relation("TaskCreator")
   woundAssessments            WoundAssessment[]           @relation("AssessedBy")
@@ -419,6 +437,8 @@ model User {
 
   @@index([username])
   @@map("users")
+  assignedCareStages CareStage[] @relation("CareStageAssignee")
+  verifiedVisits     Visit[]     @relation("VisitVerifiedBy")
 }
 
 // سجل التدقيق — من عدّل، شنو، ومتى
@@ -474,6 +494,7 @@ model Center {
   sessions         TherapySession[]
   admissions       Admission[]
   referralRequests ReferralRequest[]
+  responsibleStages CareStage[] @relation("CareStageResponsibleCenter")
   memberships      CenterMembership[]
   resources        CenterResource[]
   programs         CenterProgram[]
@@ -487,6 +508,8 @@ model Center {
   collaborationFiles         CollaborationFile[]
   collaborationFileShares    FileShare[]
   collaborationQuotas        CollaborationQuota[]
+  handoffsFrom               PatientHandoff[] @relation("HandoffFromCenter")
+  handoffsTo                 PatientHandoff[] @relation("HandoffToCenter")
 
   @@map("centers")
 }
@@ -556,8 +579,13 @@ model MedicationBatch {
   purchaseReceiptId String?
   purchaseReceipt   PurchaseReceipt?   @relation(fields: [purchaseReceiptId], references: [id], onDelete: SetNull)
 
+  // Owning branch pharmacy. NULL = UNASSIGNED legacy shared stock: never dispensable until reconciled with a verified count.
+  branchId          Int?
+  branch            Branch?            @relation("BranchPharmacyBatches", fields: [branchId], references: [id], onDelete: Restrict)
+
   @@index([medicationId])
   @@index([expiryDate])
+  @@index([branchId, medicationId])
   @@index([purchaseOrderId])
   @@index([purchaseReceiptId])
   @@map("medication_batches")
@@ -580,9 +608,15 @@ model StockMovement {
   purchaseReceipt   PurchaseReceipt?  @relation(fields: [purchaseReceiptId], references: [id], onDelete: SetNull)
   createdAt         DateTime          @default(now())
 
+  // Branch pharmacy the movement belongs to (NULL only for historical, pre-branch rows) and the acting account.
+  branchId          Int?
+  branch            Branch?           @relation("BranchPharmacyMovements", fields: [branchId], references: [id], onDelete: Restrict)
+  actorId           String?
+
   @@index([medicationId])
   @@index([type])
   @@index([createdAt])
+  @@index([branchId, createdAt])
   @@index([purchaseReceiptId])
   @@map("stock_movements")
 }
@@ -608,6 +642,10 @@ model PurchaseOrder {
   receipts             PurchaseReceipt[]
   attachments          PurchaseOrderAttachment[]
   batches              MedicationBatch[]
+
+  // Destination pharmacy of the order (receiving writes stock to this branch only); NULL = legacy.
+  branchId             Int?
+  branch               Branch?                   @relation("BranchPharmacyOrders", fields: [branchId], references: [id], onDelete: Restrict)
 
   @@index([status, expectedDeliveryDate])
   @@index([supplierId, orderDate])
@@ -770,6 +808,9 @@ model Patient {
   branch        Branch?   @relation(fields: [branchId], references: [id])
   id            String    @id @default(cuid())
   fileNumber    Int       @unique @default(autoincrement()) // رقم الملف (متسلسل يدوي/تلقائي)
+  // Data Management Center provenance: the number the record had in its source system, and the stable source-row key of the import.
+  legacyFileNumber String?
+  importSourceKey  String? @unique
 
   // البيانات الشخصية
   fullName      String // الاسم الرباعي
@@ -866,11 +907,56 @@ model Patient {
   centerSessions     CenterSession[]
   centerAssessments  CenterAssessment[]
   woundedExpenses    WoundedExpense[]
+  handoffs           PatientHandoff[]
 
   @@index([fullName])
   @@index([fileNumber])
   @@index([status])
   @@map("patients")
+}
+
+model PatientHandoff {
+  id                String        @id @default(cuid())
+  patientId         String
+  patient           Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  fromUserId        String
+  fromUser          User          @relation("HandoffFromUser", fields: [fromUserId], references: [id])
+  fromRole          UserRole
+  fromCenterId      Int?
+  fromCenter        Center?       @relation("HandoffFromCenter", fields: [fromCenterId], references: [id], onDelete: SetNull)
+  toCenterId        Int?
+  toCenter          Center?       @relation("HandoffToCenter", fields: [toCenterId], references: [id], onDelete: SetNull)
+  toRole            UserRole
+  toUserId          String?
+  toUser            User?         @relation("HandoffToUser", fields: [toUserId], references: [id])
+  status            HandoffStatus @default(SENT)
+  note              String?
+  returnReason      String?
+  sentAt            DateTime      @default(now())
+  acceptedAt        DateTime?
+  acceptedById      String?
+  acceptedBy        User?         @relation("HandoffAcceptedBy", fields: [acceptedById], references: [id])
+  doneAt            DateTime?
+  previousHandoffId String?
+  previousHandoff   PatientHandoff?  @relation("HandoffChain", fields: [previousHandoffId], references: [id])
+  // Optional exact stage this handoff is about; without it a handoff grants no authority over any stage.
+  careStageId       String?
+  careStage         CareStage?       @relation("HandoffCareStage", fields: [careStageId], references: [id], onDelete: SetNull)
+  nextHandoffs      PatientHandoff[] @relation("HandoffChain")
+  notifications     Notification[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([toCenterId, status])
+  @@index([careStageId])
+  @@index([fromCenterId])
+  @@index([toUserId, status])
+  @@index([acceptedById, status])
+  @@index([patientId, sentAt])
+  @@index([fromUserId])
+  @@index([acceptedById])
+  @@index([previousHandoffId])
+  @@map("patient_handoffs")
 }
 
 // =====================================================================
@@ -965,8 +1051,22 @@ model Visit {
   center     String? // المركز
   notes      String? // ملاحظات
   createdAt  DateTime @default(now())
+  // Receiving branch of this visit (NULL for historical visits, never guessed).
+  branchId   Int?
+  branch     Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  // Cross-branch check-in: staff attestation that a physical identity document matched the registered details.
+  verifiedById       String?
+  verifiedBy         User?     @relation("VisitVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedAt         DateTime?
+  verificationMethod String?
+  // Prescriptions issued for exactly this encounter (composite FK keeps patient and visit consistent).
+  prescriptions      Prescription[]
+  // Invoices raised for exactly this encounter: they belong to the visit's receiving branch for finance purposes.
+  invoices           Invoice[]
 
+  @@unique([id, patientId])
   @@index([patientId])
+  @@index([branchId, visitDate])
   @@map("visits")
 }
 
@@ -997,6 +1097,18 @@ model Prescription {
   createdById           String?
   createdAt             DateTime             @default(now())
 
+  // Provenance: branch where the prescription originated (receiving-branch visit, else the issuer's active branch).
+  // NULL = legacy, requires reconciliation. Dispensing is only possible at this branch's pharmacy.
+  // Explicit, verified encounter this prescription belongs to (NULL = legacy: preserved, never dispensable, no guessed backfill).
+  visitId             String?
+  visit               Visit?               @relation(fields: [visitId, patientId], references: [id, patientId], onDelete: NoAction)
+  originBranchId      Int?
+  originBranch        Branch?              @relation("PrescriptionOriginBranch", fields: [originBranchId], references: [id], onDelete: Restrict)
+  dispensingBranchId  Int?
+  dispensingBranch    Branch?              @relation("PrescriptionDispensingBranch", fields: [dispensingBranchId], references: [id], onDelete: Restrict)
+
+  @@index([originBranchId, status])
+  @@index([visitId])
   @@index([patientId])
   @@map("prescriptions")
 }
@@ -1188,8 +1300,13 @@ model Invoice {
   createdById String?
   createdAt   DateTime      @default(now())
   payments    Payment[]
+  // Optional explicit encounter. With a visit the invoice is financially owned by that visit's receiving branch; without one it
+  // follows the patient's home branch (legacy / patient-only). Never inferred, immutable after creation.
+  visitId     String?
+  visit       Visit?        @relation(fields: [visitId, patientId], references: [id, patientId], onDelete: NoAction)
 
   @@index([patientId])
+  @@index([visitId])
   @@index([status])
 }
 
@@ -1237,6 +1354,89 @@ model Employee {
   id   Int     @id @default(autoincrement())
   name String
   job  String?
+  // Import provenance and the personnel attributes that have no other home (nullable, additive; never inferred).
+  department String?
+  specialty  String?
+  capacity   String?
+  sourceKey  String? @unique
+  // EMPLOYEE | RESIDENT | SPECIALIST (data center personnel domains). Optional link to a login account; never inferred.
+  category   String?
+  userId     String? @unique
+  user       User?   @relation("EmployeeLogin", fields: [userId], references: [id], onDelete: SetNull)
+  // Personnel management (09.3): branch scope, optional contact/notes, and an explicit attendance obligation (null = legacy rule: roster rows without a category).
+  branchId           Int?
+  branch             Branch? @relation("EmployeeBranch", fields: [branchId], references: [id], onDelete: SetNull)
+  phone              String?
+  notes              String?
+  attendanceRequired Boolean?
+
+  @@index([branchId, category])
+}
+
+enum DataOperationKind {
+  IMPORT
+  EXPORT
+}
+
+enum DataOperationStatus {
+  PREVIEWED
+  APPLYING
+  APPLIED
+  PARTIAL
+  FAILED
+  CANCELLED
+  COMPLETED
+  DENIED
+}
+
+// Data Management Center operation (import preview/apply or export). Row-level records hold NO personal data; the uploaded file
+// bytes (private, never served) are purged when the operation ends.
+model DataOperation {
+  id              String              @id @default(cuid())
+  kind            DataOperationKind
+  domain          String
+  status          DataOperationStatus
+  branchId        Int?
+  branch          Branch?             @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  actorId         String
+  actor           User                @relation("DataOperationActor", fields: [actorId], references: [id])
+  templateVersion String?
+  format          String?
+  fileName        String?
+  fileSha256      String?
+  fileBytes       Bytes?
+  planSha256      String?
+  rowCount        Int                 @default(0)
+  counts          Json?
+  scope           Json?
+  error           String?
+  expiresAt       DateTime?
+  confirmedAt     DateTime?
+  appliedAt       DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  rows            DataOperationRow[]
+
+  @@index([actorId, createdAt])
+  @@index([domain, branchId, fileSha256])
+  @@index([kind, status])
+  @@map("data_operations")
+}
+
+model DataOperationRow {
+  id             String        @id @default(cuid())
+  operationId    String
+  operation      DataOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  rowNumber      Int
+  sourceKey      String
+  disposition    String
+  reasons        String?
+  fieldErrors    Json?
+  resultRecordId String?
+  createdAt      DateTime      @default(now())
+
+  @@index([operationId, rowNumber])
+  @@map("data_operation_rows")
 }
 
 model ProgressMetric {
@@ -1294,11 +1494,16 @@ model QueueEntry {
   calledAt  DateTime?
   centerId  Int?
   center    Center?     @relation(fields: [centerId], references: [id], onDelete: SetNull)
+  // Branch of the staff member who queued the patient; the only branch basis when the patient has none.
+  branchId  Int?
+  branch    Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull)
   updatedAt DateTime    @updatedAt
 
   @@index([status])
+  @@index([branchId, createdAt])
   @@index([createdAt])
   @@index([centerId, createdAt])
+  @@index([patientId, centerId, createdAt])
 }
 
 model DisplayDevice {
@@ -2001,6 +2206,9 @@ model ReferralRequest {
   destinationCenterId Int?
   destinationCenter   Center? @relation(fields: [destinationCenterId], references: [id], onDelete: SetNull)
 
+  /// The doctor's suggested therapist for a simple internal-centre case; the head therapist decides.
+  suggestedTherapistId String?
+
   type             ReferralRequestType
   destinationScope ReferralDestinationScope
   externalEntity   String?
@@ -2166,6 +2374,15 @@ model ReportApproval {
 }
 
 // ===== مسار متابعة المريض (سلسلة المحطّات المترابطة) =====
+// Who is accountable for a care stage. CENTER requires active membership of responsibleCenterId;
+// SERVICE is a catalog station (role-based). NULL = legacy/unclassified: existing role rules only, never broadened.
+enum ResponsibilityScope {
+  CENTER
+  SERVICE
+  // Review stage of an INTERNAL_SPECIALIST referral; authority is the referral's assigned reviewer only.
+  SPECIALIST_REVIEW
+}
+
 enum StageStatus {
   WAITING // بالانتظار
   IN_PROGRESS // قيد التنفيذ
@@ -2179,6 +2396,15 @@ model CareStage {
   patient         Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
   station         String // اسم المحطة (الاستقبال/الطبيب/الصيدلية/العلاج...)
   responsibleRole UserRole? // الدور المسؤول عن تأكيد هذه المحطة
+  responsibilityScope ResponsibilityScope?
+  responsibleCenterId Int?
+  responsibleCenter   Center? @relation("CareStageResponsibleCenter", fields: [responsibleCenterId], references: [id], onDelete: SetNull)
+  // Individual assignment: set only by a stage-linked handoff acceptance or an accepted specialist referral.
+  assignedUserId      String?
+  assignedUser        User?   @relation("CareStageAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  assignedAt          DateTime?
+  handoffs            PatientHandoff[] @relation("HandoffCareStage")
+  notifications       Notification[]
   sequence        Int              @default(0) // الترتيب بالسلسلة
   status          StageStatus      @default(WAITING)
   note            String?
@@ -2192,6 +2418,8 @@ model CareStage {
 
   @@index([patientId, sequence])
   @@index([status])
+  @@index([responsibleCenterId])
+  @@index([assignedUserId, status])
 }
 
 // ===== أرشيف الإجراءات الرسمية (كتب/قرارات/إحالات) =====
@@ -2280,6 +2508,19 @@ model ApprovalStep {
 }
 
 // ===== إشعارات بين المحطات =====
+model NotificationReadReceipt {
+  id             String       @id @default(cuid())
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("UserNotificationReceipts", fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime     @default(now())
+
+  @@unique([notificationId, userId])
+  @@index([userId])
+  @@map("notification_read_receipts")
+}
+
 model Notification {
   id           String    @id @default(cuid())
   targetRole   UserRole? // موجّه لدور
@@ -2287,11 +2528,22 @@ model Notification {
   title        String
   body         String?
   link         String?
+  // Links a handoff notice to its workflow record, so terminal notices can be closed reliably.
+  handoffId    String?
+  handoff      PatientHandoff? @relation(fields: [handoffId], references: [id], onDelete: SetNull)
+  // Work notice of a care stage; resolvedAt closes the work item without touching read/unread.
+  careStageId  String?
+  careStage    CareStage? @relation(fields: [careStageId], references: [id], onDelete: SetNull)
+  resolvedAt   DateTime?
   read         Boolean   @default(false)
   createdAt    DateTime  @default(now())
+  // Per-user read state for role-wide notices (`read` stays the single flag for user-targeted notices and legacy rows).
+  readReceipts NotificationReadReceipt[]
 
   @@index([targetRole, read])
   @@index([targetUserId, read])
+  @@index([handoffId, read])
+  @@index([careStageId, resolvedAt])
 }
 
 // ===== سجل الدخول والجلسات =====
@@ -2312,6 +2564,7 @@ model LoginLog {
 
 // ===== دعم متعدّد الفروع =====
 model Branch {
+  dataOperations DataOperation[]
   id       Int       @id @default(autoincrement())
   name     String    @unique
   address  String?
@@ -2319,8 +2572,16 @@ model Branch {
   isActive Boolean   @default(true)
   users    User[]
   patients Patient[]
+  queueEntries QueueEntry[]
+  visits       Visit[]
+  pharmacyBatches   MedicationBatch[] @relation("BranchPharmacyBatches")
+  pharmacyMovements StockMovement[]   @relation("BranchPharmacyMovements")
+  originPrescriptions     Prescription[] @relation("PrescriptionOriginBranch")
+  dispensedPrescriptions  Prescription[] @relation("PrescriptionDispensingBranch")
+  pharmacyOrders    PurchaseOrder[]   @relation("BranchPharmacyOrders")
 
   @@map("branches")
+  employees Employee[] @relation("EmployeeBranch")
 }
 
 // ===== الإجازات المرضية للمراجعين =====

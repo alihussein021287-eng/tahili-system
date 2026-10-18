@@ -26,7 +26,7 @@ export default async function ResourcesPage({ params }: { params: Promise<{ slug
   const canManage = perms.has("centers.resources.manage");
   return <div className="space-y-5">
     <PageHeader title={`الموارد والحجوزات، ${config.title}`} subtitle="الأجهزة والغرف والقاعات والسعة والتوفر" icon="⚙">
-      <Link href="/therapy-centers?tab=centers" className="btn-ghost bg-white text-brand-700">لوحة المسار العلاجي والمراكز</Link>
+      <Link href="/centers" className="btn-ghost bg-white text-brand-700">← كل المراكز</Link>
     </PageHeader>
     {canManage ? <form action={saveCenterResource.bind(null, center.id)} className="card grid gap-3 p-5 md:grid-cols-3" autoComplete="off">
       <h2 className="font-bold md:col-span-3">إضافة أو تحديث مورد</h2>

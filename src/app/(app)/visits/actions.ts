@@ -4,6 +4,7 @@ import { assertPerm, requireSession } from "@/lib/access";
 import { notifyRoleInTransaction } from "@/lib/notify";
 import { centerStationByName } from "@/lib/stations";
 import { assertCenterHallByName } from "@/lib/center-halls";
+import { MAX_FAILED_PER_PATIENT, MAX_FAILED_PER_USER, VERIFICATION_FIELDS, VERIFICATION_METHOD, VERIFICATION_WINDOW_MS, verifyDocumentDetails } from "@/lib/identity-verification";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
@@ -74,6 +75,47 @@ export async function receptionCheckIn(fd: FormData) {
   }
 
   const userId = (session.user as { id?: string })?.id;
+  // Receiving branch and, for a patient outside the receptionist's own branch, the physical-document attestation.
+  const [pt, me] = await Promise.all([
+    prisma.patient.findUnique({ where: { id: patientId }, select: { branchId: true, birthDate: true, motherName: true, archivedAt: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { role: true, branchId: true, isActive: true, branch: { select: { isActive: true } } } }),
+  ]);
+  if (!pt || !me?.isActive) redirect(withSaved(returnTo, "المراجع غير موجود"));
+  const ownBranch = me!.branchId != null && me!.branch?.isActive === true ? me!.branchId : null;
+  const central = me!.role === "ADMIN";
+  if (!central && ownBranch == null) redirect(withSaved(returnTo, "حسابك غير مرتبط بفرع فعّال؛ لا يمكن تسجيل الحضور"));
+  const crossBranch = !central && pt!.branchId !== ownBranch;
+  const receivingBranchId = central ? (ownBranch ?? pt!.branchId) : ownBranch;
+  if (crossBranch) {
+    const windowStart = new Date(Date.now() - VERIFICATION_WINDOW_MS);
+    const [perPatient, perUser] = await Promise.all([
+      prisma.auditLog.count({ where: { userId, tableName: "identity_verification", recordId: patientId, createdAt: { gte: windowStart } } }),
+      prisma.auditLog.count({ where: { userId, tableName: "identity_verification", createdAt: { gte: windowStart } } }),
+    ]);
+    if (perPatient >= MAX_FAILED_PER_PATIENT || perUser >= MAX_FAILED_PER_USER) {
+      redirect(withSaved(returnTo, "محاولات تحقق كثيرة؛ حاول لاحقاً أو راجع المسؤول"));
+    }
+    const attested = fd.get("documentAttested")?.toString() === "1";
+    const outcome = attested
+      ? verifyDocumentDetails(
+        { birthDate: pt!.birthDate, motherName: pt!.motherName },
+        { birthDate: fd.get("documentBirthDate")?.toString() ?? "", motherName: fd.get("documentMotherName")?.toString() ?? "" },
+      )
+      : "MISSING_INPUT";
+    if (outcome === "INSUFFICIENT_RECORD") {
+      redirect(withSaved(returnTo, "بيانات تسجيل هذا المراجع لا تكفي للتحقق من هويته في فرع آخر؛ يُرجى مراجعة فرعه الأصلي"));
+    }
+    if (outcome !== "OK") {
+      // Only a real mismatch is recorded (no entered values) and counted for throttling; nothing else is written.
+      if (outcome === "MISMATCH") {
+        await prisma.auditLog.create({ data: { userId, action: "UPDATE", tableName: "identity_verification", recordId: patientId, newValue: { result: "FAILED" } } });
+      }
+      redirect(withSaved(returnTo, "تعذّر التحقق من الهوية؛ تأكد من الوثيقة الأصلية والبيانات المدخلة"));
+    }
+  }
+  // Queue enrollment needs a receiving branch; the visit itself is unaffected.
+  const queueBranchId: number | null = receivingBranchId;
+  const queueSkipped = sendQueue && queueBranchId == null;
   let result: { existingVisit: boolean; queued: boolean; stageCreated: boolean };
   try {
     result = await runSerializable(async (tx) => {
@@ -84,8 +126,12 @@ export async function receptionCheckIn(fd: FormData) {
       if (!patient) throw new Error("المراجع غير موجود");
       if (patient.archivedAt) throw new Error("لا يمكن تسجيل زيارة لمراجع مؤرشف");
 
+      // Same-day reuse is per receiving branch; historical visits without a branch only count for the patient's own branch.
       const existingVisit = await tx.visit.findFirst({
-        where: { patientId, visitDate: { gte: startToday, lt: endToday } },
+        where: {
+          patientId, visitDate: { gte: startToday, lt: endToday },
+          OR: [{ branchId: receivingBranchId }, ...(receivingBranchId === pt!.branchId ? [{ branchId: null }] : [])],
+        },
         orderBy: { visitDate: "desc" },
       });
       const visit = existingVisit ?? await tx.visit.create({
@@ -93,24 +139,28 @@ export async function receptionCheckIn(fd: FormData) {
           patientId,
           sequenceNo: (await tx.visit.count({ where: { patientId } })) + 1,
           notes: noteText || "تسجيل حضور من الاستقبال",
+          branchId: receivingBranchId,
+          ...(crossBranch ? { verifiedById: userId, verifiedAt: new Date(), verificationMethod: VERIFICATION_METHOD } : {}),
         },
       });
       if (!existingVisit) {
-        await tx.auditLog.create({ data: { userId, action: "CREATE", tableName: "visits", recordId: visit.id } });
+        await tx.auditLog.create({ data: { userId, action: "CREATE", tableName: "visits", recordId: visit.id,
+          newValue: crossBranch ? { crossBranch: true, receivingBranchId, homeBranchId: pt!.branchId, method: VERIFICATION_METHOD, fields: VERIFICATION_FIELDS } : undefined } });
       }
 
       let queued = false;
-      if (sendQueue) {
+      if (sendQueue && !queueSkipped) {
         const existingQueue = await tx.queueEntry.findFirst({
           where: {
             patientId,
             createdAt: { gte: startToday, lt: endToday },
             status: { in: [...ACTIVE_QUEUE_STATUSES] },
+            OR: [{ branchId: queueBranchId }, ...(queueBranchId === pt!.branchId ? [{ branchId: null }] : [])],
           },
           select: { id: true },
         });
         if (!existingQueue) {
-          const createdQueue = await tx.queueEntry.create({ data: { patientId, centerId: queueCenterId, hall, note: queueNote } });
+          const createdQueue = await tx.queueEntry.create({ data: { patientId, centerId: queueCenterId, hall, note: queueNote, branchId: queueBranchId } });
           await tx.auditLog.create({ data: { userId, action: "CREATE", tableName: "queue_entries", recordId: createdQueue.id } });
           queued = true;
         }
@@ -136,6 +186,7 @@ export async function receptionCheckIn(fd: FormData) {
               patientId,
               station: destination.name,
               responsibleRole: destination.role,
+              responsibilityScope: "SERVICE", // catalog station: role-based, not tied to one center
               sequence: (max._max.sequence ?? -1) + 1,
               note: "تحويل بعد تسجيل الحضور",
               createdById: userId,
@@ -158,6 +209,7 @@ export async function receptionCheckIn(fd: FormData) {
             {
               body: `${patient.fullName} (#${patient.fileNumber})، الوجهة: ${destination.name}`,
               link: `/patients/${patient.id}`,
+              careStageId: stage.id,
             },
           );
         }
@@ -179,7 +231,8 @@ export async function receptionCheckIn(fd: FormData) {
   revalidatePath("/notifications");
   revalidatePath("/");
   const parts = [result.existingVisit ? "زيارة اليوم مسجلة مسبقاً" : "تم تسجيل زيارة اليوم"];
-  if (sendQueue) parts.push(result.queued ? "تم الإرسال للطابور" : "المراجع موجود بالفعل في طابور اليوم");
+  if (crossBranch) parts.push("تم تسجيل الحضور بعد التحقق من الوثيقة الأصلية");
+  if (sendQueue) parts.push(queueSkipped ? "لم يُرسل للطابور: المراجع خارج نطاق فرعك" : result.queued ? "تم الإرسال للطابور" : "المراجع موجود بالفعل في طابور اليوم");
   if (destination) parts.push(result.stageCreated ? `تم التحويل إلى ${destination.name}` : `التحويل إلى ${destination.name} مسجل مسبقاً`);
   redirect(withSaved(returnTo, parts.join("، ")));
 }

@@ -1,8 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { fmtDate } from "@/lib/labels";
-import { dispensePrescription, rejectPrescription } from "@/app/(app)/pharmacy/actions";
+import { dispenseWithFeedback, rejectWithFeedback } from "@/app/(app)/pharmacy/actions";
 
 type Rx = { id: string; medication: { name: string; quantity?: number; minQuantity?: number; unit?: string | null } | null; materialName: string | null; quantity: string | null; count: number | null; doctor: string | null; prescribedAt: string; status: string; dispensedQty: number };
 type Group = { patient: { id: string; fullName: string; fileNumber: string }; items: Rx[] };
@@ -73,23 +73,7 @@ export function DispenseQueue({ groups, cDispense, cPartial, cPrint }: { groups:
                       </div>
                     </div>
 
-                    {cDispense && (
-                      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
-                        <form action={dispensePrescription.bind(null, rx.id)} className="flex items-center gap-1.5">
-                          <label className="text-xs text-gray-500">الكمية الفعلية</label>
-                          <input name="qty" type="number" min="1" defaultValue={remaining || need} className="input !w-20 !py-1 text-sm" />
-                          <button name="partial" value="0" className="btn-primary !py-1.5 text-xs" type="submit">تجهيز كامل</button>
-                          {cPartial ? <button name="partial" value="1" className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-200" type="submit">صرف جزئي</button> : null}
-                        </form>
-                        <details className="relative mr-auto">
-                          <summary className="cursor-pointer list-none rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">رفض</summary>
-                          <form action={rejectPrescription.bind(null, rx.id)} className="absolute left-0 z-10 mt-1 w-60 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
-                            <input name="reason" className="input !py-1 text-xs" placeholder="سبب الرفض" />
-                            <button className="btn-ghost mt-1 w-full !py-1 text-xs text-red-600" type="submit">تأكيد الرفض</button>
-                          </form>
-                        </details>
-                      </div>
-                    )}
+                    {cDispense && <RxActions rxId={rx.id} remaining={remaining} need={need} cPartial={cPartial} />}
                   </div>
                 );
               })}
@@ -98,5 +82,33 @@ export function DispenseQueue({ groups, cDispense, cPartial, cPrint }: { groups:
         </div>
       )}
     </>
+  );
+}
+
+// Dispense / reject controls with inline feedback: a refusal (shortage, wrong branch, already dispensed...) is shown here
+// instead of an error page; the server transaction has already failed closed.
+function RxActions({ rxId, remaining, need, cPartial }: { rxId: string; remaining: number; need: number; cPartial: boolean }) {
+  const [dState, dAction, dPending] = useActionState(dispenseWithFeedback.bind(null, rxId), null);
+  const [rState, rAction, rPending] = useActionState(rejectWithFeedback.bind(null, rxId), null);
+  const state = dState ?? rState;
+  return (
+    <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <form action={dAction} className="flex items-center gap-1.5">
+          <label className="text-xs text-gray-500">الكمية الفعلية</label>
+          <input name="qty" type="number" min="1" defaultValue={remaining || need} className="input !w-20 !py-1 text-sm" />
+          <button name="partial" value="0" disabled={dPending} className="btn-primary !py-1.5 text-xs" type="submit">تجهيز كامل</button>
+          {cPartial ? <button name="partial" value="1" disabled={dPending} className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-200" type="submit">صرف جزئي</button> : null}
+        </form>
+        <details className="relative mr-auto">
+          <summary className="cursor-pointer list-none rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100">رفض</summary>
+          <form action={rAction} className="absolute left-0 z-10 mt-1 w-60 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+            <input name="reason" className="input !py-1 text-xs" placeholder="سبب الرفض" />
+            <button disabled={rPending} className="btn-ghost mt-1 w-full !py-1 text-xs text-red-600" type="submit">تأكيد الرفض</button>
+          </form>
+        </details>
+      </div>
+      {state ? <p role={state.ok ? "status" : "alert"} className={"rounded-lg px-3 py-2 text-xs " + (state.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800")}>{state.message}</p> : null}
+    </div>
   );
 }

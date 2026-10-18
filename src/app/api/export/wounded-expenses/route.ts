@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { getApiSession } from "@/lib/access";
 import { checkApiPermission,apiPermissionResponse } from "@/lib/api-permissions";
 import { fmtDate } from "@/lib/labels";
+import { patientScopeWhere } from "@/lib/patient-access";
 
 const esc=(value:unknown)=>{const text=value==null?"":String(value);return /[",\n]/.test(text)?`"${text.replace(/"/g,'""')}"`:text};
 
@@ -21,6 +22,9 @@ export async function GET(req:Request){
   if(params.get("type"))where.expenseType={contains:params.get("type"),mode:"insensitive"};
   if(params.get("status"))where.status=params.get("status");
   if(params.get("entity"))where.beneficiaryEntity={contains:params.get("entity"),mode:"insensitive"};
+  const scopePerms=(await checkApiPermission(userId,role,"patients.view"));
+  const patientScope=scopePerms.allowed===false?{id:"__no_scope__"}:await patientScopeWhere(prisma,{userId,role,permissions:scopePerms.permissions});
+  where.patient={AND:[patientScope]};
   const rows=await prisma.woundedExpense.findMany({where,include:{patient:true},orderBy:{requestDate:"desc"}});
   const data=[["رقم السند","التاريخ","المراجع","المستفيد","الجهة","النوع","الحالة","المبلغ","العملة","سبب الصرف"],...rows.map((row)=>[row.voucherNo,fmtDate(row.requestDate),row.patient.fullName,row.beneficiary,row.beneficiaryEntity,row.expenseType,row.status,row.amount,row.currency,row.reason])];
   await prisma.auditLog.create({data:{userId,action:"UPDATE",tableName:"wounded_expenses",recordId:"REPORT",newValue:{exported:true,count:rows.length}}});

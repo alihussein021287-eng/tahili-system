@@ -42,6 +42,10 @@ describe("Tahili environment access matrix", () => {
     const access = resolveEnvironmentAccess(requestHeaders, env);
     expect(access).toMatchObject({ secure, sessionCookieName: cookieName });
     expect(authOptionsForAccess(access!).useSecureCookies).toBe(secure);
+    expect(authOptionsForAccess(access!).cookies?.sessionToken).toEqual({
+      name: cookieName,
+      options: { httpOnly: true, sameSite: "lax", path: "/", secure },
+    });
   });
 
   it("rejects unknown, cross-environment, spoofed, and non-HTTPS domain hosts", () => {

@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.local.example
 .secrets/
 
 # Dependencies and Next.js build output
@@ -36,6 +37,7 @@ _images/
 
 # Databases, dumps, archives, and private key material
 *.sql
+!prisma/migrations/**/migration.sql
 *.sql.gz
 *.dump
 *.backup
@@ -73,3 +75,32 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# ai-mission
+.ai/runs/
+.ai/state.json
+.ai/run.lock
+.ai/NEEDS_HUMAN.md
+.ai/cache/
+.ai/supervise.cmd
+.ai/supervise.sh
+.ai/supervisor.log
+.ai/design/
+
+# acceptance run output (artifacts, screenshots, credentials-derived state)
+release-evidence/acceptance-run/
+release-evidence/playwright-output/
+
+# Private release evidence, packaged images, and real import/export material
+/.ai/
+/release-evidence/
+/release-package/
+/import-input/
+/import-output/
+*.xls
+*.xlsx
+*.csv
+
+# Personal planning notes retained privately
+/#U256a#U00fa#U2518#U00fc#U2518#U00e2#U256a#U00ba#U256a#U2592_#U256a#U00ba#U2518#U00e4#U256a#U00ac#U256a#U2556#U2518#U00ea#U2518#U00e8#U256a#U2592#U256a#U00ba#U256a#U00ac.md
+/╪ú┘ü┘â╪º╪▒_╪º┘ä╪¬╪╖┘ê┘è╪▒╪º╪¬.md

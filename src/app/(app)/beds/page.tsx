@@ -9,6 +9,9 @@ import { authOptions } from "@/lib/auth";
 import Link from "next/link";
 import { fmtDate } from "@/lib/labels";
 import { addRoom, addBed, updateRoom, deleteRoom, assignBed } from "./actions";
+import { HubTabs } from "@/components/hub/HubTabs";
+import { AdmissionsTable } from "@/components/therapy/TherapyTables";
+import { THERAPY_CENTERS_NAV } from "@/lib/hub-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -22,20 +25,21 @@ export default async function Beds() {
 
   const [rooms, active] = await Promise.all([
     prisma.room.findMany({ include: { beds: { orderBy: { label: "asc" } } }, orderBy: { name: "asc" } }),
-    prisma.admission.findMany({ where: { status: "ADMITTED" }, include: { patient: true, bed: true } }),
+    prisma.admission.findMany({ where: { status: "ADMITTED" }, include: { patient: true, bed: true, room: true, center: true }, orderBy: [{ expectedDischargeDate: "asc" }, { admissionDate: "asc" }] }),
   ]);
 
   const totalBeds = rooms.reduce((a, r) => a + r.capacity, 0);
   const occupied = active.filter((a) => a.roomId != null).length;
   const unassigned = active.filter((a) => a.roomId == null);
   const free = Math.max(0, totalBeds - occupied);
+  const now = new Date();
+  const overdue = active.filter((a) => a.expectedDischargeDate && a.expectedDischargeDate < now).length;
   const pct = totalBeds > 0 ? Math.round((occupied / totalBeds) * 100) : 0;
 
   return (
     <div className="space-y-5">
-      <PageHeader title="الرقود والفندقة" subtitle="إشغال الغرف ومتابعة الرقود" icon="🛏">
-        <Link href="/therapy-centers?tab=beds" className="btn-ghost bg-white text-brand-700">لوحة المسار العلاجي والمراكز</Link>
-      </PageHeader>
+      <PageHeader title="الرقود والفندقة" subtitle="إشغال الغرف ومتابعة الرقود" icon="🛏" />
+      <HubTabs nav={THERAPY_CENTERS_NAV} active="beds" label="تبويبات المسار العلاجي والمراكز" perms={perms} />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div className="card p-5"><div className="text-2xl font-bold text-gray-800">{totalBeds}</div><div className="text-sm text-gray-500">إجمالي الأسرّة</div></div>
@@ -67,6 +71,11 @@ export default async function Beds() {
           </div>
         </div>
       )}
+
+      <details className="card p-4" open={overdue > 0}>
+        <summary className="cursor-pointer font-bold">الراقدون حالياً ({active.length}){overdue ? <span className="mr-2 text-sm font-semibold text-red-700">، {overdue} تجاوزوا موعد الخروج</span> : null}</summary>
+        <div className="mt-3"><AdmissionsTable rows={active as any[]} /></div>
+      </details>
 
       {cManage && (
         <form action={addRoom} className="card flex flex-wrap items-end gap-2 p-4">

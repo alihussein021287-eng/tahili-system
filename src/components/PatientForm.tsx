@@ -1,3 +1,6 @@
+"use client";
+
+import { useActionState } from "react";
 import { GENDER, MARITAL, PATIENT_STATUS, CASE_TYPE, KINSHIP } from "@/lib/labels";
 import { GovernoratePicker } from "./GovernoratePicker";
 import { SubmitButton } from "./SubmitButton";
@@ -23,14 +26,16 @@ function LookupSelect({ label, name, items, defaultValue, req }: any) {
 export function PatientForm({
   action, patient, governorates = [], injuryTypes = [], centers = [], formations = [], ranks = [], employees = [], branches = [], mobilityAids = [], prostheticTypes = [], defaultBranchId,
 }: {
-  action: (fd: FormData) => void; patient?: any;
+  action: (state: { error: string | null }, fd: FormData) => Promise<{ error: string | null }>; patient?: any;
   governorates?: any[]; injuryTypes?: any[]; centers?: any[]; formations?: any[]; ranks?: any[]; employees?: any[]; branches?: any[]; mobilityAids?: any[]; prostheticTypes?: any[];
   defaultBranchId?: number | null;
 }) {
   const p = patient ?? {};
   const branchValue = p.branchId ?? defaultBranchId ?? null;
+  const [state, formAction] = useActionState(action, { error: null });
   return (
-    <form action={action} className="space-y-6" autoComplete="off">
+    <form action={formAction} className="space-y-6" autoComplete="off">
+      {state.error ? <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{state.error}</div> : null}
       <section className="card p-5">
         <h2 className="mb-4 font-semibold text-gray-700">البيانات الشخصية</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

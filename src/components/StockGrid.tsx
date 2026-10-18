@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Combobox } from "@/components/Combobox";
 import { fmtDate } from "@/lib/labels";
+import { expiryLevel } from "@/lib/pharmacy-expiry";
 import { setMinQuantity, addBatch, updateBatch, deleteBatch, disposeBatch } from "@/app/(app)/pharmacy/actions";
 
 type Batch = { id: number; batchNo: string | null; quantity: number; expiryDate: string | null; receivedAt: string; supplierId: number | null; supplier?: { name: string } | null };
@@ -13,23 +14,22 @@ function medState(m: Med, now: number, soon: number) {
   if (m.quantity <= m.minQuantity) return { label: "منخفض", cls: "bg-amber-100 text-amber-800", card: "border-amber-300 bg-amber-50/40" };
   const hasExpired = m.batches.some((b) => b.quantity > 0 && expState(b.expiryDate, now, soon) === "expired");
   if (hasExpired) return { label: "فيه منتهي", cls: "bg-red-100 text-red-700", card: "border-red-200 bg-red-50/30" };
+  const hasUrgent = m.batches.some((b) => b.quantity > 0 && expState(b.expiryDate, now, soon) === "urgent");
+  if (hasUrgent) return { label: "فيه عاجل", cls: "bg-red-100 text-red-700", card: "border-red-200 bg-red-50/30" };
   const hasSoon = m.batches.some((b) => b.quantity > 0 && expState(b.expiryDate, now, soon) === "soon");
-  if (hasSoon) return { label: "قريب النفاذ", cls: "bg-amber-100 text-amber-800", card: "border-amber-200 bg-amber-50/30" };
+  if (hasSoon) return { label: "فيه قريب", cls: "bg-amber-100 text-amber-800", card: "border-amber-200 bg-amber-50/30" };
   return { label: "جيد", cls: "bg-emerald-100 text-emerald-700", card: "border-gray-200 bg-white hover:border-brand-300" };
 }
 
-function expState(d: string | null, now: number, soon: number) {
-  if (!d) return "none";
-  const t = new Date(d).getTime();
-  if (t < now) return "expired";
-  if (t <= soon) return "soon";
-  return "ok";
+// Expired, urgent (30 days) and near (90 days): the same rule as the rest of the pharmacy.
+function expState(d: string | null, now: number, _soon?: number) {
+  return expiryLevel(d, new Date(now));
 }
 
 export function StockGrid({ meds, suppliers, cBatch, cDel = false }: { meds: Med[]; suppliers: Supplier[]; cBatch: boolean; cDel?: boolean }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const now = Date.now();
-  const soon = now + 60 * 86400000;
+  const soon = now + 90 * 86400000;
   const open = meds.find((m) => m.id === openId) ?? null;
 
   return (
@@ -37,12 +37,12 @@ export function StockGrid({ meds, suppliers, cBatch, cDel = false }: { meds: Med
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {meds.map((m) => {
           const state = medState(m, now, soon);
-          const hasExpired = m.batches.some((b) => b.quantity > 0 && expState(b.expiryDate, now, soon) === "expired");
+          const hasExpired = m.batches.some((b) => b.quantity > 0 && ["expired", "urgent"].includes(expState(b.expiryDate, now, soon)));
           const hasSoon = m.batches.some((b) => b.quantity > 0 && expState(b.expiryDate, now, soon) === "soon");
           return (
             <button key={m.id} onClick={() => setOpenId(m.id)}
               className={`group relative flex flex-col items-center gap-2 rounded-xl border p-3 text-center transition hover:shadow-md ${state.card}`}>
-              {(hasExpired || hasSoon) && <span className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ${hasExpired ? "bg-red-500" : "bg-amber-400"}`} title={hasExpired ? "دفعة منتهية" : "دفعة قريبة النفاذ"} />}
+              {(hasExpired || hasSoon) && <span className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ${hasExpired ? "bg-red-500" : "bg-amber-400"}`} title={hasExpired ? "دفعة منتهية أو عاجلة" : "دفعة قريبة النفاذ"} />}
               <span className={`flex h-11 w-11 items-center justify-center rounded-full text-xl ${m.quantity <= m.minQuantity ? "bg-red-100" : "bg-brand-50 group-hover:bg-brand-100"}`}>💊</span>
               <span className="line-clamp-2 text-sm font-semibold leading-tight text-gray-800">{m.name}</span>
               <span className={`badge ${state.cls}`}>{state.label}</span>
@@ -84,9 +84,9 @@ export function StockGrid({ meds, suppliers, cBatch, cDel = false }: { meds: Med
                 <div className="space-y-2">
                   {open.batches.map((b) => {
                     const st = expState(b.expiryDate, now, soon);
-                    const ring = st === "expired" ? "border-red-300 bg-red-50/50" : st === "soon" ? "border-amber-300 bg-amber-50/50" : "border-gray-200 bg-white";
-                    const stLabel = b.quantity <= 0 ? "نافدة" : st === "expired" ? "منتهية" : st === "soon" ? "قريبة النفاذ" : "جيدة";
-                    const stCls = b.quantity <= 0 || st === "expired" ? "bg-red-100 text-red-700" : st === "soon" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700";
+                    const ring = st === "expired" || st === "urgent" ? "border-red-300 bg-red-50/50" : st === "soon" ? "border-amber-300 bg-amber-50/50" : "border-gray-200 bg-white";
+                    const stLabel = b.quantity <= 0 ? "نافدة" : st === "expired" ? "منتهية" : st === "urgent" ? "عاجل" : st === "soon" ? "قريب" : "جيدة";
+                    const stCls = b.quantity <= 0 || st === "expired" || st === "urgent" ? "bg-red-100 text-red-700" : st === "soon" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700";
                     return (
                       <div key={b.id} className={`flex flex-wrap items-end gap-2 rounded-lg border p-2.5 ${ring}`}>
                         <span className={`self-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${stCls}`}>{stLabel}</span>
@@ -95,7 +95,7 @@ export function StockGrid({ meds, suppliers, cBatch, cDel = false }: { meds: Med
                             <form action={updateBatch.bind(null, b.id)} className="flex flex-1 flex-wrap items-end gap-2">
                               <label className="block"><span className="mb-0.5 block text-[10px] text-gray-400">رقم الدفعة</span><input name="batchNo" defaultValue={b.batchNo ?? ""} className="input !w-24 !py-1 text-xs" placeholder="—" /></label>
                               <label className="block"><span className="mb-0.5 block text-[10px] text-gray-400">الكمية</span><input name="quantity" type="number" defaultValue={b.quantity} className="input !w-20 !py-1 text-xs" /></label>
-                              <label className="block"><span className="mb-0.5 block text-[10px] text-gray-400">النفاذية{st === "expired" ? " · منتهية" : st === "soon" ? " · قريبة" : ""}</span><input name="expiryDate" type="date" defaultValue={b.expiryDate ? new Date(b.expiryDate).toISOString().slice(0, 10) : ""} className={`input !w-36 !py-1 text-xs ${st === "expired" ? "!border-red-300 !text-red-700" : st === "soon" ? "!border-amber-300 !text-amber-700" : ""}`} /></label>
+                              <label className="block"><span className="mb-0.5 block text-[10px] text-gray-400">النفاذية{st === "expired" ? " · منتهية" : st === "urgent" ? " · عاجل" : st === "soon" ? " · قريب" : ""}</span><input name="expiryDate" type="date" defaultValue={b.expiryDate ? new Date(b.expiryDate).toISOString().slice(0, 10) : ""} className={`input !w-36 !py-1 text-xs ${st === "expired" || st === "urgent" ? "!border-red-300 !text-red-700" : st === "soon" ? "!border-amber-300 !text-amber-700" : ""}`} /></label>
                               <label className="block"><span className="mb-0.5 block text-[10px] text-gray-400">المورّد</span><Combobox name="supplierId" allowFree={false} defaultValue={b.supplierId ? String(b.supplierId) : ""} placeholder="—" options={suppliers.map((x:any)=>({value:String(x.id),label:x.name}))} /></label>
                               <button className="btn-primary !py-1.5 text-xs" type="submit">حفظ</button>
                             </form>
@@ -108,7 +108,7 @@ export function StockGrid({ meds, suppliers, cBatch, cDel = false }: { meds: Med
                           <div className="flex flex-1 flex-wrap items-center gap-x-5 gap-y-1 text-sm">
                             <span className="text-gray-500">رقم: <span className="text-gray-800">{b.batchNo || "—"}</span></span>
                             <span className="text-gray-500">الكمية: <b className="text-gray-800">{b.quantity}</b></span>
-                            <span className={st === "expired" ? "font-bold text-red-700" : st === "soon" ? "text-amber-700" : "text-gray-500"}>النفاذية: {b.expiryDate ? fmtDate(b.expiryDate) : "—"}{st === "expired" ? " ⚠ منتهية" : st === "soon" ? " ⚠ قريبة" : ""}</span>
+                            <span className={st === "expired" || st === "urgent" ? "font-bold text-red-700" : st === "soon" ? "text-amber-700" : "text-gray-500"}>النفاذية: {b.expiryDate ? fmtDate(b.expiryDate) : "—"}{st === "expired" ? " ⚠ منتهية" : st === "urgent" ? " ⚠ عاجل" : st === "soon" ? " ⚠ قريب" : ""}</span>
                             <span className="text-gray-500">المورّد: <span className="text-gray-800">{b.supplier?.name || "—"}</span></span>
                           </div>
                         )}

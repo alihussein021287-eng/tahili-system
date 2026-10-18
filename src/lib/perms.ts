@@ -71,6 +71,11 @@ export const PERM_GROUPS: PermGroup[] = [
     { key: "queue.view", label: "عرض الطابور" },
     { key: "queue.manage", label: "إدارة الطابور (استدعاء/تحريك)" },
   ]},
+  { section: "handoff", title: "تسليم المراجع", items: [
+    { key: "handoff.send", label: "إرسال تسليم المراجع" },
+    { key: "handoff.receive", label: "استلام تسليم المراجع" },
+    { key: "handoff.manage", label: "إدارة التحويلات: أخذ/إلغاء/إعادة توجيه" },
+  ]},
   { section: "visits", title: "استعلامات وحضور المراجعين", items: [
     { key: "visits.view", label: "عرض سجل الحضور والاستعلام" },
     { key: "visits.manage", label: "تسجيل حضور مراجع" },
@@ -122,6 +127,7 @@ export const PERM_GROUPS: PermGroup[] = [
     { key: "reports.official", label: "التقرير الرسمي" },
     { key: "reports.print", label: "طباعة التقارير" },
     { key: "reports.approve", label: "اعتماد/توقيع التقرير الرسمي" },
+    { key: "reports.medical.approve", label: "اعتماد التقرير الطبي للمراجع بعد الطباعة" },
   ]},
   { section: "finance", title: "المالية", items: [
     { key: "finance.view", label: "عرض المالية" },
@@ -139,6 +145,21 @@ export const PERM_GROUPS: PermGroup[] = [
     { key: "expenses.print", label: "طباعة سند الصرف" },
     { key: "expenses.reports", label: "تقارير صرفيات الجرحى" },
     { key: "expenses.correct", label: "إلغاء أو تصحيح أو عكس الصرفية" },
+  ]},
+  { section: "datacenter", title: "استيراد وتصدير البيانات", items: [
+    { key: "datacenter.view", label: "فتح مركز البيانات وسجل عملياته" },
+    { key: "datacenter.import.patients", label: "استيراد المراجعين (معاينة)" },
+    { key: "datacenter.import.personnel", label: "استيراد الموظفين والأطباء المقيمين وأطباء الاختصاص (معاينة)" },
+    { key: "datacenter.import.accounts", label: "استيراد هويات الحسابات (غير مفعّلة)" },
+    { key: "datacenter.import.memberships", label: "استيراد عضويات المراكز الموثّقة" },
+    { key: "datacenter.import.apply", label: "تنفيذ الاستيراد المعتمد (مقفل ما لم يُفعَّل بيئياً)" },
+    { key: "datacenter.export.patients", label: "تصدير الحقول الإدارية للمراجعين" },
+    { key: "datacenter.export.personnel", label: "تصدير سجلات الموظفين والأطباء" },
+    { key: "datacenter.export.users", label: "تصدير قائمة المستخدمين دون أسرار" },
+    { key: "datacenter.export.reference", label: "تصدير قوائم الفروع والمراكز" },
+    { key: "datacenter.export.appointments", label: "تصدير ملخص المواعيد والجلسات" },
+    { key: "datacenter.export.pharmacy", label: "تصدير مخزون وحركات صيدلية الفرع" },
+    { key: "datacenter.export.finance", label: "تصدير الملخصات المالية التشغيلية" },
   ]},
   { section: "settings", title: "الإعدادات", items: [
     { key: "settings.view", label: "عرض الإعدادات" },
@@ -195,6 +216,8 @@ export const PERM_GROUPS: PermGroup[] = [
   ]},
   { section: "users", title: "المستخدمون والنظام", items: [
     { key: "users.view", label: "عرض المستخدمين" },
+    { key: "employees.view", label: "عرض سجلات الموظفين (ضمن فرع المستخدم)" },
+    { key: "employees.edit", label: "تعديل بيانات سجلات الموظفين (ضمن فرع المستخدم)" },
     { key: "users.manage", label: "إضافة/تعطيل/تغيير كلمة سر (أدمن فقط)", adminOnly: true },
     { key: "users.permissions", label: "إدارة الصلاحيات (أدمن فقط)", adminOnly: true },
     { key: "audit.view", label: "سجل التدقيق (أدمن فقط)", adminOnly: true },
@@ -226,37 +249,44 @@ const VIEWER_DEFAULT = [
 ];
 const THERAPIST_DEFAULT = [
   ...VIEWER_DEFAULT,
-  "patients.edit", "patients.print", "patients.portal",
+  "handoff.send", "handoff.receive",
+  "patients.edit", "patients.print",
   "clinical.session", "clinical.metrics", "clinical.plan", "clinical.report", "clinical.wound", "clinical.care",
   "therapy.view", "therapy.session.record", "therapy.improvement.update",
   "centers.view", "centers.sessions.record",
-  "appointments.create", "appointments.edit",
-  "queue.manage", "visits.manage", "meds.view", "meds.manage",
   "reports.official", "reports.print",
 ];
+// الطبيب يملك القرار الطبي والمراجعة، وليس أعمال التسجيل أو الاستقبال أو المخزون.
+// لا نرث قائمة المعالج هنا حتى لا تصل للطبيب صلاحيات الجلسات التنفيذية أو المواعيد
+// الإدارية بالصدفة.
 const DOCTOR_DEFAULT = [
-  ...THERAPIST_DEFAULT,
-  "patients.create", "patients.archive", "patients.import", "patients.export",
-  "clinical.diagnosis", "clinical.prescription", "clinical.admission", "clinical.care",
+  ...VIEWER_DEFAULT,
+  "handoff.send", "handoff.receive",
+  "patients.view", "patients.edit", "patients.print",
+  "clinical.diagnosis", "clinical.prescription", "clinical.admission",
+  "clinical.wound", "clinical.care", "clinical.report", "clinical.metrics", "clinical.plan",
+  "reports.print", // approved 2026-10: treating doctor/consultant may print a patient's medical report (scope still per patient)
   "therapy.view", "therapy.plan.finalize", "therapy.specialist.assign",
   "centers.view", "centers.central.view", "centers.programs.finalize", "centers.psych.sensitive",
   "beds.view", "beds.manage", "beds.assign",
-  "inventory.view", "inventory.manage", "workload.view",
-  "journey.manage", "officialdocs.manage",
-  "approvals.review", "sickleave.manage",
-  "referrals.view", "referrals.create", "referrals.updateStatus", "referrals.recordResult", "referrals.reviewResult", "referrals.accept", "referrals.cancel",
+  "journey.manage", "sickleave.manage",
+  "referrals.view", "referrals.create", "referrals.updateStatus", "referrals.reviewResult", "referrals.accept", "referrals.cancel",
 ];
 const MANAGER_DEFAULT = [
   ...DOCTOR_DEFAULT.filter((permission) => !permission.startsWith("referrals.")),
+  "reports.medical.approve", // only the authorized manager (and ADMIN) approves a printed medical report
   "pharmacy.view", "pharmacy.dispense", "pharmacy.batch", "pharmacy.print",
   "pharmacy.dispense.partial", "pharmacy.purchase.view", "pharmacy.purchase.create", "pharmacy.purchase.approve", "pharmacy.purchase.receive", "pharmacy.purchase.prices",
   "devices.view", "devices.create", "devices.maintain", 
   "attendance.view", "attendance.manage", "analytics.view",
+  "inventory.view", "inventory.manage", "workload.view",
+  "officialdocs.manage", "approvals.review", "sickleave.manage",
   "finance.view", "finance.receipt", "finance.report",
   "expenses.view", "expenses.approve", "expenses.amounts", "expenses.print", "expenses.reports", "expenses.correct",
   "shifts.manage", "shifts.approve", "reports.approve", "journey.manage",
   "approvals.approve", "approvals.execute",
   "referrals.view", "referrals.print", "referrals.updateStatus",
+  "handoff.manage",
   "centers.view", "centers.central.view", "centers.memberships.manage", "centers.resources.manage", "centers.programs.manage", "centers.programs.finalize", "centers.psych.sensitive",
   ...COLLABORATION_SUPERVISOR_DEFAULT,
 ];
@@ -266,10 +296,6 @@ const ACCOUNTANT_DEFAULT = [
   "finance.view", "finance.invoice", "finance.payment", "finance.receipt", "finance.report",
   "expenses.view", "expenses.create", "expenses.submit", "expenses.pay", "expenses.amounts", "expenses.print", "expenses.reports", "expenses.correct",
   "reports.official",
-  "journey.view", "journey.confirm",
-  "officialdocs.view",
-  "approvals.view", "approvals.create",
-  "sickleave.view",
   ...COLLABORATION_DEFAULT,
 ];
 const PHARMACIST_DEFAULT = [
@@ -278,10 +304,6 @@ const PHARMACIST_DEFAULT = [
   "pharmacy.view", "pharmacy.dispense", "pharmacy.batch", "pharmacy.print",
   "pharmacy.dispense.partial", "pharmacy.purchase.view", "pharmacy.purchase.create", "pharmacy.purchase.receive",
   "inventory.view", "inventory.manage",
-  "journey.view", "journey.confirm",
-  "officialdocs.view",
-  "approvals.view", "approvals.create",
-  "sickleave.view",
   ...COLLABORATION_DEFAULT,
 ];
 
@@ -295,26 +317,64 @@ const STATION_BASE = [
   "sickleave.view",
   ...COLLABORATION_DEFAULT,
 ];
-const RECEPTION_DEFAULT = [...STATION_BASE, "patients.create", "patients.edit", "patients.print", "patients.portal", "appointments.create", "appointments.edit", "queue.manage", "visits.manage", "officialdocs.manage"];
+// الاستقبال ليس محطة سريرية عامة: عمله يقتصر على الملف الإداري الموجود،
+// المواعيد، الحضور والطابور، ثم تسليم المراجع إلى المحطة التالية عند الحاجة.
+const RECEPTION_DEFAULT = [
+  "dashboard.view",
+  "patients.view", "patients.edit", "patients.print",
+  "appointments.view", "appointments.create", "appointments.edit",
+  "visits.view", "visits.manage",
+  "queue.view", "queue.manage",
+  "handoff.send", "handoff.receive",
+  ...COLLABORATION_DEFAULT,
+];
 const LAB_DEFAULT = [...STATION_BASE, "clinical.report"];
 const RADIOLOGY_DEFAULT = [...STATION_BASE, "clinical.report"];
 const DRESSING_DEFAULT = [...STATION_BASE, "clinical.wound", "clinical.care"];
 const PROSTHETICS_DEFAULT = [...STATION_BASE, "devices.view", "devices.create", "devices.maintain"];
-const DATA_ENTRY_DEFAULT = [...STATION_BASE, "patients.create", "patients.edit", "patients.print", "patients.portal", "appointments.create", "appointments.edit", "queue.manage", "visits.manage", "referrals.view", "referrals.print", "referrals.updateStatus", "referrals.recordResult"];
+// مدخل البيانات يجهّز الملف والإحالة إدارياً؛ لا يشارك الاستقبال الحضور أو الطابور،
+// ولا يرث صلاحيات محطة سريرية أو عامة لا يحتاجها لإنجاز هذه المهمة.
+const DATA_ENTRY_DEFAULT = [
+  "dashboard.view",
+  "patients.view", "patients.create", "patients.edit", "patients.print",
+  "appointments.view", "appointments.create", "appointments.edit",
+  "visits.view", "queue.view",
+  "referrals.view", "referrals.print", "referrals.updateStatus", "referrals.recordResult",
+  "handoff.send", "handoff.receive",
+  ...COLLABORATION_DEFAULT,
+];
+// السكرتارية تتابع الملفات والمواعيد والإحالات إدارياً بين الأقسام،
+// ولا تنشئ ملفاً ولا تنفذ حضوراً أو طابوراً أو إجراءً طبياً.
+const SECRETARY_DEFAULT = [
+  "dashboard.view",
+  "patients.view", "patients.edit", "patients.print",
+  "reports.print", // approved 2026-10: medical secretary prints reports of patients inside her/his branch scope
+  "appointments.view", "appointments.create", "appointments.edit",
+  "visits.view", "queue.view",
+  "referrals.view", "referrals.print", "referrals.updateStatus",
+  "handoff.send", "handoff.receive",
+  ...COLLABORATION_DEFAULT,
+];
 const HEAD_THERAPIST_DEFAULT = [...STATION_BASE,
+  "handoff.send", "handoff.receive",
   "patients.edit", "patients.print",
-  "appointments.create", "appointments.edit", "queue.manage", "visits.manage",
   "clinical.session", "clinical.plan", "clinical.metrics", "clinical.report",
   "therapy.view", "therapy.plan.manage", "therapy.plan.finalize",
   "therapy.evaluation.periodic", "therapy.improvement.update", "therapy.specialist.assign", "therapy.schedule.reschedule",
   "centers.view", "centers.resources.manage", "centers.programs.manage", "centers.programs.finalize", "centers.psych.sensitive",
-  "meds.view", "workload.view", "journey.manage", "shifts.view", "referrals.view", "referrals.accept",
+  "workload.view", "journey.manage", "shifts.view", "referrals.view", "referrals.accept",
   ...COLLABORATION_SUPERVISOR_DEFAULT,
 ];
 
-// الطبيب المقيم: صلاحيات المعالج + التشخيص/الإحالة (دور طبي)
+// الطبيب المقيم محطة سريرية أولية: يشخّص وينشئ/يتابع الإحالة، ثم يسلّم القرار
+// للطبيب. لا ينشئ ملفاً ولا يحجز موعداً ولا يراجع النتيجة طبياً.
 const RESIDENT_DEFAULT = [
-  ...THERAPIST_DEFAULT,
+  ...VIEWER_DEFAULT,
+  "handoff.send", "handoff.receive",
+  "patients.view", "patients.edit", "patients.print",
+  "clinical.session", "clinical.metrics", "clinical.plan", "clinical.report", "clinical.wound", "clinical.care",
+  "therapy.view", "centers.view", "centers.sessions.record",
+  "meds.view", "reports.official", "reports.print",
   "clinical.diagnosis",
   "referrals.view", "referrals.create", "referrals.updateStatus", "referrals.recordResult", "referrals.cancel",
 ];
@@ -328,6 +388,7 @@ export const ROLE_DEFAULTS: Record<UserRole, string[]> = {
   PHARMACIST: PHARMACIST_DEFAULT,
   VIEWER: VIEWER_DEFAULT,
   RECEPTION: RECEPTION_DEFAULT,
+  SECRETARY: SECRETARY_DEFAULT,
   LAB: LAB_DEFAULT,
   RADIOLOGY: RADIOLOGY_DEFAULT,
   DRESSING: DRESSING_DEFAULT,

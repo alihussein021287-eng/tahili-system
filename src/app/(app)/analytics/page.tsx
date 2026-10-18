@@ -8,6 +8,8 @@ import { Combobox } from "@/components/Combobox";
 import { PrintButton } from "@/components/PrintButton";
 import { currentUserBranch, effectiveBranchId } from "@/lib/branch-context";
 import Link from "next/link";
+import { currentStockViewer, batchViewWhere, lowStockMedications, movementViewWhere } from "@/lib/pharmacy-stock";
+import { pharmacyPrescriptionWhere } from "@/lib/pharmacy-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -137,9 +139,9 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
     prisma.therapySession.groupBy({ by: ["therapist"], where: { createdAt: dateRange, ...sessionCenterFilter, patient: { ...patientBaseWhere } }, _count: { _all: true }, orderBy: { _count: { therapist: "desc" } }, take: 12 }),
     prisma.therapySession.groupBy({ by: ["therapyType"], where: { createdAt: dateRange, ...sessionCenterFilter, patient: { ...patientBaseWhere } }, _count: { _all: true } }),
     prisma.device.groupBy({ by: ["status"], where: { patient: { ...patientBaseWhere } }, _count: { _all: true } }),
-    canPharmacy ? prisma.prescription.groupBy({ by: ["status"], where: { prescribedAt: dateRange, patient: { ...patientBaseWhere } }, _count: { _all: true } }) : Promise.resolve([]),
-    canPharmacy ? prisma.medication.findMany({ where: { quantity: { lte: prisma.medication.fields.minQuantity } }, select: { name: true, quantity: true, minQuantity: true }, orderBy: { quantity: "asc" }, take: 10 }) : Promise.resolve([]),
-    canPharmacy ? prisma.stockMovement.aggregate({ _sum: { quantity: true }, where: { type: "DISPENSE", createdAt: dateRange } }) : Promise.resolve({ _sum: { quantity: 0 } }),
+    canPharmacy ? prisma.prescription.groupBy({ by: ["status"], where: { prescribedAt: dateRange, AND: [await pharmacyPrescriptionWhere()] }, _count: { _all: true } }) : Promise.resolve([]),
+    canPharmacy ? lowStockMedications(await currentStockViewer()).then((rows) => rows.sort((a, b) => a.quantity - b.quantity).slice(0, 10)) : Promise.resolve([]),
+    canPharmacy ? prisma.stockMovement.aggregate({ _sum: { quantity: true }, where: { type: "DISPENSE", createdAt: dateRange, ...movementViewWhere(await currentStockViewer()) } }) : Promise.resolve({ _sum: { quantity: 0 } }),
     prisma.admission.count({ where: { status: "ADMITTED", ...admissionCenterFilter, patient: { ...patientBaseWhere } } }),
     prisma.admission.count({ where: { admissionDate: dateRange, ...admissionCenterFilter, patient: { ...patientBaseWhere } } }),
   ]);
@@ -193,14 +195,14 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
       </form>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="إجمالي المراجعين" value={totalPatients} hint={`${activePatients} نشط - ${percent(activePatients, totalPatients)}`} href="/patients-care?tab=patients" />
-        <Stat label="مراجعون جدد" value={newPatients} hint="ضمن الفترة المحددة" href="/patients-care?tab=patients" />
-        <Stat label="زيارات الفترة" value={visitsCount} hint="حضور واستقبال" href="/patients-care?tab=visits" />
-        <Stat label="مواعيد الفترة" value={apptsCount} hint="كل الحالات" href="/patients-care?tab=appointments" />
+        <Stat label="إجمالي المراجعين" value={totalPatients} hint={`${activePatients} نشط - ${percent(activePatients, totalPatients)}`} href="/patients" />
+        <Stat label="مراجعون جدد" value={newPatients} hint="ضمن الفترة المحددة" href="/patients" />
+        <Stat label="زيارات الفترة" value={visitsCount} hint="حضور واستقبال" href="/visits" />
+        <Stat label="مواعيد الفترة" value={apptsCount} hint="كل الحالات" href="/appointments" />
         <Stat label="جلسات الفترة" value={sessionsCount} hint={centerId ? "حسب المركز المختار" : "كل المراكز"} />
-        <Stat label="راقدون حالياً" value={admittedNow} hint={`${admissionsInRange} رقود جديد بالفترة`} href="/therapy-centers?tab=beds" />
+        <Stat label="راقدون حالياً" value={admittedNow} hint={`${admissionsInRange} رقود جديد بالفترة`} href="/beds" />
         <Stat label="أجهزة تحتاج صيانة" value={devicesDue} href="/devices?due=1" />
-        {canPharmacy && <Stat label="صرف الصيدلية" value={stockDispense._sum.quantity ?? 0} hint="كمية مصروفة بالفترة" href="/pharmacy-inventory?tab=dispense" />}
+        {canPharmacy && <Stat label="صرف الصيدلية" value={stockDispense._sum.quantity ?? 0} hint="كمية مصروفة بالفترة" href="/pharmacy" />}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

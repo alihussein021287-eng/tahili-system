@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { PatientSearchField } from "@/components/PatientSearchField";
 import { Combobox } from "@/components/Combobox";
 import { PageHeader } from "@/components/PageHeader";
 import Link from "next/link";
@@ -8,8 +9,11 @@ import { currentPerms, getSession, requirePerm } from "@/lib/access";
 import { createAppointment, setAppointmentStatus, deleteAppointment, rescheduleAppointment, updateAppointmentCenterHall } from "./actions";
 import { THERAPY, APPT_STATUS, CONFIRM_STATUS, fmtDate, fmtTime } from "@/lib/labels";
 import { currentUserBranch, effectiveBranchId } from "@/lib/branch-context";
+import { patientScopeWhere } from "@/lib/patient-access";
 import { activeCenterHallOptions } from "@/lib/center-halls";
 import { CenterHallSelect } from "@/components/CenterHallSelect";
+import { HubTabs } from "@/components/hub/HubTabs";
+import { PATIENTS_CARE_NAV } from "@/lib/hub-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -33,10 +37,11 @@ function startOfWeek(d: Date) {
   return x;
 }
 
-export default async function Appointments({ searchParams }: { searchParams: Promise<{ range?: string; st?: string; who?: string; patient?: string; branch?: string; saved?: string }> }) {
+export default async function Appointments({ searchParams }: { searchParams: Promise<{ range?: string; st?: string; who?: string; patient?: string; branch?: string; saved?: string; date?: string; status?: string; q?: string }> }) {
   const session = await getSession();
   await requirePerm("appointments.view");
   const perms = await currentPerms();
+  const apptPatientScope = await patientScopeWhere(prisma, { userId: (session?.user as any)?.id ?? "", role: (session?.user as any)?.role, permissions: perms });
   const userBranch = await currentUserBranch();
   const activeBranchId = effectiveBranchId((await searchParams).branch, userBranch?.branchId);
   const role = (session?.user as any)?.role as string;
@@ -52,8 +57,14 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
   const afterTomorrow = new Date(startToday.getTime() + 2 * dayMs);
   const weekStart = startOfWeek(now);
   const weekEnd = new Date(weekStart.getTime() + 7 * dayMs);
-  const range = sp.range || "upcoming";
+  // A specific day (also what old hub links send) wins over the range chips.
+  const chosenDay = sp.date ? new Date(`${sp.date}T00:00:00`) : null;
+  const dayValid = !!chosenDay && Number.isFinite(chosenDay.getTime());
+  const range = dayValid ? "date" : sp.range || "upcoming";
+  if (!sp.st && sp.status) sp.st = sp.status;
+  if (!sp.patient && sp.q) sp.patient = sp.q;
   const rangeWhere =
+    range === "date" ? { gte: chosenDay!, lt: new Date(chosenDay!.getTime() + dayMs) } :
     range === "today" ? { gte: startToday, lt: tomorrow } :
     range === "tomorrow" ? { gte: tomorrow, lt: afterTomorrow } :
     range === "week" ? { gte: weekStart, lt: weekEnd } :
@@ -88,7 +99,7 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
         session: { select: { id: true, hall: true, center: true, therapyHall: true } },
       }, orderBy: { scheduledAt: "asc" }, take: 200,
     }),
-    prisma.patient.findMany({ where: activeBranchId ? { branchId: activeBranchId } : {}, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
+    Promise.resolve([] as Array<{ id: string; fullName: string; fileNumber: number; phone?: string | null; status?: string }>),
     prisma.appointment.findMany({ where: { assignedTo: { not: null } }, select: { assignedTo: true }, distinct: ["assignedTo"], orderBy: { assignedTo: "asc" } }),
     prisma.branch.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -122,17 +133,15 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
   return (
     <div className="space-y-5">
       <PageHeader title="المواعيد" subtitle="جدولة ومتابعة المواعيد" icon="📅">
-        <Link href="/patients-care?tab=appointments" className="btn-ghost bg-white text-brand-700">لوحة المرضى والرعاية</Link>
+        <Link href="/appointments/calendar" className="btn-ghost bg-white text-brand-700">🗓 تقويم أسبوعي</Link>
       </PageHeader>
+      <HubTabs nav={PATIENTS_CARE_NAV} active="appointments" label="تبويبات المرضى والرعاية" perms={perms} />
       {userBranch?.branch?.name && (
         <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800">
           {activeBranchId ? `المواعيد مفلترة افتراضياً حسب فرعك: ${userBranch.branch.name}` : "تعرض مواعيد كل الفروع حالياً"}
         </div>
       )}
       {sp.saved && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{sp.saved}</div>}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Link href="/appointments/calendar" className="btn-ghost">🗓 تقويم أسبوعي</Link>
-      </div>
 
       <div className="card space-y-3 p-3">
         <div className="flex flex-wrap gap-2">
@@ -144,7 +153,11 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
           ))}
         </div>
         <form action="/appointments" className="grid gap-2 md:grid-cols-4">
-          <input type="hidden" name="range" value={range} />
+          {range !== "date" ? <input type="hidden" name="range" value={range} /> : null}
+          <div>
+            <label className="label">يوم محدد</label>
+            <input name="date" type="date" className="input" defaultValue={dayValid ? sp.date : ""} />
+          </div>
           <Combobox name="st" label="الحالة" allowFree={false} defaultValue={sp.st ?? ""} options={STATUS_OPTIONS} />
           {branches.length > 0 && <Combobox name="branch" label="الفرع" allowFree={false} defaultValue={sp.branch ?? (activeBranchId ? String(activeBranchId) : "")} placeholder="كل الفروع"
             options={[{ value: "all", label: "كل الفروع" }, ...branches.map((b: any) => ({ value: String(b.id), label: b.name }))]} />}
@@ -164,8 +177,7 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
       {cCreate && (
         <form action={createAppointment} className="card grid gap-3 p-4 md:grid-cols-3">
           <div>
-            <Combobox name="patientId" label="المريض" required allowFree={false}
-              options={patients.map((p: any) => ({ value: String(p.id), label: `${p.fullName} (#${p.fileNumber})` }))} />
+            <PatientSearchField name="patientId" label="المريض" required scope="record" />
           </div>
           <div>
             <label className="label">وقت الموعد</label>
@@ -192,7 +204,7 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
           <div className="border-b border-gray-200 bg-gray-50 px-5 py-2 font-semibold text-gray-700">{fmtDate(new Date(day))} <span className="text-gray-400">({list.length})</span></div>
           <div className="space-y-3 p-3 md:hidden">
             {list.map((a) => (
-              <div key={a.id} className="rounded-xl border border-gray-200 bg-white p-3">
+              <div key={a.id} className={`rounded-xl border p-3 ${a.status === "SCHEDULED" && new Date(a.scheduledAt) < now ? "border-red-200 bg-red-50/40" : "border-gray-200 bg-white"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-xs font-semibold text-gray-400">{fmtTime(a.scheduledAt)}</div>
@@ -245,7 +257,7 @@ export default async function Appointments({ searchParams }: { searchParams: Pro
             <thead><tr><th className="th">الوقت</th><th className="th">المريض</th><th className="th">النوع</th><th className="th">المسؤول</th><th className="th">الحالة</th><th className="th">إجراء</th></tr></thead>
             <tbody>
               {list.map((a) => (
-                <tr key={a.id} className="hover:bg-gray-50">
+                <tr key={a.id} className={a.status === "SCHEDULED" && new Date(a.scheduledAt) < now ? "bg-red-50/40" : "hover:bg-gray-50"}>
                   <td className="td font-medium">{fmtTime(a.scheduledAt)}</td>
                   <td className="td"><Link href={`/patients/${a.patientId}`} className="text-brand-700 hover:underline">{a.patient.fullName}</Link>{(a as any).patientResponse && <span className={`badge ms-1 ${(a as any).patientResponse === "CONFIRMED" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{CONFIRM_STATUS[(a as any).patientResponse as keyof typeof CONFIRM_STATUS]}</span>}</td>
                   <td className="td">

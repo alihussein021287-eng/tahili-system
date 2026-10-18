@@ -1,5 +1,6 @@
 "use server";
 import { requireSession, currentPerms } from "@/lib/access";
+import { withSerializableRetry } from "@/lib/serializable-retry";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
@@ -12,6 +13,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { loadPatientTabData } from "@/lib/patient-tab-loader";
+import { referralAccessScope } from "@/lib/referral-access";
+import { closeOpenHandoffsForPatient } from "@/lib/handoff-service";
+import { transitionCareStage, reassignCenterStage } from "@/lib/care-stage-service";
+import { assertPatientActionScope, assertBranchBoundRecordScope } from "@/lib/patient-guard";
+import { centerStationByName } from "@/lib/stations";
+import { resolvePrescriptionOriginDetailed, resolveCareExecutionBranch, verifyPrescriptionVisit } from "@/lib/pharmacy-scope";
 
 const patientSchema = z.object({
   fullName: z.string().trim().min(3, "الاسم الرباعي مطلوب (3 أحرف على الأقل)"),
@@ -31,6 +38,13 @@ async function uid() {
 async function guard(key: string) {
   const s = await requireSession();
   await assertPerm(key);
+  return s;
+}
+
+// Operation permission AND a patient-specific relationship (see assertPatientActionScope).
+async function guardPatient(key: string, patientId: string, kind: "record" | "administrative" = "record") {
+  const s = await guard(key);
+  await assertPatientActionScope(patientId, kind);
   return s;
 }
 
@@ -77,25 +91,36 @@ function duplicateMessage(dup: { fileNumber: number; fullName: string; phone: st
   return `تكرار قوي: يوجد ملف مطابق بنفس الاسم ورقم الهاتف وسنة التولد. لم يتم الحفظ. راجع ملف #${dup.fileNumber} (${dup.fullName}${dup.phone ? ` - ${dup.phone}` : ""}${dup.birthYear ? ` - تولد ${dup.birthYear}` : ""}).`;
 }
 
-export async function createPatient(fd: FormData) {
+export async function createPatient(_previousState: { error: string | null }, fd: FormData): Promise<{ error: string | null }> {
   const s = await guard("patients.create");
   const data = parsePatient(fd);
+  // A branch-bound staff member registers into their own active branch unless another one was chosen explicitly;
+  // a patient must not silently end up with no branch.
+  if ((data as any).branchId == null) {
+    const me = await prisma.user.findUnique({ where: { id: (s?.user as any)?.id }, select: { branchId: true, branch: { select: { isActive: true } } } });
+    if (me?.branchId != null && me.branch?.isActive) (data as any).branchId = me.branchId;
+  }
   // مدخل البيانات = المستخدم الحالي حصراً (إجباري تلقائياً)
   (data as any).dataEntryBy = s?.user?.name || (s?.user as any)?.username || "غير معروف";
   const v = patientSchema.safeParse(data);
-  if (!v.success) redirect(`/patients/new?saved=${encodeURIComponent(v.error.issues[0]?.message || "بيانات غير صحيحة")}`);
+  // Keep the form mounted when validation fails so staff do not have to re-enter it.
+  if (!v.success) return { error: v.error.issues[0]?.message || "بيانات غير صحيحة" };
   const dup = await findDuplicate(data);
-  if (dup) redirect(`/patients/new?saved=${encodeURIComponent(duplicateMessage(dup))}`);
+  if (dup) return { error: duplicateMessage(dup) };
   const photo = fd.get("photo") as File | null;
   const photoUrl = photo && photo.size > 0 ? `/api/files/${(await saveFile(photo)).key}` : null;
   const p = await prisma.patient.create({ data: { ...data, photoUrl, createdById: (s?.user as any)?.id } });
   await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "patients", recordId: p.id, newValue: data });
   revalidatePath("/patients");
+  if ((await currentPerms()).has("handoff.send")) redirect(`/patients/${p.id}?handoff=1`);
   redirect(`/patients/${p.id}?saved=1`);
 }
 
-export async function updatePatient(id: string, fd: FormData) {
-  const s = await guard("patients.edit");
+// Bound as updatePatient.bind(null, id) and driven by useActionState, so it receives (previousState, formData).
+// The two-argument form (id, formData) is kept for direct callers.
+export async function updatePatient(id: string, stateOrForm: FormData | { error: string | null }, maybeForm?: FormData): Promise<{ error: string | null }> {
+  const fd = (maybeForm ?? stateOrForm) as FormData;
+  const s = await guardPatient("patients.edit", id, "administrative");
   const before = await prisma.patient.findUnique({ where: { id } });
   const data = parsePatient(fd);
   // نحافظ على مُدخِل البيانات الأصلي
@@ -125,7 +150,7 @@ export async function deletePatient(id: string) {
 
 // ---------- الوحدات الفرعية ----------
 export async function addDiagnosis(patientId: string, fd: FormData) {
-  const s = await guard("clinical.diagnosis");
+  const s = await guardPatient("clinical.diagnosis", patientId, "record");
   const rec = await prisma.diagnosis.create({ data: {
     patientId, type: (fd.get("type")?.toString() as any) || "PRELIMINARY",
     text: fd.get("text")?.toString() || "", doctor: fd.get("doctor")?.toString() || null,
@@ -135,7 +160,7 @@ export async function addDiagnosis(patientId: string, fd: FormData) {
 }
 
 export async function addReport(patientId: string, fd: FormData) {
-  const s = await guard("clinical.report");
+  const s = await guardPatient("clinical.report", patientId, "record");
   const status = (fd.get("status")?.toString() || "DRAFT") as "DRAFT" | "READY_TO_PRINT";
   await prisma.$transaction(async (tx) => {
     const rec = await tx.medicalReport.create({ data: {
@@ -144,25 +169,30 @@ export async function addReport(patientId: string, fd: FormData) {
       status, readyAt: status === "READY_TO_PRINT" ? new Date() : null,
     }});
     await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "CREATE", tableName: "medical_reports", recordId: rec.id, newValue: { reportType: rec.reportType, status: rec.status } } });
-    if (status === "READY_TO_PRINT") await tx.notification.create({ data: { targetRole: "MANAGER", title: "تقرير طبي جاهز للطباعة", body: "راجع قائمة تقارير المراجع الجاهزة.", link: `/patients/${patientId}?tab=reports` } });
+    if (status === "READY_TO_PRINT") await tx.notification.createMany({ data: (["MANAGER", "SECRETARY"] as const).map((targetRole) => ({ targetRole, title: "تقرير طبي جاهز للطباعة", body: "راجع قائمة تقارير المراجع الجاهزة.", link: `/patients/${patientId}?tab=reports` })) });
   });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function setReportStatus(patientId: string, reportId: string, status: "DRAFT" | "READY_TO_PRINT" | "PRINTED_APPROVED" | "CANCELLED") {
-  const s = await guard(status === "PRINTED_APPROVED" ? "reports.print" : "clinical.report");
+  // Printing never implies approval: approval needs its own permission, patient scope and a READY_TO_PRINT report.
+  const s = await guard(status === "PRINTED_APPROVED" ? "reports.medical.approve" : "clinical.report");
+  if (status === "PRINTED_APPROVED") await assertBranchBoundRecordScope(patientId); else await assertPatientActionScope(patientId, "record");
   await prisma.$transaction(async (tx) => {
-    const before = await tx.medicalReport.findUniqueOrThrow({ where: { id: reportId } });
+    const before = await tx.medicalReport.findFirstOrThrow({ where: { id: reportId, patientId } });
     if (before.status === "PRINTED_APPROVED" || before.status === "CANCELLED") throw new Error("لا يمكن تعديل التقرير بعد اعتماده أو إلغائه");
-    const rec = await tx.medicalReport.update({ where: { id: reportId }, data: { status, readyAt: status === "READY_TO_PRINT" ? new Date() : before.readyAt, printedAt: status === "PRINTED_APPROVED" ? new Date() : null } });
+    if (status === "PRINTED_APPROVED" && before.status !== "READY_TO_PRINT") throw new Error("لا يُعتمد إلا تقرير جاهز للطباعة");
+    const moved = await tx.medicalReport.updateMany({ where: { id: reportId, patientId, status: before.status }, data: { status, readyAt: status === "READY_TO_PRINT" ? new Date() : before.readyAt, printedAt: status === "PRINTED_APPROVED" ? new Date() : null } });
+    if (moved.count !== 1) throw new Error("تغيّرت حالة التقرير؛ أعد المحاولة");
+    const rec = await tx.medicalReport.findUniqueOrThrow({ where: { id: reportId } });
     await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "UPDATE", tableName: "medical_reports", recordId: reportId, oldValue: { status: before.status }, newValue: { status: rec.status } } });
-    if (status === "READY_TO_PRINT") await tx.notification.create({ data: { targetRole: "MANAGER", title: "تقرير طبي جاهز للطباعة", body: "راجع قائمة تقارير المراجع الجاهزة.", link: `/patients/${patientId}?tab=reports` } });
+    if (status === "READY_TO_PRINT") await tx.notification.createMany({ data: (["MANAGER", "SECRETARY"] as const).map((targetRole) => ({ targetRole, title: "تقرير طبي جاهز للطباعة", body: "راجع قائمة تقارير المراجع الجاهزة.", link: `/patients/${patientId}?tab=reports` })) });
   });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function addSession(patientId: string, fd: FormData) {
-  const s = await guard("clinical.session");
+  const s = await guardPatient("clinical.session", patientId, "record");
   const rec = await prisma.therapySession.create({ data: {
     patientId, therapyType: (fd.get("therapyType")?.toString() as any) || "PHYSICAL",
     centerId: fd.get("centerId") ? Number(fd.get("centerId")) : null,
@@ -175,7 +205,7 @@ export async function addSession(patientId: string, fd: FormData) {
 }
 
 export async function addPrescription(patientId: string, fd: FormData) {
-  const s = await guard("clinical.prescription");
+  const s = await guardPatient("clinical.prescription", patientId, "record");
   const medicationId = fd.get("medicationId") ? Number(fd.get("medicationId")) : null;
   const qtyStr = fd.get("quantity")?.toString() || null;
   const prescriptionType = (fd.get("prescriptionType")?.toString() || "EXTERNAL") as "INTERNAL" | "EXTERNAL";
@@ -185,24 +215,42 @@ export async function addPrescription(patientId: string, fd: FormData) {
   const eligibilityDecision = prescriptionType === "INTERNAL" ? (enough ? (eligible ? "ELIGIBLE" : "NOT_ELIGIBLE") : ((fd.get("eligibilityDecision")?.toString() as any) || "DOCTOR_REVIEW")) : null;
   const eligibilityReason = prescriptionType === "INTERNAL" ? (enough ? (eligible ? "بيانات المراجع الحالية تثبت أهلية الصرف الداخلي" : "بيانات المراجع الحالية لا تثبت فئة الصرف الداخلي") : (fd.get("eligibilityReason")?.toString().trim() || "بيانات الأهلية غير مكتملة، وسُجّل قرار الطبيب")) : null;
   await prisma.$transaction(async (tx) => {
+    // Provenance: receiving branch of the patient visit today, else the issuer branch; never the patient home branch.
+    // INTERNAL (dispensable) prescriptions need an explicit, verified Visit; the pharmacy origin is that visit's branch.
+    // EXTERNAL ones are print-only (no stock effect) and keep the evidence-based origin.
+    let visitId: string | null = null;
+    let origin: { branchId: number | null; basis: string; detail: string };
+    if (prescriptionType === "INTERNAL") {
+      const verified = await verifyPrescriptionVisit(tx, patientId, fd.get("visitId")?.toString(), (s?.user as any)?.id);
+      visitId = verified.visitId;
+      origin = { branchId: verified.branchId, basis: "EXPLICIT_VISIT", detail: "زيارة موثقة" };
+    } else origin = await resolvePrescriptionOriginDetailed(tx, patientId, (s?.user as any)?.id);
+    const originBranchId = origin.branchId;
     const rec = await tx.prescription.create({ data: {
+      originBranchId, visitId,
       patientId, materialName: fd.get("materialName")?.toString() || null, medicationId,
       usage: fd.get("usage")?.toString() || null, doctor: fd.get("doctor")?.toString() || s?.user?.name || null,
       quantity: qtyStr, duration: fd.get("duration")?.toString() || null, prescriptionType,
       eligibilityDecision, eligibilityReason, eligibilityRecordedAt: prescriptionType === "INTERNAL" ? new Date() : null,
       createdById: (s?.user as any)?.id,
     }});
-    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "CREATE", tableName: "prescriptions", recordId: rec.id, newValue: { prescriptionType, eligibilityDecision } } });
-    await tx.notification.create({ data: prescriptionType === "INTERNAL"
-      ? { targetRole: "PHARMACIST", title: "وصفة داخلية جديدة", body: "وصفة جديدة بانتظار إجراء الصيدلية.", link: "/pharmacy" }
-      : { targetRole: "MANAGER", title: "وصفة خارجية جاهزة للطباعة", body: "وصفة خارجية جديدة بانتظار إدارة الطباعة.", link: `/pharmacy/rx/${rec.id}` } });
+    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "CREATE", tableName: "prescriptions", recordId: rec.id, newValue: { prescriptionType, eligibilityDecision, originBranchId, visitId, originBasis: origin.basis } } });
+    if (originBranchId == null && (s?.user as any)?.id) {
+      // Fail closed but never silent: tell the issuer exactly why the prescription has no pharmacy yet.
+      await tx.notification.create({ data: { targetUserId: (s?.user as any).id, title: "وصفة بلا صيدلية منشأ", body: `${origin.detail}. لا تُصرف الوصفة حتى تُسند صيدلية المنشأ بإجراء المطابقة.`, link: `/patients/${patientId}` } });
+    }
+    if (prescriptionType === "INTERNAL") {
+      // notify only the pharmacists of the originating branch (a branch-less origin notifies nobody: it needs reconciliation)
+      const pharmacists = originBranchId == null ? [] : await tx.user.findMany({ where: { role: "PHARMACIST", isActive: true, branchId: originBranchId }, select: { id: true } });
+      if (pharmacists.length) await tx.notification.createMany({ data: pharmacists.map((u) => ({ targetUserId: u.id, title: "وصفة داخلية جديدة", body: "وصفة جديدة بانتظار إجراء الصيدلية.", link: "/pharmacy" })) });
+    } else await tx.notification.create({ data: { targetRole: "MANAGER", title: "وصفة خارجية جاهزة للطباعة", body: "وصفة خارجية جديدة بانتظار إدارة الطباعة.", link: `/pharmacy/rx/${rec.id}` } });
   });
   revalidatePath(`/patients/${patientId}`);
   revalidatePath("/pharmacy");
 }
 
 export async function addAdmission(patientId: string, fd: FormData) {
-  const s = await guard("clinical.admission");
+  const s = await guardPatient("clinical.admission", patientId, "record");
   const admissionDate = new Date(fd.get("admissionDate")?.toString() || Date.now());
   const durationDays = fd.get("durationDays") ? Number(fd.get("durationDays")) : null;
   const expectedDischargeDate = durationDays ? new Date(admissionDate.getTime() + durationDays * 86400000) : null;
@@ -227,7 +275,7 @@ export async function addAdmission(patientId: string, fd: FormData) {
 }
 
 export async function addTreatmentPlan(patientId: string, fd: FormData) {
-  const s = await guard("clinical.plan");
+  const s = await guardPatient("clinical.plan", patientId, "record");
   const title = fd.get("title")?.toString().trim();
   if (!title) redirect(`/patients/${patientId}?saved=${encodeURIComponent("أدخل عنوان الخطة")}`);
   const rec = await prisma.treatmentPlan.create({ data: {
@@ -241,7 +289,7 @@ export async function addTreatmentPlan(patientId: string, fd: FormData) {
   revalidatePath(`/patients/${patientId}`);
 }
 export async function setTreatmentPlanStatus(patientId: string, id: string, status: any) {
-  const s = await guard("clinical.plan");
+  const s = await guardPatient("clinical.plan", patientId, "record");
   const before = await prisma.treatmentPlan.findUniqueOrThrow({ where: { id } });
   if (before.closedAt || before.evaluatedAt) await assertPerm("therapy.admin.override");
   await prisma.treatmentPlan.update({ where: { id }, data: { status } });
@@ -250,14 +298,14 @@ export async function setTreatmentPlanStatus(patientId: string, id: string, stat
 }
 export async function deleteTreatmentPlan(patientId: string, id: string) {
   await assertAdminDelete();
-  const s = await guard("clinical.plan");
+  const s = await guardPatient("clinical.plan", patientId, "record");
   await prisma.treatmentPlan.delete({ where: { id } });
   await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "patients", recordId: id });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function addVitalSign(patientId: string, fd: FormData) {
-  const s = await guard("clinical.metrics");
+  const s = await guardPatient("clinical.metrics", patientId, "record");
   const num = (k: string) => { const v = fd.get(k)?.toString().trim(); return v ? Number(v) : null; };
   const rec = await prisma.vitalSign.create({ data: {
     patientId,
@@ -272,14 +320,14 @@ export async function addVitalSign(patientId: string, fd: FormData) {
 
 export async function deleteVitalSign(patientId: string, id: string) {
   await assertAdminDelete();
-  const s = await guard("clinical.metrics");
+  const s = await guardPatient("clinical.metrics", patientId, "record");
   await prisma.vitalSign.delete({ where: { id } });
   await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "patients", recordId: id });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function addProgressMetric(patientId: string, fd: FormData) {
-  const s = await guard("clinical.metrics");
+  const s = await guardPatient("clinical.metrics", patientId, "record");
   const label = fd.get("label")?.toString().trim();
   const value = fd.get("value")?.toString();
   if (!label || value === undefined || value === "") redirect(`/patients/${patientId}?saved=${encodeURIComponent("أدخل اسم المقياس والقيمة")}`);
@@ -293,7 +341,7 @@ export async function addProgressMetric(patientId: string, fd: FormData) {
 }
 export async function deleteProgressMetric(patientId: string, id: string) {
   await assertAdminDelete();
-  const s = await guard("clinical.metrics");
+  const s = await guardPatient("clinical.metrics", patientId, "record");
   await prisma.progressMetric.delete({ where: { id } });
   await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "patients", recordId: id });
   revalidatePath(`/patients/${patientId}`);
@@ -349,6 +397,11 @@ export async function importPatients(fd: FormData) {
     createRows.push(row);
   }
 
+  // Same rule as single registration: a branch-bound importer registers into their own ACTIVE branch; otherwise the rows keep
+  // no branch (never guessed) and stay reachable only through their creator or a handoff.
+  const importer = await prisma.user.findUnique({ where: { id: (s?.user as any)?.id }, select: { branchId: true, branch: { select: { isActive: true } } } });
+  const importBranchId = importer?.branchId != null && importer.branch?.isActive ? importer.branchId : null;
+
   if (createRows.length > 0) {
     await prisma.patient.createMany({
       data: createRows.map((r) => ({
@@ -358,13 +411,14 @@ export async function importPatients(fd: FormData) {
         birthYear: r.birthYear,
         housing: r.housing,
         notes: r.notes,
+        branchId: importBranchId,
         createdById: (s?.user as any)?.id,
         dataEntryBy: s?.user?.name || (s?.user as any)?.username || null,
       })),
     });
   }
 
-  await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "patients", recordId: `import:${createRows.length}`, newValue: { valid: parsed.rows.length, errors: errors.length } });
+  await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "patients", recordId: `import:${createRows.length}`, newValue: { valid: parsed.rows.length, errors: errors.length, branchId: importBranchId } });
   const msg = `تم حفظ ${createRows.length} من ${parsed.rows.length} سجل قابل للقراءة. الأخطاء/المكرر: ${errors.length}`;
   const sample = errors.slice(0, 12).map((e) => `سطر ${e.line}: ${e.message}`).join(" | ");
   redirect(`/patients/import?result=${encodeURIComponent(msg)}${sample ? `&details=${encodeURIComponent(sample)}` : ""}`);
@@ -440,20 +494,25 @@ function parsePatientImportText(raw: string): { rows: ImportRow[]; errors: { lin
 }
 
 export async function archivePatient(id: string) {
-  const s = await guard("patients.archive");
-  await prisma.patient.update({ where: { id }, data: { archivedAt: new Date() } });
-  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "patients", recordId: id });
+  const s = await guardPatient("patients.archive", id, "administrative");
+  const actorId = (s?.user as any)?.id as string;
+  await prisma.$transaction(async (tx) => {
+    await tx.patient.update({ where: { id }, data: { archivedAt: new Date() } });
+    await closeOpenHandoffsForPatient(tx, id, actorId, "ARCHIVED");
+    await tx.auditLog.create({ data: { userId: actorId, action: "UPDATE", tableName: "patients", recordId: id, newValue: { archived: true } } });
+  });
+  revalidatePath("/my-work");
   redirect("/patients?archived=1");
 }
 export async function restorePatient(id: string) {
-  const s = await guard("patients.archive");
+  const s = await guardPatient("patients.archive", id, "administrative");
   await prisma.patient.update({ where: { id }, data: { archivedAt: null } });
   await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "patients", recordId: id });
   redirect(`/patients/${id}`);
 }
 
 export async function updateAdmissionDuration(patientId: string, admissionId: string, fd: FormData) {
-  const s = await guard("clinical.admission");
+  const s = await guardPatient("clinical.admission", patientId, "record");
   const d = fd.get("durationDays")?.toString();
   const before = await prisma.admission.findUniqueOrThrow({ where: { id: admissionId } });
   const durationDays = d ? Number(d) : null;
@@ -463,20 +522,26 @@ export async function updateAdmissionDuration(patientId: string, admissionId: st
 }
 
 export async function dischargeAdmission(patientId: string, admissionId: string, fd?: FormData) {
-  const s = await guard("clinical.admission");
+  const s = await guardPatient("clinical.admission", patientId, "record");
   const dd = fd?.get("dischargeDate")?.toString();
   await prisma.$transaction(async (tx) => {
     const before = await tx.admission.findUniqueOrThrow({ where: { id: admissionId } });
-    await tx.admission.update({ where: { id: admissionId }, data: { status: "DISCHARGED", dischargeDate: dd ? new Date(dd) : new Date() } });
+    if (before.patientId !== patientId) throw new Error("ملف المراجع غير متاح");
+    // Only a stay that is still open can be discharged: a second call on an old admission must not
+    // free a bed someone else now uses, or close handoffs other staff hold.
+    const moved = await tx.admission.updateMany({ where: { id: admissionId, patientId, status: "ADMITTED" }, data: { status: "DISCHARGED", dischargeDate: dd ? new Date(dd) : new Date() } });
+    if (!moved.count) throw new Error("هذا الرقود مُخرَّج مسبقاً");
     if (before.bedId) await tx.bed.update({ where: { id: before.bedId }, data: { occupied: false } });
+    await closeOpenHandoffsForPatient(tx, patientId, (s?.user as any)?.id, "DISCHARGED");
     await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "UPDATE", tableName: "admissions", recordId: admissionId, oldValue: { status: before.status }, newValue: { status: "DISCHARGED" } } });
   });
   revalidatePath(`/patients/${patientId}`);
+  revalidatePath("/my-work");
   revalidatePath("/beds");
 }
 
 export async function addCorrespondence(patientId: string, fd: FormData) {
-  const s = await guard("clinical.report");
+  const s = await guardPatient("clinical.report", patientId, "record");
   const rec = await prisma.correspondence.create({ data: {
     patientId, direction: (fd.get("direction")?.toString() as any) || "INCOMING",
     bookNo: fd.get("bookNo")?.toString() || null, subject: fd.get("subject")?.toString() || null,
@@ -489,7 +554,7 @@ export async function addCorrespondence(patientId: string, fd: FormData) {
 }
 
 export async function addRelative(patientId: string, fd: FormData) {
-  const s = await guard("patients.edit");
+  const s = await guardPatient("patients.edit", patientId, "administrative");
   const rec = await prisma.relative.create({ data: {
     patientId, name: fd.get("name")?.toString() || null, job: fd.get("job")?.toString() || null,
     workplace: fd.get("workplace")?.toString() || null, socialStatus: fd.get("socialStatus")?.toString() || null,
@@ -500,7 +565,7 @@ export async function addRelative(patientId: string, fd: FormData) {
 
 // تقييم الجروح مع رفع صورة
 export async function addWound(patientId: string, fd: FormData) {
-  const s = await guard("clinical.wound");
+  const s = await guardPatient("clinical.wound", patientId, "record");
   const wound = await prisma.woundAssessment.create({ data: {
     patientId, woundType: fd.get("woundType")?.toString() || null,
     exudate: fd.get("exudate")?.toString() || null,
@@ -521,7 +586,7 @@ export async function addWound(patientId: string, fd: FormData) {
 
 // رفع مرفق عام (وثيقة/صورة)
 export async function addAttachment(patientId: string, fd: FormData) {
-  const s = await guard("clinical.report");
+  const s = await guardPatient("clinical.report", patientId, "record");
   const file = fd.get("file") as File | null;
   if (!file || file.size === 0) return;
   const { key, name } = await saveFile(file);
@@ -535,45 +600,49 @@ export async function addAttachment(patientId: string, fd: FormData) {
 }
 
 export async function generatePortalToken(patientId: string) {
-  await guard("patients.portal");
+  await guardPatient("patients.portal", patientId, "administrative");
   const token = randomBytes(32).toString("hex");
   await prisma.patient.update({ where: { id: patientId }, data: { accessToken: token } });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function revokePortalToken(patientId: string) {
-  await guard("patients.portal");
+  await guardPatient("patients.portal", patientId, "administrative");
   await prisma.patient.update({ where: { id: patientId }, data: { accessToken: null } });
   revalidatePath(`/patients/${patientId}`);
 }
 
 // حذف السجلات السريرية (لتصحيح الأخطاء)
 export async function deleteDiagnosis(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.diagnosis"); await prisma.diagnosis.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "diagnoses", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guardPatient("clinical.diagnosis", patientId, "record"); await prisma.diagnosis.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "diagnoses", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteReport(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.report"); const report = await prisma.medicalReport.findUniqueOrThrow({ where: { id } }); if (report.status === "PRINTED_APPROVED") throw new Error("لا يمكن حذف تقرير مطبوع ومعتمد"); await prisma.medicalReport.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "medical_reports", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guardPatient("clinical.report", patientId, "record"); const report = await prisma.medicalReport.findUniqueOrThrow({ where: { id } }); if (report.status === "PRINTED_APPROVED") throw new Error("لا يمكن حذف تقرير مطبوع ومعتمد"); await prisma.medicalReport.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "medical_reports", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteSession(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.session"); await prisma.therapySession.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "therapy_sessions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guardPatient("clinical.session", patientId, "record"); await prisma.therapySession.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "therapy_sessions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deletePrescription(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.prescription"); const rx = await prisma.prescription.findUniqueOrThrow({ where: { id } }); if (rx.isDispensed || rx.status === "DISPENSED") throw new Error("لا يمكن حذف وصفة بعد الصرف"); await prisma.prescription.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "prescriptions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guardPatient("clinical.prescription", patientId, "record"); const rx = await prisma.prescription.findUniqueOrThrow({ where: { id } }); if (rx.isDispensed || rx.status === "DISPENSED") throw new Error("لا يمكن حذف وصفة بعد الصرف"); await prisma.prescription.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "prescriptions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteAdmission(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.admission"); await prisma.$transaction(async (tx) => { const admission = await tx.admission.findUniqueOrThrow({ where: { id } }); await tx.admission.delete({ where: { id } }); if (admission.bedId) await tx.bed.update({ where: { id: admission.bedId }, data: { occupied: false } }); await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "DELETE", tableName: "admissions", recordId: id } }); }); revalidatePath(`/patients/${patientId}`); revalidatePath("/beds"); }
+  await assertAdminDelete(); const s = await guardPatient("clinical.admission", patientId, "record"); await prisma.$transaction(async (tx) => { const admission = await tx.admission.findUniqueOrThrow({ where: { id } }); await tx.admission.delete({ where: { id } }); if (admission.bedId) await tx.bed.update({ where: { id: admission.bedId }, data: { occupied: false } }); await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "DELETE", tableName: "admissions", recordId: id } }); }); revalidatePath(`/patients/${patientId}`); revalidatePath("/beds"); }
 export async function deleteWound(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.wound"); await prisma.woundAssessment.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "wound_assessments", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guardPatient("clinical.wound", patientId, "record"); await prisma.woundAssessment.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "wound_assessments", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteCorrespondence(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.report"); await prisma.correspondence.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "correspondence", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guardPatient("clinical.report", patientId, "record"); await prisma.correspondence.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "correspondence", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteRelative(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("patients.edit"); await prisma.relative.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "relatives", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guardPatient("patients.edit", patientId, "administrative"); await prisma.relative.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "relatives", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteAttachment(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guard("clinical.report"); await prisma.attachment.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "attachments", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete(); const s = await guardPatient("clinical.report", patientId, "record"); await prisma.attachment.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "attachments", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 
 // ===== تحميل بيانات التبويب عند الطلب (لتخفيف تحميل صفحة المريض) =====
 export async function getPatientTabData(patientId: string, tab: string) {
+  await assertPatientActionScope(patientId, "record");
   return loadPatientTabData(patientId, tab, {
     session: requireSession,
     patientsView: () => assertPerm("patients.view"),
     perms: currentPerms,
     prisma,
+    referralScope: async ({ userId, role, permissions }) => (
+      await referralAccessScope(prisma, { userId, role: role as any, permissions })
+    ).where,
     memberships: async (userId) => (
       await prisma.centerMembership.findMany({
         where: { userId, status: "ACTIVE" },
@@ -584,32 +653,50 @@ export async function getPatientTabData(patientId: string, tab: string) {
 }
 
 // ===== التداوي والتضميد =====
-// خصم FEFO من دفعات المخزون عند استهلاك مادة
-async function deductStockFEFO(medicationId: number, qty: number, who: { id?: string; name?: string | null }, patientId: string, patientName: string | null) {
-  if (!qty || qty <= 0) return;
-  let remaining = qty;
-  const batches = await prisma.medicationBatch.findMany({
-    where: { medicationId, quantity: { gt: 0 } },
-    orderBy: [{ expiryDate: { sort: "asc", nulls: "last" } }, { id: "asc" }],
-  });
-  for (const b of batches) {
-    if (remaining <= 0) break;
-    const take = Math.min(b.quantity, remaining);
-    await prisma.medicationBatch.update({ where: { id: b.id }, data: { quantity: b.quantity - take } });
-    try {
-      await prisma.stockMovement.create({ data: {
-        type: "DISPENSE", medicationId, batchId: b.id, quantity: take,
-        byName: who.name ?? null, patientId, patientName, reason: "تداوي/تضميد",
-      }});
-    } catch {}
-    remaining -= take;
+// خصم FEFO من دفعات الفرع المنفِّذ الموثّق فقط (مخزون مستقل لكل فرع). فرع المسجِّل الفعّال ما لم يناقضه دليل موقع الخدمة
+// (زيارة اليوم في فرع آخر). عند التعذّر يُحفظ سجل الرعاية دون لمس أي مخزون ويُبلَّغ المسجِّل بالسبب؛ لا تخمين ولا تحويل بين الفروع.
+async function deductStockFEFO(recordId: string, medicationId: number, qty: number, who: { id?: string; name?: string | null }, patientId: string, patientName: string | null) {
+  if (!qty || qty <= 0 || !who.id) return;
+  const resolution = await resolveCareExecutionBranch(prisma, patientId, who.id);
+  const tell = (title: string, body: string) => prisma.notification.create({ data: { targetUserId: who.id!, title, body, link: `/patients/${patientId}` } }).catch(() => undefined);
+  if (resolution.branchId == null) {
+    await logAudit({ userId: who.id, action: "UPDATE", tableName: "dressing_records", recordId, newValue: { stock: "NOT_DEDUCTED", basis: resolution.basis, medicationId, quantity: qty } });
+    await tell("لم يُخصم استهلاك الرعاية من المخزون", resolution.detail);
+    return;
   }
-  const agg = await prisma.medicationBatch.aggregate({ where: { medicationId }, _sum: { quantity: true } });
-  await prisma.medication.update({ where: { id: medicationId }, data: { quantity: Math.max(0, agg._sum.quantity ?? 0) } });
+  const branchId = resolution.branchId;
+  try {
+    const outcome = await withSerializableRetry(() => prisma.$transaction(async (tx) => {
+      let remaining = qty;
+      const batches = await tx.medicationBatch.findMany({
+        where: { branchId, medicationId, quantity: { gt: 0 }, OR: [{ expiryDate: null }, { expiryDate: { gt: new Date() } }] },
+        orderBy: [{ expiryDate: { sort: "asc", nulls: "last" } }, { id: "asc" }],
+      });
+      for (const b of batches) {
+        if (remaining <= 0) break;
+        const take = Math.min(b.quantity, remaining);
+        const done = await tx.medicationBatch.updateMany({ where: { id: b.id, branchId, quantity: { gte: take } }, data: { quantity: { decrement: take } } });
+        if (done.count !== 1) throw new Error("تغيّر المخزون؛ أعد المحاولة");
+        await tx.stockMovement.create({ data: {
+          type: "DISPENSE", medicationId, batchId: b.id, quantity: take, branchId, actorId: who.id,
+          byName: who.name ?? null, patientId, patientName, reason: `تداوي/تضميد [dressing:${recordId}]`,
+        } });
+        remaining -= take;
+      }
+      const agg = await tx.medicationBatch.aggregate({ where: { medicationId }, _sum: { quantity: true } });
+      await tx.medication.update({ where: { id: medicationId }, data: { quantity: Math.max(0, agg._sum.quantity ?? 0) } });
+      await tx.auditLog.create({ data: { userId: who.id, action: "UPDATE", tableName: "dressing_records", recordId, newValue: { stock: remaining > 0 ? "PARTIAL" : "DEDUCTED", branchId, basis: resolution.basis, medicationId, requested: qty, deducted: qty - remaining } } });
+      return remaining;
+    }, { isolationLevel: "Serializable" }));
+    if (outcome > 0) await tell("رصيد صيدلية الفرع لا يكفي لاستهلاك الرعاية", `خُصم ما توفّر من الصلاحية فقط وبقي ${outcome} وحدة دون خصم؛ راجع مخزون صيدلية فرعك.`);
+  } catch {
+    await logAudit({ userId: who.id, action: "UPDATE", tableName: "dressing_records", recordId, newValue: { stock: "DEDUCTION_FAILED", branchId, medicationId, quantity: qty } });
+    await tell("تعذّر خصم استهلاك الرعاية من المخزون", "حُفظ سجل الرعاية ولم يتغيّر المخزون؛ أعد التسجيل اليدوي للاستهلاك عبر الصيدلية.");
+  }
 }
 
 export async function addCareRecord(patientId: string, fd: FormData) {
-  const s = await guard("clinical.care");
+  const s = await guardPatient("clinical.care", patientId, "record");
   const medicationId = fd.get("medicationId") ? Number(fd.get("medicationId")) : null;
   const quantity = fd.get("quantity") ? Number(fd.get("quantity")) : null;
   const dateStr = fd.get("date")?.toString();
@@ -629,7 +716,7 @@ export async function addCareRecord(patientId: string, fd: FormData) {
   // خصم من المخزون إذا اختار مادة من القائمة وكمية رقمية
   if (medicationId && quantity && quantity > 0) {
     const pt = await prisma.patient.findUnique({ where: { id: patientId }, select: { fullName: true } });
-    await deductStockFEFO(medicationId, quantity, { id: (s?.user as any)?.id, name: (s?.user?.name as string) ?? null }, patientId, pt?.fullName ?? null);
+    await deductStockFEFO(rec.id, medicationId, quantity, { id: (s?.user as any)?.id, name: (s?.user?.name as string) ?? null }, patientId, pt?.fullName ?? null);
   }
   await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "dressing_records", recordId: rec.id });
   revalidatePath(`/patients/${patientId}`);
@@ -637,7 +724,7 @@ export async function addCareRecord(patientId: string, fd: FormData) {
 
 export async function deleteCareRecord(patientId: string, id: string) {
   await assertAdminDelete();
-  const s = await guard("clinical.care");
+  const s = await guardPatient("clinical.care", patientId, "record");
   await prisma.dressingRecord.delete({ where: { id } });
   await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "dressing_records", recordId: id });
   revalidatePath(`/patients/${patientId}`);
@@ -655,70 +742,79 @@ const DEFAULT_PATHWAY: { station: string; role: string | null }[] = [
   { station: "المتابعة", role: "DOCTOR" },
 ];
 
-// يتأكّد أن المستخدم يملك دور المحطة (أو مدير/أدمن تجاوز إداري)
-function canConfirmStage(userRole: string | undefined, stageRole: string | null | undefined): boolean {
-  if (userRole === "ADMIN" || userRole === "MANAGER") return true; // تجاوز إداري
-  if (!stageRole) return true; // محطة بلا دور محدد — أي مخوّل
-  return userRole === stageRole;
-}
-
 export async function startPathway(patientId: string) {
-  const s = await guard("journey.manage");
+  const s = await guardPatient("journey.manage", patientId, "record");
   const count = await prisma.careStage.count({ where: { patientId } });
   if (count > 0) redirect(`/patients/${patientId}?saved=${encodeURIComponent("المسار موجود مسبقاً")}`);
-  await prisma.careStage.createMany({ data: DEFAULT_PATHWAY.map((st, i) => ({ patientId, station: st.station, responsibleRole: st.role as any, sequence: i, createdById: (s?.user as any)?.id })) });
+  await prisma.careStage.createMany({ data: DEFAULT_PATHWAY.map((st, i) => ({ patientId, station: st.station, responsibleRole: st.role as any, responsibilityScope: "SERVICE" as const, sequence: i, createdById: (s?.user as any)?.id })) });
   await logAudit({ action: "CREATE", tableName: "care_stages", recordId: patientId, newValue: { pathway: "default" } });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function addStage(patientId: string, fd: FormData) {
-  const s = await guard("journey.manage");
+  const s = await guardPatient("journey.manage", patientId, "record");
   const station = fd.get("station")?.toString().trim();
   if (!station) redirect(`/patients/${patientId}?saved=${encodeURIComponent("اسم المحطة مطلوب")}`);
   const max = await prisma.careStage.aggregate({ where: { patientId }, _max: { sequence: true } });
-  const t = await prisma.careStage.create({ data: { patientId, station: station!, responsibleRole: (fd.get("responsibleRole")?.toString() as any) || null, note: fd.get("note")?.toString() || null, sequence: (max._max.sequence ?? -1) + 1, createdById: (s?.user as any)?.id } });
+  const catalogStation = centerStationByName(station);
+  const chosenRole = (fd.get("responsibleRole")?.toString() as any) || null;
+  // Only a catalog station with its own catalog role has a known service owner; free text stays unclassified (fail closed).
+  const knownService = !!catalogStation && catalogStation.role === chosenRole;
+  const t = await prisma.careStage.create({ data: { patientId, station: station!, responsibleRole: chosenRole, ...(knownService ? { responsibilityScope: "SERVICE" as const } : {}), note: fd.get("note")?.toString() || null, sequence: (max._max.sequence ?? -1) + 1, createdById: (s?.user as any)?.id } });
   await logAudit({ action: "CREATE", tableName: "care_stages", recordId: t.id });
   revalidatePath(`/patients/${patientId}`);
 }
 
-export async function confirmStage(patientId: string, id: string) {
+async function stageTransition(patientId: string, id: string, to: "CONFIRMED" | "WAITING" | "IN_PROGRESS" | "SKIPPED") {
   const s = await guard("journey.confirm");
-  const role = (s?.user as any)?.role;
-  const stage = await prisma.careStage.findUnique({ where: { id }, select: { responsibleRole: true } });
-  if (stage && !canConfirmStage(role, stage.responsibleRole)) {
-    redirect(`/patients/${patientId}?saved=${encodeURIComponent(`هذه المحطة يؤكّدها «${ROLE_LABELS[stage.responsibleRole as keyof typeof ROLE_LABELS]}» فقط`)}`);
-  }
-  await prisma.careStage.update({ where: { id }, data: { status: "CONFIRMED", confirmedBy: s?.user?.name ?? null, confirmedById: (s?.user as any)?.id, confirmedAt: new Date() } });
-  await logAudit({ action: "UPDATE", tableName: "care_stages", recordId: id, newValue: { status: "CONFIRMED", by: role } });
-  // إشعار المحطة التالية
+  const user = s.user as { id: string; role: any; name?: string | null };
+  let message = "";
   try {
-    const cur = await prisma.careStage.findUnique({ where: { id }, select: { sequence: true } });
-    const next = await prisma.careStage.findFirst({ where: { patientId, sequence: { gt: cur?.sequence ?? -1 }, status: { in: ["WAITING", "IN_PROGRESS"] } }, orderBy: { sequence: "asc" } });
-    if (next?.responsibleRole) {
-      const pt = await prisma.patient.findUnique({ where: { id: patientId }, select: { fullName: true } });
-      await notifyRole(next.responsibleRole, `مراجع بمحطتك: ${next.station}`, { body: pt?.fullName ?? "", link: `/patients/${patientId}` });
-    }
-  } catch {}
+    await withSerializableRetry(() => prisma.$transaction(
+      (tx) => transitionCareStage(tx, { userId: user.id, role: user.role, name: user.name ?? null }, { patientId, stageId: id, to }),
+      { isolationLevel: "Serializable" },
+    ));
+  } catch (error) {
+    message = error instanceof Error ? error.message : "تعذّر تنفيذ الإجراء";
+  }
   revalidatePath(`/patients/${patientId}`);
+  if (message) redirect(`/patients/${patientId}?saved=${encodeURIComponent(message)}`);
+}
+
+// إعادة إسناد محطة مركز بواسطة مدير ضمن نطاق مركزه فقط؛ لا تمنح المدير صلاحية التأكيد
+export async function reassignStageAction(patientId: string, stageId: string, fd: FormData) {
+  const s = await requireSession();
+  const user = s.user as { id: string; role: any };
+  const newAssigneeId = fd.get("newAssigneeId")?.toString() || "";
+  const expected = fd.get("expectedAssigneeId")?.toString() || null;
+  const reason = fd.get("reason")?.toString() || "";
+  let message = "";
+  try {
+    await withSerializableRetry(() => prisma.$transaction(
+      (tx) => reassignCenterStage(tx, { userId: user.id, role: user.role }, { patientId, stageId, newAssigneeId, expectedAssigneeId: expected, reason }),
+      { isolationLevel: "Serializable" },
+    ));
+  } catch (error) {
+    message = error instanceof Error ? error.message : "تعذّرت إعادة الإسناد";
+  }
+  revalidatePath(`/patients/${patientId}`);
+  revalidatePath("/my-work");
+  if (message) redirect(`/patients/${patientId}?saved=${encodeURIComponent(message)}`);
+}
+
+// تأكيد المحطة السريرية صريح من صاحب الدور؛ لا يتأكد تلقائياً من التسليم أو الطابور أو الموعد
+export async function confirmStage(patientId: string, id: string) {
+  await stageTransition(patientId, id, "CONFIRMED");
 }
 
 export async function setStageStatus(patientId: string, id: string, status: string) {
-  const s = await guard("journey.confirm");
-  const role = (s?.user as any)?.role;
-  const stage = await prisma.careStage.findUnique({ where: { id }, select: { responsibleRole: true } });
-  if (stage && !canConfirmStage(role, stage.responsibleRole)) {
-    redirect(`/patients/${patientId}?saved=${encodeURIComponent(`هذه المحطة يديرها «${ROLE_LABELS[stage.responsibleRole as keyof typeof ROLE_LABELS]}» فقط`)}`);
-  }
-  const data: any = { status };
-  if (status !== "CONFIRMED") { data.confirmedBy = null; data.confirmedById = null; data.confirmedAt = null; }
-  await prisma.careStage.update({ where: { id }, data });
-  await logAudit({ action: "UPDATE", tableName: "care_stages", recordId: id, newValue: { status } });
-  revalidatePath(`/patients/${patientId}`);
+  if (!["WAITING", "IN_PROGRESS", "SKIPPED", "CONFIRMED"].includes(status)) throw new Error("حالة المحطة غير صالحة");
+  await stageTransition(patientId, id, status as "CONFIRMED" | "WAITING" | "IN_PROGRESS" | "SKIPPED");
 }
 
 export async function deleteStage(patientId: string, id: string) {
   await assertAdminDelete();
-  await guard("journey.manage");
+  await guardPatient("journey.manage", patientId, "record");
   await prisma.careStage.delete({ where: { id } });
   await logAudit({ action: "DELETE", tableName: "care_stages", recordId: id });
   revalidatePath(`/patients/${patientId}`);
@@ -726,7 +822,7 @@ export async function deleteStage(patientId: string, id: string) {
 
 // ---------- الإجراءات الرسمية ----------
 export async function addOfficialDoc(patientId: string, fd: FormData) {
-  const s = await guard("officialdocs.manage");
+  const s = await guardPatient("officialdocs.manage", patientId, "administrative");
   const number = fd.get("number")?.toString().trim();
   const subject = fd.get("subject")?.toString().trim();
   const docDate = fd.get("docDate")?.toString();
@@ -750,7 +846,7 @@ export async function addOfficialDoc(patientId: string, fd: FormData) {
 
 export async function deleteOfficialDoc(patientId: string, id: string) {
   await assertAdminDelete();
-  await guard("officialdocs.manage");
+  await guardPatient("officialdocs.manage", patientId, "record");
   const linked = await prisma.referralRequest.findUnique({ where: { officialDocumentId: id }, select: { id: true } });
   if (linked) throw new Error("لا يمكن حذف كتاب إرسال مرتبط بطلب إحالة");
   await prisma.officialDocument.delete({ where: { id } });
@@ -760,7 +856,7 @@ export async function deleteOfficialDoc(patientId: string, id: string) {
 
 // ---------- تعديل السجلات النصية (بدل الحذف) ----------
 export async function updateDiagnosis(patientId: string, id: string, fd: FormData) {
-  const s = await guard("clinical.diagnosis");
+  const s = await guardPatient("clinical.diagnosis", patientId, "record");
   await prisma.diagnosis.update({ where: { id }, data: {
     type: (fd.get("type")?.toString() as any) || "PRELIMINARY",
     text: fd.get("text")?.toString() || "",
@@ -771,7 +867,7 @@ export async function updateDiagnosis(patientId: string, id: string, fd: FormDat
 }
 
 export async function updateSessionRecord(patientId: string, id: string, fd: FormData) {
-  const s = await guard("clinical.session");
+  const s = await guardPatient("clinical.session", patientId, "record");
   const before = await prisma.therapySession.findUniqueOrThrow({ where: { id }, include: { plan: true } });
   if (before.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
   await prisma.therapySession.update({ where: { id }, data: {
@@ -787,7 +883,7 @@ export async function updateSessionRecord(patientId: string, id: string, fd: For
 }
 
 export async function addTherapySessionLog(patientId: string, fd: FormData) {
-  const s = await guard("clinical.session");
+  const s = await guardPatient("clinical.session", patientId, "record");
   const linkedSessionId = fd.get("sessionId")?.toString() || null;
   if (linkedSessionId) {
     const linked = await prisma.therapySession.findUnique({ where: { id: linkedSessionId }, include: { plan: true } });
@@ -821,7 +917,7 @@ export async function addTherapySessionLog(patientId: string, fd: FormData) {
 }
 
 export async function updateCorrespondence(patientId: string, id: string, fd: FormData) {
-  const s = await guard("clinical.report");
+  const s = await guardPatient("clinical.report", patientId, "record");
   await prisma.correspondence.update({ where: { id }, data: {
     subject: fd.get("subject")?.toString() || "",
     body: fd.get("body")?.toString() || null,
@@ -831,7 +927,7 @@ export async function updateCorrespondence(patientId: string, id: string, fd: Fo
 }
 
 export async function updateOfficialDocText(patientId: string, id: string, fd: FormData) {
-  const s = await guard("officialdocs.manage");
+  const s = await guardPatient("officialdocs.manage", patientId, "record");
   const linked = await prisma.referralRequest.findUnique({ where: { officialDocumentId: id }, select: { id: true } });
   if (linked) throw new Error("لا يمكن تعديل كتاب إرسال مرتبط من الملف العام");
   await prisma.officialDocument.update({ where: { id }, data: {
@@ -845,7 +941,7 @@ export async function updateOfficialDocText(patientId: string, id: string, fd: F
 
 // ---------- الإجازات المرضية للمراجعين ----------
 export async function addSickLeave(patientId: string, fd: FormData) {
-  const s = await guard("sickleave.manage");
+  const s = await guardPatient("sickleave.manage", patientId, "record");
   const start = fd.get("startDate")?.toString();
   const end = fd.get("endDate")?.toString();
   const diagnosisText = fd.get("diagnosisText")?.toString().trim();
@@ -884,7 +980,7 @@ export async function deleteSickLeave(patientId: string, id: string) {
 
 // مصادقة عضو من لجنة الإجازة المرضية (member: 1 | 2 | 3)
 export async function approveSickLeaveCommittee(patientId: string, id: string, member: number) {
-  const s = await guard("clinical.metrics"); // الأطباء/المعالجون واللجنة الطبية
+  const s = await guardPatient("clinical.metrics", patientId, "record"); // الأطباء/المعالجون واللجنة الطبية
   const now = new Date();
   const uid = (s?.user as any)?.id;
   const data: any = {};
@@ -899,7 +995,7 @@ export async function approveSickLeaveCommittee(patientId: string, id: string, m
 
 // تراجع عضو لجنة عن مصادقته
 export async function unapproveSickLeaveCommittee(patientId: string, id: string, member: number) {
-  const s = await guard("clinical.metrics");
+  const s = await guardPatient("clinical.metrics", patientId, "record");
   const data: any = {};
   if (member === 1) { data.approved1At = null; data.approved1ById = null; }
   else if (member === 2) { data.approved2At = null; data.approved2ById = null; }
@@ -910,7 +1006,7 @@ export async function unapproveSickLeaveCommittee(patientId: string, id: string,
 }
 
 export async function approveSickLeave(patientId: string, id: string, fd: FormData) {
-  const s = await guard("reports.approve");
+  const s = await guardPatient("reports.approve", patientId, "record");
   const leave = await prisma.sickLeave.findUnique({ where: { id } });
   if (!leave || leave.patientId !== patientId) throw new Error("الإجازة غير موجودة");
   const committee = [
@@ -929,14 +1025,14 @@ export async function approveSickLeave(patientId: string, id: string, fd: FormDa
 }
 
 export async function unapproveSickLeave(patientId: string, id: string) {
-  await guard("reports.approve");
+  await guardPatient("reports.approve", patientId, "record");
   await prisma.reportApproval.deleteMany({ where: { kind: "sick-leave", refKey: id } });
   revalidatePath(`/patients/${patientId}`);
 }
 
 // موعد الفحص القادم (رئيس المعالجين/الطبيب)
 export async function setNextCheckup(patientId: string, fd: FormData) {
-  const s = await guard("appointments.edit");
+  const s = await guardPatient("appointments.edit", patientId, "record");
   const v = fd.get("nextCheckupAt")?.toString();
   await prisma.patient.update({ where: { id: patientId }, data: { nextCheckupAt: v ? new Date(v) : null } });
   // ينشئ موعداً فعلياً بجدول المواعيد ليظهر للجميع (نوع: فحص)
@@ -956,15 +1052,15 @@ export async function setNextCheckup(patientId: string, fd: FormData) {
 
 // إحالة المريض إلى المركز المختص (رئيس المعالجين) — من تبويب التشخيص
 export async function referToCenter(patientId: string, fd: FormData) {
-  const s = await guard("clinical.diagnosis");
+  const s = await guardPatient("clinical.diagnosis", patientId, "record");
   const station = fd.get("station")?.toString().trim() || "إحالة للمركز المختص";
   const note = fd.get("note")?.toString() || null;
   const max = await prisma.careStage.aggregate({ where: { patientId }, _max: { sequence: true } });
-  await prisma.careStage.create({
+  const referredStage = await prisma.careStage.create({
     data: { patientId, station, responsibleRole: "HEAD_THERAPIST", note, sequence: (max._max.sequence ?? -1) + 1, createdById: (s?.user as any)?.id },
   });
   const pt = await prisma.patient.findUnique({ where: { id: patientId }, select: { fullName: true } });
-  await notifyRole("HEAD_THERAPIST", `إحالة جديدة: ${station}`, { body: pt?.fullName ?? "", link: `/patients/${patientId}` });
+  await notifyRole("HEAD_THERAPIST", `إحالة جديدة: ${station}`, { body: pt?.fullName ?? "", link: `/patients/${patientId}`, careStageId: referredStage.id });
   await logAudit({ action: "CREATE", tableName: "care_stages", recordId: patientId, newValue: { referral: station } });
   revalidatePath(`/patients/${patientId}`);
 }
@@ -972,7 +1068,7 @@ export async function referToCenter(patientId: string, fd: FormData) {
 
 // ═══ تقييم الطبيب المقيم (قبل التشخيص): علامات حيوية + إحالة لاختصاص ═══
 export async function addResidentReview(patientId: string, fd: FormData) {
-  const s = await guard("clinical.metrics");
+  const s = await guardPatient("clinical.metrics", patientId, "record");
   const num = (k: string) => { const v = fd.get(k)?.toString().trim(); return v ? Number(v) : null; };
   const referralNeeded = fd.get("referralNeeded")?.toString() === "1";
   const rec = await prisma.residentReview.create({
@@ -1001,7 +1097,7 @@ export async function addResidentReview(patientId: string, fd: FormData) {
 
 export async function deleteResidentReview(patientId: string, id: string) {
   await assertAdminDelete();
-  const s = await guard("clinical.metrics");
+  const s = await guardPatient("clinical.metrics", patientId, "record");
   await prisma.residentReview.delete({ where: { id } });
   await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "resident_reviews", recordId: id });
   revalidatePath(`/patients/${patientId}`);
@@ -1040,6 +1136,7 @@ function distributeSessionDates(startDate: Date, weekdays: number[], count: numb
 }
 
 export async function scheduleSessions(patientId: string, fd: FormData) {
+  await assertPatientActionScope(patientId, "record");
   const ses = await guardScheduler();
   const therapyType = (fd.get("therapyType")?.toString() as any) || "PHYSICAL";
   const centerIdRaw = Number(fd.get("centerId"));

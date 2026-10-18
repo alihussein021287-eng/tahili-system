@@ -39,12 +39,19 @@ async function freeTherapyTime(therapistId: string, hallId: number) {
 
 async function tab(page: Page, name: string) {
   await page.locator("button").filter({ hasText: name }).last().click();
+  // folded add-forms render after the tab click: wait, then open them
+  await page.locator("details.patient-add-form").first().waitFor({ state: "attached", timeout: 5_000 }).catch(() => undefined);
+  await page.locator("details.patient-add-form").evaluateAll((items) => items.forEach((item) => item.setAttribute("open", "")));
 }
 
 async function bodyOnTab(page: Page, tabName: string, text: string) {
+  // Previous programmes are folded under <details>; innerText skips closed details, so open them before reading.
+  const openFolded = () => page.locator("details").evaluateAll((items) => items.forEach((item) => item.setAttribute("open", ""))).catch(() => undefined);
+  await openFolded();
   let body = await page.locator("body").innerText();
   if (!body.includes(text)) {
     await page.locator("button").filter({ hasText: tabName }).last().click().catch(() => undefined);
+    await openFolded();
     body = await page.locator("body").innerText();
   }
   return body.includes(text);
@@ -56,7 +63,7 @@ async function createPhysicalPlan(browser: Browser, patientId: string, referralI
   const specialist = await acceptanceDoctor();
   const actor = await pageFor(browser, "HEAD_THERAPIST");
   await actor.page.goto(`/patients/${patientId}`, { waitUntil: "domcontentloaded" });
-  await tab(actor.page, "برنامج العلاج الطبيعي");
+  await tab(actor.page, "العلاج الطبيعي");
   const form = actor.page.locator('form:has(button:has-text("إنشاء الخطة وجدولة الجلسات"))');
   await form.locator('select[name="referralRequestId"]').selectOption(referralId);
   await form.locator('input[name="title"]').fill(title);
@@ -78,7 +85,7 @@ async function createPhysicalPlan(browser: Browser, patientId: string, referralI
     page: actor.page,
     submit: form.getByRole("button", { name: "إنشاء الخطة وجدولة الجلسات" }),
     dbExpectation: async () => Boolean(await prisma.treatmentPlan.findFirst({ where: { referralRequestId: referralId } })),
-    confirmation: async (page) => bodyOnTab(page, "برنامج العلاج الطبيعي", title),
+    confirmation: async (page) => bodyOnTab(page, "العلاج الطبيعي", title),
     recoveryUrl: `/patients/${patientId}`,
     roleState: statePath(credential("HEAD_THERAPIST")),
   });
@@ -132,6 +139,12 @@ test("workflow 10: physical therapy referral through final consultancy follow-up
   const center = await centerByNamePart("العلاج الطبيعي");
   const therapist = await acceptanceUser("acceptance-20260713-therapist");
   const hall = await activeTherapyHall("قاعة علاج طبيعي");
+  // The plan form only offers halls that belong to the selected center (approved center/hall model).
+  await prisma.centerResource.upsert({
+    where: { centerId_name: { centerId: center.id, name: hall.name } },
+    update: { status: "AVAILABLE", therapyHallId: hall.id },
+    create: { centerId: center.id, name: hall.name, type: "HALL", therapyHallId: hall.id, capacity: 1, status: "AVAILABLE" },
+  });
   const referral = await acceptedCenterReferral(patient.id, center.id, "إحالة علاج طبيعي");
   await acceptReferral(browser, referral.id);
 
@@ -172,12 +185,14 @@ test("workflow 10: physical therapy referral through final consultancy follow-up
     page: final.page,
     submit: finalForm.getByRole("button", { name: "حفظ التقييم النهائي" }),
     dbExpectation: async () => Boolean(await prisma.treatmentPlan.findFirst({ where: { id: plan.id, evaluatedAt: { not: null }, finalDecision: "END" } })),
-    confirmation: async (page) => bodyOnTab(page, "برنامج العلاج الطبيعي", "مغلقة"),
+    confirmation: async (page) => bodyOnTab(page, "العلاج الطبيعي", "مغلقة"),
     recoveryUrl: `/patients/${patient.id}`,
     roleState: statePath(credential("HEAD_THERAPIST")),
   });
-  expect(await prisma.careStage.count({ where: { patientId: patient.id, station: "الاستشارية" } })).toBeGreaterThan(0);
-  expect(await prisma.notification.count({ where: { targetRole: "DOCTOR", title: "تقييم علاج طبيعي نهائي", link: { contains: patient.id } } })).toBeGreaterThan(0);
+  // Approved model: finishing the programme hands the patient back to the specialist as a PatientHandoff (no CareStage station).
+  const specialist = await acceptanceDoctor();
+  expect(await prisma.patientHandoff.count({ where: { patientId: patient.id, toRole: "DOCTOR", toUserId: specialist.id, status: { in: ["SENT", "ACCEPTED"] } } })).toBe(1);
+  expect(await prisma.careStage.count({ where: { patientId: patient.id, station: "الاستشارية" } })).toBe(0);
   const evidence = await pageFor(browser, "HEAD_THERAPIST");
   await evidence.page.goto(`/patients/${patient.id}`, { waitUntil: "domcontentloaded" });
   await screenshot(evidence.page, "physical-therapy-complete");

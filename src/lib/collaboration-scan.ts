@@ -7,6 +7,13 @@ export type ScanResult = {
   detail: string;
 };
 
+export function parseClamAvStreamResponse(answer: string, failStatus: "FAILED" | "PENDING_SCAN"): ScanResult {
+  const detail = scanDetail(answer);
+  if (/^stream:\s*[^\r\n]+\sFOUND$/i.test(detail)) return { status: "REJECTED", engine: "clamav", detail };
+  if (/^stream:\s*OK$/i.test(detail)) return { status: "SAFE", engine: "clamav", detail };
+  return { status: failStatus, engine: "clamav", detail: detail || "scanner unavailable: no response" };
+}
+
 const CLAMAV_HOST = process.env.CLAMAV_HOST || "clamav";
 const CLAMAV_PORT = Number(process.env.CLAMAV_PORT || 3310);
 
@@ -73,9 +80,7 @@ export async function scanBufferWithClamAv(buffer: Buffer): Promise<ScanResult> 
     socket.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
     socket.on("end", () => {
       const answer = scanDetail(Buffer.concat(chunks).toString("utf8"));
-      if (answer.includes("FOUND")) finish({ status: "REJECTED", engine: "clamav", detail: answer.trim() });
-      else if (answer.includes("OK")) finish({ status: "SAFE", engine: "clamav", detail: answer.trim() });
-      else finish({ status: config.failStatus, engine: "clamav", detail: answer.trim() || "scanner unavailable: no response" });
+      finish(parseClamAvStreamResponse(answer, config.failStatus));
     });
     socket.on("connect", () => {
       socket.write("zINSTREAM\0");

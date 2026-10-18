@@ -70,8 +70,9 @@ function issue(kind: DataQualityKind, p: PatientRow, detail: string, groupKey?: 
   };
 }
 
-export async function getPatientDataQuality(kind?: string) {
+export async function getPatientDataQuality(kind?: string, scope: import("@prisma/client").Prisma.PatientWhereInput = {}) {
   const rows = await prisma.patient.findMany({
+    where: scope,
     select: {
       id: true,
       fileNumber: true,

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import type { MouseEvent } from "react";
 import Link from "next/link";
 import { markAllNotificationsRead } from "@/lib/notif-actions";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { IdleTimeout } from "./IdleTimeout";
@@ -39,12 +39,15 @@ type AlertCounts = {
   backupStopped?: number;
 };
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "tahili-sidebar-collapsed-v2";
+
 export function AppShell({
   role,
   name,
   alerts,
   perms = [],
   notifs = [],
+  notificationUnreadCount = 0,
   presenceConfig,
   children,
 }: {
@@ -53,13 +56,15 @@ export function AppShell({
   alerts?: AlertCounts;
   perms?: string[];
   notifs?: any[];
+  notificationUnreadCount?: number;
   presenceConfig?: PresenceConfig;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const path = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const permSet = new Set(perms);
@@ -75,13 +80,13 @@ export function AppShell({
   const a = alerts ?? { admOver: 0, devicesDue: 0, lowStock: 0, rxPending: 0, expiringSoon: 0, myTasks: 0, overdueTasks: 0, appointmentSoon: 0 };
   const ALERT_BY_HREF: Record<string, { count: number; title: string }> = {
     "/patients-care?tab=overview": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة ضمن المرضى والرعاية" },
-    "/patients-care?tab=appointments": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة خلال ساعتين" },
+    "/appointments": { count: a.appointmentSoon ?? 0, title: "مواعيد قريبة خلال ساعتين" },
     "/therapy-centers?tab=overview": { count: a.admOver ?? 0, title: "رقود أو مسارات علاجية تحتاج متابعة" },
-    "/therapy-centers?tab=beds": { count: a.admOver ?? 0, title: "رقود انتهت مدته" },
+    "/beds": { count: a.admOver ?? 0, title: "رقود انتهت مدته" },
     "/pharmacy-inventory?tab=overview": { count: (a.rxPending ?? 0) + (a.expiringSoon ?? 0) + (a.lowStock ?? 0), title: "وصفات ونواقص ودفعات تحتاج متابعة" },
-    "/pharmacy-inventory?tab=dispense": { count: a.rxPending ?? 0, title: "وصفات قيد الانتظار" },
+    "/pharmacy": { count: a.rxPending ?? 0, title: "وصفات قيد الانتظار" },
     "/pharmacy-inventory?tab=batches": { count: a.expiringSoon ?? 0, title: "دفعات قريبة أو منتهية النفاذ" },
-    "/pharmacy-inventory?tab=stock": { count: a.lowStock ?? 0, title: "مواد منخفضة بالمخزون" },
+    "/pharmacy/stock": { count: a.lowStock ?? 0, title: "مواد منخفضة بالمخزون" },
     "/devices": { count: a.devicesDue ?? 0, title: "أجهزة تحتاج صيانة" },
     "/staff?tab=overview": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
     "/staff?tab=tasks": { count: (a.myTasks ?? 0) + (a.overdueTasks ?? 0), title: `مهام مفتوحة${(a.overdueTasks ?? 0) > 0 ? `، منها ${a.overdueTasks} متأخرة` : ""}` },
@@ -109,26 +114,27 @@ export function AppShell({
   const matchedHref = matches.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? "";
   const legacyActiveHref =
     path === "/patients-care" ? "/patients-care?tab=overview" :
-    path === "/queue" ? "/patients-care?tab=queue" :
-    path === "/appointments" || path.startsWith("/appointments/") ? "/patients-care?tab=appointments" :
-    path === "/visits" ? "/patients-care?tab=visits" :
-    path === "/search" ? "/patients-care?tab=visits" :
-    path === "/referrals" || path.startsWith("/referrals/") ? "/patients-care?tab=referrals" :
-    path === "/patients" || path.startsWith("/patients/") ? "/patients-care?tab=patients" :
-    path === "/care-board" || path === "/station-kpis" ? "/patients-care?tab=journey" :
+    path === "/queue" ? "/queue" :
+    path === "/appointments" || path.startsWith("/appointments/") ? "/appointments" :
+    path === "/visits" ? "/visits" :
+    path === "/search" ? "/visits" :
+    path === "/referrals" || path.startsWith("/referrals/") ? "/referrals" :
+    path === "/patients" || path.startsWith("/patients/") ? "/patients" :
+    path === "/care-board" || path === "/station-kpis" ? "/care-board" :
     path === "/therapy-centers" ? "/therapy-centers?tab=overview" :
-    path === "/therapy/today" ? "/therapy-centers?tab=today" :
-    path === "/therapy" || path.startsWith("/therapy/") ? "/therapy-centers?tab=plans" :
-    path === "/centers" || path.startsWith("/centers/") ? "/therapy-centers?tab=centers" :
-    path === "/beds" ? "/therapy-centers?tab=beds" :
-    path === "/meds" ? "/therapy-centers?tab=meds" :
+    path === "/therapy/today" ? "/therapy/today" :
+    path === "/therapy" || path.startsWith("/therapy/") ? "/therapy" :
+    path === "/centers" || path.startsWith("/centers/") ? "/centers" :
+    path === "/beds" ? "/beds" :
+    path === "/meds" ? "/meds" :
     path === "/reports-finance" ? "/reports-finance?tab=overview" :
-    path === "/reports" || path.startsWith("/reports/") || path === "/official-docs" || path.startsWith("/official-docs/") ? "/reports-finance?tab=official" :
-    path === "/finance" || path.startsWith("/finance/") ? "/reports-finance?tab=finance" :
-    path === "/approvals" ? "/reports-finance?tab=approvals" :
+    path === "/official-docs" || path.startsWith("/official-docs/") ? "/official-docs" :
+    path === "/reports" || path.startsWith("/reports/") ? "/reports-finance?tab=official" :
+    path === "/finance" || path.startsWith("/finance/") ? "/finance" :
+    path === "/approvals" ? "/approvals" :
     path === "/pharmacy-inventory" ? "/pharmacy-inventory?tab=overview" :
-    path === "/pharmacy" || path.startsWith("/pharmacy/") ? "/pharmacy-inventory?tab=dispense" :
-    path === "/inventory" ? "/pharmacy-inventory?tab=stock" :
+    path === "/pharmacy" || path.startsWith("/pharmacy/") ? "/pharmacy" :
+    path === "/inventory" ? "/pharmacy/stock" :
     path === "/staff" ? "/staff?tab=overview" :
     path === "/tasks" ? "/staff?tab=tasks" :
     path === "/attendance" ? "/staff?tab=attendance" :
@@ -145,14 +151,18 @@ export function AppShell({
   });
   useEffect(() => {
     try {
-      setCollapsed(localStorage.getItem("tahili-sidebar-collapsed") === "1");
+      const savedCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY);
+      setCollapsed(savedCollapsed === null ? true : savedCollapsed === "1");
       const saved = localStorage.getItem("tahili-sidebar-groups");
       if (saved) setOpenGroups((current) => ({ ...current, ...JSON.parse(saved) }));
     } catch {}
   }, []);
-  // افتح مجموعة الصفحة الحالية تلقائياً عند التنقل (دون طيّ ما فتحه المستخدم)
+  // افتح مجموعة الصفحة الحالية تلقائياً عند التنقل وأغلق المجموعات الأخرى
   useEffect(() => {
-    if (activeGroupKey) setOpenGroups((p) => (p[activeGroupKey] ? p : { ...p, [activeGroupKey]: true }));
+    setOpenGroups((p) => {
+      const next = Object.fromEntries(Object.keys(p).map((key) => [key, !!activeGroupKey && key === activeGroupKey]));
+      return Object.entries(p).every(([key, value]) => value === next[key]) ? p : next;
+    });
   }, [activeGroupKey]);
 
   useEffect(() => {
@@ -178,12 +188,15 @@ export function AppShell({
   const toggleCollapsed = () => {
     setCollapsed((current) => {
       const next = !current;
-      try { localStorage.setItem("tahili-sidebar-collapsed", next ? "1" : "0"); } catch {}
+      try { localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, next ? "1" : "0"); } catch {}
       return next;
     });
   };
 
-  const toggleGroup = (k: string) => setOpenGroups((p) => ({ ...p, [k]: !p[k] }));
+  const toggleGroup = (k: string) => setOpenGroups((p) => {
+    const nextOpen = !p[k];
+    return Object.fromEntries(Object.keys(p).map((key) => [key, nextOpen && key === k]));
+  });
 
   const renderItem = (it: Item, nested = false, compact = false) => {
     const active = it.href === activeHref;
@@ -316,7 +329,7 @@ export function AppShell({
         <Brand compact={collapsed} />
         <NavLinks compact={collapsed} />
         <button type="button" onClick={toggleCollapsed} className="mt-auto flex min-h-11 items-center justify-center border-t border-white/10 px-3 text-sm text-brand-100/80 hover:bg-white/10 focus-visible:outline-white" aria-label={collapsed ? "توسيع القائمة الجانبية" : "طي القائمة الجانبية"} title={collapsed ? "توسيع القائمة" : "طي القائمة"}>
-          <span aria-hidden="true">{collapsed ? "◀" : "▶"}</span>{!collapsed && <span className="mr-2">طي القائمة</span>}
+          <span aria-hidden="true">{collapsed ? "☰" : "▶"}</span>{!collapsed && <span className="mr-2">طي القائمة</span>}
         </button>
       </aside>
 
@@ -348,7 +361,7 @@ export function AppShell({
               <form action="/search" className="hidden items-center sm:flex">
                 <input name="q" placeholder="بحث شامل..." className="input !w-40 !py-1 text-sm" aria-label="بحث شامل" autoComplete="off" />
               </form>
-              <NotificationBell alerts={alerts} notifs={notifs} perms={perms} />
+              <NotificationBell alerts={alerts} notifs={notifs} notificationUnreadCount={notificationUnreadCount} perms={perms} />
               <ThemeToggle />
               <details className="action-menu hidden sm:block">
                 <summary className="flex h-10 min-w-10 cursor-pointer list-none items-center justify-center rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-700" aria-label="قائمة الحساب">{name.split(" ")[0]}</summary>
@@ -380,9 +393,11 @@ export function AppShell({
   );
 }
 
-function NotificationBell({ alerts, notifs = [], perms = [] }: { alerts?: AlertCounts; notifs?: any[]; perms?: string[] }) {
+function NotificationBell({ alerts, notifs = [], notificationUnreadCount = 0, perms = [] }: { alerts?: AlertCounts; notifs?: any[]; notificationUnreadCount?: number; perms?: string[] }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const path = usePathname();
+  const router = useRouter();
   useEffect(() => setMounted(true), []);
   const permSet = new Set(perms);
   const a = alerts ?? { admOver: 0, devicesDue: 0, lowStock: 0, rxPending: 0, expiringSoon: 0, myTasks: 0, overdueTasks: 0, appointmentSoon: 0, backupStale: 0, backupStopped: 0 };
@@ -390,16 +405,23 @@ function NotificationBell({ alerts, notifs = [], perms = [] }: { alerts?: AlertC
   const items = [
     { show: (a.myTasks ?? 0) > 0, label: "مهام مسندة لك", value: a.myTasks, href: "/staff?tab=tasks", kind: "tasks" },
     { show: (a.overdueTasks ?? 0) > 0, label: "مهام متأخرة", value: a.overdueTasks, href: "/staff?tab=tasks&taskStatus=overdue", kind: "tasks" },
-    { show: (a.appointmentSoon ?? 0) > 0, label: "مواعيد قريبة خلال ساعتين", value: a.appointmentSoon, href: "/patients-care?tab=appointments", kind: "appointments" },
-    { show: a.rxPending > 0, label: "وصفات بانتظار التجهيز", value: a.rxPending, href: "/pharmacy-inventory?tab=dispense", kind: "inventory" },
+    { show: (a.appointmentSoon ?? 0) > 0, label: "مواعيد قريبة خلال ساعتين", value: a.appointmentSoon, href: "/appointments", kind: "appointments" },
+    { show: a.rxPending > 0, label: "وصفات بانتظار التجهيز", value: a.rxPending, href: "/pharmacy", kind: "inventory" },
     { show: a.expiringSoon > 0, label: "دفعات قريبة/منتهية النفاذية", value: a.expiringSoon, href: "/pharmacy-inventory?tab=batches&batchState=soon", kind: "inventory" },
-    { show: a.lowStock > 0, label: "مواد منخفضة بالمخزون", value: a.lowStock, href: "/pharmacy-inventory?tab=stock&stockState=low", kind: "inventory" },
+    { show: a.lowStock > 0, label: "مواد منخفضة بالمخزون", value: a.lowStock, href: "/pharmacy/stock?state=low", kind: "inventory" },
     { show: a.devicesDue > 0, label: "أجهزة بحاجة صيانة", value: a.devicesDue, href: "/devices?due=1", kind: "devices" },
-    { show: a.admOver > 0, label: "رقود انتهى وقته", value: a.admOver, href: "/therapy-centers?tab=beds", kind: "system" },
+    { show: a.admOver > 0, label: "رقود انتهى وقته", value: a.admOver, href: "/beds", kind: "system" },
     { show: (a.backupStale ?? 0) > 0, label: "لا توجد نسخة احتياطية حديثة", value: a.backupStale, href: "/backup", kind: "system" },
     { show: (a.backupStopped ?? 0) > 0, label: "النسخ التلقائي متوقف", value: a.backupStopped, href: "/backup", kind: "system" },
   ].filter((i) => i.show && canOpenNotification(i.href, permSet));
-  const total = items.reduce((sum, i) => sum + Number(i.value || 0), 0) + visibleNotifs.length;
+  const operationalTotal = items.reduce((sum, i) => sum + Number(i.value || 0), 0);
+  const total = operationalTotal + notificationUnreadCount;
+
+  useEffect(() => {
+    if (path !== "/notifications" && !open) return;
+    const refresh = window.setInterval(() => router.refresh(), 30_000);
+    return () => window.clearInterval(refresh);
+  }, [open, path, router]);
 
   useEffect(() => {
     if (total <= 0) return;
@@ -434,7 +456,7 @@ function NotificationBell({ alerts, notifs = [], perms = [] }: { alerts?: AlertC
     <div className="relative">
       <button onClick={() => setOpen((o) => !o)} className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-lg leading-none" title="الإشعارات" aria-label="الإشعارات">
         🔔
-        {total > 0 && <span className="absolute -top-1 -left-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{total}</span>}
+        {total > 0 && <span title={`تنبيهات محفوظة: ${notificationUnreadCount} · بنود تشغيلية: ${operationalTotal}`} className="absolute -top-1 -left-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{total}</span>}
       </button>
       {open && (
         <>
@@ -445,6 +467,7 @@ function NotificationBell({ alerts, notifs = [], perms = [] }: { alerts?: AlertC
               <Link href="/notifications" onClick={() => setOpen(false)} className="text-[11px] text-gray-500 hover:text-brand-700 hover:underline">مركز التنبيهات</Link>
               {visibleNotifs.length > 0 && <form action={markAllNotificationsRead}><button className="text-[11px] text-brand-600 hover:underline">تعليم الكل كمقروء</button></form>}
             </div>
+            {visibleNotifs.length > 0 && <div className="px-2 pb-1 pt-2 text-[11px] font-semibold text-gray-400">تنبيهات محفوظة لحسابك</div>}
             {visibleNotifs.map((n: any) => {
               const tone = notificationTone(n);
               return (
@@ -457,7 +480,7 @@ function NotificationBell({ alerts, notifs = [], perms = [] }: { alerts?: AlertC
                 {n.body && <div className="text-xs text-gray-500">{n.body}</div>}
               </Link>
             );})}
-            {items.length === 0 && visibleNotifs.length === 0 && <div className="px-2 py-3 text-center text-sm text-gray-400">لا توجد تنبيهات.</div>}
+            {items.length > 0 && <div className="px-2 pb-1 pt-2 text-[11px] font-semibold text-gray-400">بنود تشغيلية تحتاج متابعة</div>}
             {items.map((i) => (
               <Link key={i.label} href={i.href} onClick={() => setOpen(false)}
                 className="mb-1 flex items-center justify-between rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
@@ -465,6 +488,7 @@ function NotificationBell({ alerts, notifs = [], perms = [] }: { alerts?: AlertC
                 <span className="rounded bg-red-50 px-1.5 text-xs font-bold text-red-700">{i.value}</span>
               </Link>
             ))}
+            {items.length === 0 && visibleNotifs.length === 0 && <div className="px-2 py-3 text-center text-sm text-gray-400">لا توجد تنبيهات أو بنود متابعة حالياً.</div>}
             {needsPermission && (
               <button onClick={enableNotifications} className="mt-1 w-full rounded-lg bg-brand-50 px-2 py-2 text-xs font-medium text-brand-700 hover:bg-brand-100">🔔 تفعيل تنبيهات سطح المكتب</button>
             )}

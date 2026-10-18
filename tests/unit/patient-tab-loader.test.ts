@@ -4,6 +4,7 @@ import {
   type PatientTabRepository,
   type TabDeps,
 } from "@/lib/patient-tab-loader";
+import { roleDefaultSet } from "@/lib/perms";
 
 const findMany = () => vi.fn().mockResolvedValue([]);
 const prisma = {
@@ -19,10 +20,11 @@ const prisma = {
 } satisfies PatientTabRepository;
 
 const deps = (overrides: Partial<TabDeps> = {}): TabDeps => ({
-  session: vi.fn().mockResolvedValue({ user: { id: "user-12345" } }),
+  session: vi.fn().mockResolvedValue({ user: { id: "user-12345", role: "HEAD_THERAPIST" } }),
   patientsView: vi.fn().mockResolvedValue(undefined),
   perms: vi.fn().mockResolvedValue(new Set(["patients.view", "referrals.view"])),
   memberships: vi.fn().mockResolvedValue([1]),
+  referralScope: vi.fn().mockResolvedValue({ OR: [{ destinationCenterId: 1 }, { createdById: "user-12345" }] }),
   prisma,
   ...overrides,
 });
@@ -69,6 +71,13 @@ describe("patient tab loader", () => {
     expectNoRepositoryCalls();
   });
 
+  it("rejects a secretary's direct clinical journey data request", async () => {
+    const d = deps({ perms: vi.fn().mockResolvedValue(roleDefaultSet("SECRETARY")) });
+    await expect(loadPatientTabData("patient-12345", "journey", d)).rejects.toThrow();
+    expect(d.memberships).not.toHaveBeenCalled();
+    expectNoRepositoryCalls();
+  });
+
   it("preserves referral scope, relations, and ordering", async () => {
     const d = deps();
     await loadPatientTabData("patient-12345", "referrals", d);
@@ -77,7 +86,7 @@ describe("patient tab loader", () => {
         patientId: "patient-12345",
         status: "ACCEPTED",
         destinationScope: "INTERNAL_CENTER",
-        OR: [{ destinationCenterId: null }, { destinationCenterId: { in: [1] } }],
+        AND: [{ OR: [{ destinationCenterId: 1 }, { createdById: "user-12345" }] }],
       },
       include: {
         destinationCenter: { select: { name: true } },

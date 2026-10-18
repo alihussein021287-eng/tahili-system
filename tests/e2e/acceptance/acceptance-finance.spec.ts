@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { prisma } from "@/lib/db";
 import { ensureLegacyAcceptancePatients } from "./fixture-factory";
-import { credential, pageFor, RUN_ID, screenshot, statePath } from "./helpers";
+import { credential, pageFor, RUN_ID, screenshot, statePath, pickComboboxContaining } from "./helpers";
 import { submitServerAction } from "./resilient-action";
 
 test.beforeAll(async () => { await ensureLegacyAcceptancePatients(); });
@@ -9,8 +9,9 @@ test.beforeAll(async () => { await ensureLegacyAcceptancePatients(); });
 test("workflow 18: two distinct approvals, payment and voucher", async ({ browser }) => {
   const accountant = await pageFor(browser, "ACCOUNTANT");
   await accountant.page.goto("/finance/expenses");
-  const form = accountant.page.locator('form:has-text("إنشاء مسودة صرفية")');
-  await form.locator('select[name="patientId"]').selectOption({ label: "ACCEPTANCE-20260713 مراجع 18 صرفية جريح، ملف #30" });
+  await accountant.page.getByText("+ مسودة صرفية جديدة").click();
+  const form = accountant.page.locator('form:has-text("حفظ المسودة")');
+  await pickComboboxContaining(form, "patientId", "مراجع 18 صرفية جريح");
   await form.locator('input[name="beneficiary"]').fill(`ACCEPTANCE-20260713 ${RUN_ID}`);
   await form.locator('input[name="expenseType"]').fill("دعم قبول");
   await form.locator('input[name="amount"]').fill("125000");
@@ -114,8 +115,9 @@ test("workflow 18: two distinct approvals, payment and voucher", async ({ browse
 test("workflow 19: expense rejection locks payment path", async ({ browser }) => {
   const accountant = await pageFor(browser, "ACCOUNTANT");
   await accountant.page.goto("/finance/expenses");
-  const form = accountant.page.locator('form:has-text("إنشاء مسودة صرفية")');
-  await form.locator('select[name="patientId"]').selectOption({ label: "ACCEPTANCE-20260713 مراجع 18 صرفية جريح، ملف #30" });
+  await accountant.page.getByText("+ مسودة صرفية جديدة").click();
+  const form = accountant.page.locator('form:has-text("حفظ المسودة")');
+  await pickComboboxContaining(form, "patientId", "مراجع 18 صرفية جريح");
   await form.locator('input[name="beneficiary"]').fill(`ACCEPTANCE-20260713 ${RUN_ID} رفض`);
   await form.locator('input[name="expenseType"]').fill("رفض قبول");
   await form.locator('input[name="amount"]').fill("75000");

@@ -1,5 +1,6 @@
 "use server";
 import { requireSession } from "@/lib/access";
+import { assertPatientActionScope, assertInvoiceScope, assertInvoiceMutationScope, assertFinanceMutationScope, assertVisitBillingScope } from "@/lib/patient-guard";
 import { prisma } from "@/lib/db";
 import { canManageFinance } from "@/lib/permissions";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
@@ -21,14 +22,24 @@ function computeStatus(amount: number, paid: number) {
 export async function createInvoice(fd: FormData) {
   const s = await requireFinance();
   await assertPerm("finance.invoice");
-  const patientId = fd.get("patientId")?.toString();
+  const visitIdInput = fd.get("visitId")?.toString() || "";
   const amount = parseInt(fd.get("amount")?.toString() || "0", 10);
-  if (!patientId || !amount || amount <= 0) redirect("/finance?saved=" + encodeURIComponent("اختر المريض وأدخل مبلغاً صحيحاً"));
+  let patientId = fd.get("patientId")?.toString();
+  let visitId: string | null = null;
+  if (visitIdInput) {
+    // Billing a specific visit: the visit's receiving branch (the actor's own branch) owns the invoice; the patient comes from the visit.
+    const v = await assertVisitBillingScope(visitIdInput);
+    if (patientId && patientId !== v.patientId) throw new Error("المراجع المختار لا يطابق زيارة الفاتورة");
+    patientId = v.patientId; visitId = v.visitId;
+  }
+  if (!patientId || !amount || amount <= 0) redirect("/finance?saved=" + encodeURIComponent("اختر المريض أو الزيارة وأدخل مبلغاً صحيحاً"));
+  // Patient-only invoice (no visit): follows the patient's home branch; no guessing of another branch.
+  if (!visitId) await assertFinanceMutationScope(patientId);
   let paidAmount = parseInt(fd.get("paidAmount")?.toString() || "0", 10) || 0;
   if (paidAmount > amount) paidAmount = amount;
   const issuedAtStr = fd.get("issuedAt")?.toString();
   const inv = await prisma.invoice.create({ data: {
-    patientId: patientId!, amount, paidAmount,
+    patientId: patientId!, visitId, amount, paidAmount,
     description: fd.get("description")?.toString() || null,
     issuedAt: issuedAtStr ? new Date(issuedAtStr) : undefined,
     status: computeStatus(amount, paidAmount) as any,
@@ -37,7 +48,7 @@ export async function createInvoice(fd: FormData) {
   if (paidAmount > 0) {
     await prisma.payment.create({ data: { invoiceId: inv.id, amount: paidAmount, createdById: (s?.user as any)?.id } });
   }
-  await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "invoices", recordId: inv.id });
+  await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "invoices", recordId: inv.id, newValue: { visitId, patientId, amount, ownerBasis: visitId ? "VISIT_RECEIVING_BRANCH" : "PATIENT_HOME_BRANCH" } });
   revalidatePath("/finance");
 }
 
@@ -46,6 +57,7 @@ export async function recordPayment(id: string, fd: FormData) {
   await assertPerm("finance.payment");
   const pay = parseInt(fd.get("pay")?.toString() || "0", 10);
   if (!pay || pay <= 0) redirect("/finance?saved=" + encodeURIComponent("أدخل مبلغ دفعة صحيح"));
+  await assertInvoiceMutationScope(id);
   const inv = await prisma.invoice.findUnique({ where: { id } });
   if (!inv) redirect("/finance");
   const add = Math.min(pay, inv!.amount - inv!.paidAmount);
@@ -63,6 +75,7 @@ export async function recordPayment(id: string, fd: FormData) {
 export async function payFull(id: string) {
   const s = await requireFinance();
   await assertPerm("finance.payment");
+  await assertInvoiceMutationScope(id);
   const inv = await prisma.invoice.findUnique({ where: { id } });
   if (!inv) redirect("/finance");
   const add = inv!.amount - inv!.paidAmount;
@@ -81,6 +94,7 @@ export async function updateInvoiceDate(id: string, fd: FormData) {
   await assertPerm("finance.invoice");
   const d = fd.get("issuedAt")?.toString();
   if (!d) redirect("/finance");
+  await assertInvoiceMutationScope(id);
   await prisma.invoice.update({ where: { id }, data: { issuedAt: new Date(d) } });
   await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "invoices", recordId: id });
   revalidatePath("/finance");
@@ -91,6 +105,7 @@ export async function deleteInvoice(id: string) {
   await assertAdminDelete();
   const s = await requireFinance();
   await assertPerm("finance.delete");
+  await assertInvoiceMutationScope(id);
   await prisma.invoice.delete({ where: { id } });
   await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "invoices", recordId: id });
   revalidatePath("/finance");

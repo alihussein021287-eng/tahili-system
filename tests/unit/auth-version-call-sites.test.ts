@@ -9,13 +9,13 @@ function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return sourceFiles(path);
-    return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+    return /\.(ts|tsx)$/.test(entry.name) ? [path.replaceAll("\\", "/")] : [];
   });
 }
 
 function exportedFunction(path: string, name: string) {
   const source = read(path);
-  const start = source.indexOf(`export async function ${name}`);
+  const start = source.indexOf(`export async function ${name}(`);
   if (start < 0) throw new Error(`Missing function ${name}`);
   const next = source.indexOf("\nexport async function ", start + 1);
   return source.slice(start, next < 0 ? undefined : next);

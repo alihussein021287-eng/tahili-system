@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { requirePerm } from "@/lib/access";
+import { currentPerms, getSession, requirePerm } from "@/lib/access";
+import { prisma } from "@/lib/db";
+import { patientScopeWhere } from "@/lib/patient-access";
 import { PageHeader } from "@/components/PageHeader";
 import { DATA_QUALITY_LABELS, getPatientDataQuality } from "@/lib/data-quality";
 import { fmtDate } from "@/lib/labels";
@@ -10,7 +12,9 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
   await requirePerm("patients.view");
   const sp = await searchParams;
   const selected = sp.kind ?? "";
-  const report = await getPatientDataQuality(selected);
+  const dqSession = await getSession();
+  const dqScope = await patientScopeWhere(prisma, { userId: (dqSession?.user as any)?.id ?? "", role: (dqSession?.user as any)?.role, permissions: await currentPerms() });
+  const report = await getPatientDataQuality(selected, dqScope);
 
   return (
     <div className="space-y-5">

@@ -52,6 +52,12 @@ export async function loadPermissionsFromStore(
     if (item.allowed) permissions.add(item.permKey);
     else permissions.delete(item.permKey);
   }
+  // Secretary handoff history is scoped separately; journey grants expose clinical paths.
+  if (role === "SECRETARY") {
+    permissions.delete("journey.view");
+    permissions.delete("journey.confirm");
+    permissions.delete("journey.manage");
+  }
   return permissions;
 }
 

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { PatientSearchField } from "@/components/PatientSearchField";
 import { Combobox } from "@/components/Combobox";
 import { PageHeader } from "@/components/PageHeader";
 import { requirePerm, currentPerms, getSession } from "@/lib/access";
@@ -9,6 +10,9 @@ import { authOptions } from "@/lib/auth";
 import Link from "next/link";
 import { fmtTime } from "@/lib/labels";
 import { addMedDose, toggleMedGiven, deleteMedDose } from "./actions";
+import { HubTabs } from "@/components/hub/HubTabs";
+import { baghdadDayRange } from "@/lib/display-utils";
+import { THERAPY_CENTERS_NAV } from "@/lib/hub-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +22,7 @@ export default async function Meds() {
   const perms = await currentPerms();
   const isAdminRole = ((await getSession())?.user as any)?.role === "ADMIN";
   const editable = perms.has("meds.manage");
-  const startToday = new Date(new Date().toDateString());
+  const startToday = baghdadDayRange(new Date()).start;
 
   const [admitted, doses] = await Promise.all([
     prisma.admission.findMany({ where: { status: "ADMITTED" }, include: { patient: true } }),
@@ -29,15 +33,14 @@ export default async function Meds() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="أدوية الراقدين" subtitle={`جرعات اليوم — متبقّي ${pending}`} icon="💊">
-        <Link href="/therapy-centers?tab=meds" className="btn-ghost bg-white text-brand-700">لوحة المسار العلاجي والمراكز</Link>
-      </PageHeader>
+      <PageHeader title="أدوية الراقدين" subtitle={`جرعات اليوم — متبقّي ${pending}`} icon="💊" />
+      <HubTabs nav={THERAPY_CENTERS_NAV} active="meds" label="تبويبات المسار العلاجي والمراكز" perms={perms} />
 
       {editable && (
         <form action={addMedDose} className="card flex flex-wrap items-end gap-2 p-4">
           <div className="flex-1 min-w-[180px]">
             <label className="label">المريض (راقد)</label>
-            <Combobox name="patientId" required allowFree={false} options={patients.map((p:any)=>({value:String(p.id),label:`${p.fullName} (#${p.fileNumber})`}))} />
+            <PatientSearchField name="patientId" required scope="admitted" />
           </div>
           <div className="flex-1 min-w-[140px]"><label className="label">الدواء</label><input name="drug" className="input" required /></div>
           <div><label className="label">الجرعة</label><input name="dose" className="input !w-28" placeholder="مثل: 500mg" /></div>

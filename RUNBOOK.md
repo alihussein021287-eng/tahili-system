@@ -19,6 +19,10 @@ curl -fsS -o /dev/null -w '%{http_code}\n' http://192.168.17.20:3000/login
 اترك `skills-lock.json` إذا ظهر untracked ولا تضفه إلا بطلب واضح.
 للفحص المجمع الآمن استخدم `scripts/health-check.sh`; السكربت للقراءة فقط ولا يطبع أسراراً.
 
+## الفحص الشامل لنسخة التجربة المحلية (3001)
+
+`ai-mission recipe demo-check` يصفّر نسخة 3001 فقط (بعد نسخة احتياطية) ويبني موظفين ومراجعين تجريبيين ويمشّيهم بكل المسارات بمتصفح آلي، ثم يكتب `test-results/demo/report.md`. التفاصيل: [docs/DEMO_CHECK_AR.md](docs/DEMO_CHECK_AR.md). لا يُشغَّل على التطوير أو الإنتاج.
+
 ## Logs والأخطاء
 
 ```bash
@@ -135,3 +139,13 @@ docker ps -a
 - المساحة قبل وبعد والخدمات و`/login` وmigrations والlogs.
 
 الحذف الآمن المحتمل يقتصر على عناصر مثبتة غير مستخدمة: dangling images، build cache، stopped containers غير اللازمة، archives مؤقتة مؤكدة، وtest/preview temp القديم. لا تحذف volumes أو DB/MinIO/uploads/backups/credentials/QA data أو logs نشطة. لا تحذف tagged app image قبل إثبات أنها ليست عاملة ولا الصورة المستقرة المطلوب إبقاؤها.
+
+## Branch pharmacy stock initialization & reconciliation (2026-10-18)
+Each branch pharmacy owns its stock; legacy shared stock is UNASSIGNED and not dispensable. Before go-live, per branch pharmacy:
+1. `node scripts/pharmacy-branch-stock.cjs report` — list unassigned batches/prescriptions/orders and per-branch units (read-only).
+2. Verified physical count → CSV `branchId,medication,batchNo,expiryDate,quantity,countedBy,countDate`; run `opening-balance --file counts.csv` (dry run), then add `--apply`.
+3. Legacy batches that belong to a branch: `assign-batch --batch-id N --branch-id B --counted-quantity Q --counted-by "..."`; legacy open prescriptions/orders: `assign-prescription` / `assign-order`.
+4. Never run with unverified counts; every apply writes movement + audit. Do not pool, split by guess or transfer between branches.
+
+## مركز البيانات (09.1)
+تنفيذ الاستيراد مقفل افتراضياً (`DATA_CENTER_APPLY_ENABLED` غير مضبوط). لا تضبطه على 3101/QA. الدليل: `docs/DATA_CENTER_OWNER_GUIDE_AR.md`.

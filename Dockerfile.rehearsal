@@ -1,0 +1,26 @@
+FROM tahili-clean-rehearsal:builder-m06-20261014 AS builder
+WORKDIR /app
+COPY . .
+RUN rm -rf .next && npx prisma generate && npm run build
+
+# Pinned local development runtime is used only to avoid network-dependent
+# Alpine package installation during this isolated rehearsal. The application
+# build and dependencies below come exclusively from the frozen snapshot.
+FROM tahili-clean-rehearsal:runtime-base-m06 AS runner
+WORKDIR /app
+RUN rm -rf /app/.next /app/node_modules /app/prisma /app/scripts /app/public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/public ./public
+ENV NODE_ENV=production
+ARG SOURCE_MANIFEST_SHA256
+ARG REHEARSAL_REVISION
+ENV GIT_REVISION=${REHEARSAL_REVISION}
+LABEL org.opencontainers.image.revision="${REHEARSAL_REVISION}"
+LABEL tahili.rehearsal.source-manifest-sha256=${SOURCE_MANIFEST_SHA256}
+LABEL tahili.rehearsal.runtime-base="sha256:cc0286dee3cbd4a70db8c0a1371389bcf077acdb241cdc496e5196146839d01b"
+EXPOSE 3000
+CMD ["npm", "start"]

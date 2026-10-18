@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
-const baseURL = "http://192.168.17.20:3000";
-const credentialPath = process.env.QA_CREDENTIALS_PATH || "/root/tahili-role-acceptance-credentials.tsv";
+import { REHEARSAL_ORIGIN } from "./acceptance/helpers";
+const baseURL = REHEARSAL_ORIGIN;
+const credentialPath = process.env.QA_CREDENTIALS_PATH || "";
 const roles = [
   "ADMIN",
   "MANAGER",
@@ -19,7 +20,6 @@ const roles = [
 ] as const;
 const routes = [
   "/",
-  "/workspaces",
   "/my-work?type=all&priority=all",
   "/patients-care?tab=overview",
   "/therapy-centers?tab=overview",

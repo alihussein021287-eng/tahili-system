@@ -52,3 +52,11 @@ pnpm-debug.log*
 .idea
 .DS_Store
 Thumbs.db
+
+release-evidence/acceptance-run
+release-evidence/playwright-output
+release-package
+
+# Future real-data import inputs/outputs (never baked into an image)
+import-input
+import-output

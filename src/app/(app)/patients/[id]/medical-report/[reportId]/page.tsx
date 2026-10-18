@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
+import { requireBranchBoundPageScope } from "@/lib/patient-guard";
 import { getOrg } from "@/lib/org";
-import { requirePerm } from "@/lib/access";
+import { requirePerm, getSession } from "@/lib/access";
 import { PrintButton } from "@/components/PrintButton";
 import { fmtDate } from "@/lib/labels";
 import Link from "next/link";
@@ -11,11 +12,17 @@ export const dynamic = "force-dynamic";
 export default async function MedicalReportPrint({ params }: { params: Promise<{ id: string; reportId: string }> }) {
   await requirePerm("reports.print");
   const { id, reportId } = await params;
+  await requireBranchBoundPageScope(id); // branch / explicit relationship; the central-manager shortcut does not apply to printing
   const [org, report] = await Promise.all([
     getOrg(),
     prisma.medicalReport.findFirst({ where: { id: reportId, patientId: id }, include: { patient: true } }),
   ]);
   if (!report) notFound();
+  // Lifecycle: only a report that was released for printing (or already printed/approved) can be opened here; drafts and cancelled
+  // reports never print. Every successful open is audited.
+  if (report.status !== "READY_TO_PRINT" && report.status !== "PRINTED_APPROVED") notFound();
+  const session = await getSession();
+  await prisma.auditLog.create({ data: { userId: (session?.user as any)?.id, action: "PRINT_VIEW", tableName: "medical_reports", recordId: report.id, newValue: { status: report.status, patientId: id } } }).catch(() => undefined);
   return <main className="mx-auto max-w-3xl space-y-4">
     <div className="flex justify-between print:hidden"><Link href={`/patients/${id}?tab=reports`} className="btn-ghost">رجوع لملف المراجع</Link><PrintButton /></div>
     <article className="card min-h-[900px] p-10">

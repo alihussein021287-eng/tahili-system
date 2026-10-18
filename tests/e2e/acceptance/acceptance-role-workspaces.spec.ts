@@ -58,6 +58,8 @@ test("patient profile exposes only the derived journey and transition links", as
   const patient = await prisma.patient.findFirstOrThrow({
     where: {
       status: "ACTIVE",
+      // branch-scoped roles can only open patients of their own branch (rehearsal fixtures live in the acceptance branch)
+      ...(process.env.ACCEPTANCE_BRANCH_ID ? { branchId: Number(process.env.ACCEPTANCE_BRANCH_ID) } : {}),
       OR: [
         { notes: { contains: "QA", mode: "insensitive" } },
         { notes: { contains: "ACCEPTANCE", mode: "insensitive" } },
@@ -68,8 +70,10 @@ test("patient profile exposes only the derived journey and transition links", as
   });
   const { context, page, errors } = await pageFor(browser, "DOCTOR");
   await page.goto(`/patients/${patient.id}`);
-  await expect(page.getByRole("heading", { name: "رحلة المراجع", exact: true }).first()).toBeVisible();
-  await expect(page.getByText("الخطوة التالية", { exact: true }).first()).toBeVisible();
-  await expect(page.locator('a[href*="/patients/"], a[href*="patients-care"], a[href*="therapy-centers"]').filter({ hasText: /انتقال|فتح الرحلة/ }).first()).toBeVisible();
+  // The journey is derived from PatientHandoff (approved model): current holder, next stage and the stage path.
+  await expect(page.getByRole("heading", { name: "رحلة المراجع", exact: true }).first()).toBeAttached();
+  await expect(page.getByRole("status").filter({ hasText: /هسه عند|لا توج/ }).first()).toBeVisible();
+  await expect(page.getByText(/المرحلة التالية|بعدها:|اكتمل المسار|بانتظار استلام|قيد متابعة/).first()).toBeVisible();
+  await expect(page.getByRole("list", { name: "مراحل مسار المراجع" }).first()).toBeVisible();
   await closeChecked(context, errors);
 });

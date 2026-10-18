@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { roleDefaultSet } from "@/lib/perms";
 import {
   PATIENT_TABS,
   canViewPatientTab,
@@ -8,6 +9,13 @@ import {
 } from "@/lib/patient-tab-policy";
 
 describe("patient tab policy", () => {
+  it("keeps secretary in administrative followup tabs without clinical journey access", () => {
+    const permissions = roleDefaultSet("SECRETARY");
+    for (const tab of ["overview", "timeline", "referrals"]) expect(canViewPatientTab(tab, permissions)).toBe(true);
+    for (const tab of ["journey", "sickleave", "diag", "resident", "sessions", "plan", "metrics", "care", "corr", "files", "therapyProgram"]) {
+      expect(canViewPatientTab(tab, permissions)).toBe(false);
+    }
+  });
   it("has the closed 21-tab contract and rejects unknown tabs", () => {
     expect(PATIENT_TABS).toHaveLength(21);
     expect(PATIENT_TABS.map(({ key }) => key)).toEqual([

@@ -1,5 +1,6 @@
 import { CollaborationFilesClient } from "@/components/collaboration/CollaborationFilesClient";
 import { CollaborationTopNav } from "@/components/collaboration/CollaborationUi";
+import { currentPatientScope } from "@/lib/patient-guard";
 import { prisma } from "@/lib/db";
 import { collaborationActor, listConversations, listFiles } from "@/lib/collaboration-service";
 import { getAdminConfig } from "@/lib/admin-config";
@@ -81,7 +82,7 @@ export default async function CollaborationFilesPage({ searchParams }: { searchP
       orderBy: { name: "asc" },
       take: 200,
     }),
-    prisma.patient.findMany({ where: { archivedAt: null }, select: { id: true, fullName: true, fileNumber: true }, orderBy: { fullName: "asc" }, take: 200 }),
+    Promise.resolve([] as Array<{ id: string; fullName: string; fileNumber: number }>),
     getAdminConfig(),
   ]);
   const canAdmin = actor.role === "ADMIN" || actor.permissions.has("files.admin");

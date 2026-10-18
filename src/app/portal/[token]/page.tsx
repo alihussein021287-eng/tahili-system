@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { PATIENT_STATUS, THERAPY, CONFIRM_STATUS, fmtDate, fmtTime } from "@/lib/labels";
 import { respondAppointment } from "./actions";
 import { PrintButton } from "@/components/PrintButton";
+import { derivePatientPath } from "@/lib/patient-path";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +25,14 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
         take: 10,
         select: { id: true, type: true, therapyType: true, scheduledAt: true, patientResponse: true },
       },
-      careStages: {
-        orderBy: { sequence: "asc" },
-        select: { id: true, station: true, status: true, confirmedAt: true },
-      },
+      // Only what the path needs: stage roles and statuses, never staff names or notes.
+      dataEntryBy: true,
+      handoffs: { select: { toRole: true, status: true, sentAt: true } },
+      residentReviews: { select: { id: true } },
+      diagnoses: { select: { type: true } },
+      treatmentPlans: { select: { status: true } },
+      centerPrograms: { select: { status: true } },
+      therapySessionLogs: { select: { id: true } },
     },
   });
   if (!patient) notFound();
@@ -53,28 +58,28 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
           </div>
         </div>
 
-        {patient.careStages.length > 0 && (() => {
-          const stages = patient.careStages;
-          const M: any = { WAITING: ["بالانتظار", "bg-gray-300", "bg-gray-100 text-gray-600"], IN_PROGRESS: ["قيد التنفيذ", "bg-amber-500", "bg-amber-100 text-amber-700"], CONFIRMED: ["مكتملة", "bg-emerald-600", "bg-emerald-100 text-emerald-700"], SKIPPED: ["متجاوَزة", "bg-gray-300", "bg-gray-100 text-gray-400"] };
-          const done = stages.filter((s: any) => s.status === "CONFIRMED").length;
-          const cur = stages.find((s: any) => s.status === "WAITING" || s.status === "IN_PROGRESS");
+        {(() => {
+          // Same path as the staff file, worked out from the handoffs and the recorded work.
+          const path = derivePatientPath({ ...patient, appointments: patient.appointments.map((a) => ({ status: "SCHEDULED", scheduledAt: a.scheduledAt })) });
+          const M: Record<string, [string, string, string]> = { pending: ["بالانتظار", "bg-gray-300", "bg-gray-100 text-gray-600"], current: ["الآن", "bg-amber-500", "bg-amber-100 text-amber-700"], complete: ["مكتملة", "bg-emerald-600", "bg-emerald-100 text-emerald-700"], skipped: ["غير مطلوبة", "bg-gray-300", "bg-gray-100 text-gray-400"] };
+          const done = path.stages.filter((st) => st.status === "complete").length;
+          const cur = path.stages.find((st) => st.status === "current");
           return (
             <div className="rounded-xl border bg-white p-5">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="font-semibold text-gray-700">مسار متابعتك</h2>
-                <span className="rounded-full bg-brand-50 px-3 py-1 text-xs text-brand-700">{cur ? `الآن: ${cur.station}` : "مكتمل ✔"} • {done}/{stages.length}</span>
+                <span className="rounded-full bg-brand-50 px-3 py-1 text-xs text-brand-700">{cur ? `الآن: ${cur.label}` : "مكتمل ✔"} • {done}/{path.stages.length}</span>
               </div>
               <ol className="relative border-r-2 border-gray-200 pr-5">
-                {stages.map((st: any) => {
-                  const m = M[st.status] || M.WAITING;
+                {path.stages.map((st) => {
+                  const m = M[st.status] || M.pending;
                   return (
-                    <li key={st.id} className="relative mb-4">
+                    <li key={st.key} className="relative mb-4">
                       <span className={`absolute -right-[27px] top-1 h-3.5 w-3.5 rounded-full ring-4 ring-white ${m[1]}`} />
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-gray-800">{st.station}</span>
+                        <span className="font-medium text-gray-800">{st.label}</span>
                         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${m[2]}`}>{m[0]}</span>
                       </div>
-                      {st.status === "CONFIRMED" && st.confirmedAt && <div className="text-[11px] text-gray-400">{new Date(st.confirmedAt).toLocaleDateString("ar")}</div>}
                     </li>
                   );
                 })}

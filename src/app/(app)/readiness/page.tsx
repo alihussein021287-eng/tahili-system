@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { EXPIRY_SOON_DAYS } from "@/lib/pharmacy-expiry";
 import { currentPerms, getSession, requirePerm } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
 import { getReadinessChecks, type ReadinessCheck } from "@/lib/readiness";
@@ -8,6 +9,8 @@ import { fmtDateTime } from "@/lib/labels";
 import Link from "next/link";
 import { getSystemStatus } from "@/lib/system-status";
 import { getAdminConfig } from "@/lib/admin-config";
+import { currentStockViewer, batchViewWhere, lowStockMedications } from "@/lib/pharmacy-stock";
+import { pharmacyPrescriptionWhere } from "@/lib/pharmacy-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -19,19 +22,21 @@ export default async function Readiness() {
   const canSeeAudit = role === "ADMIN" || perms.has("audit.view");
   const canSeeBackup = role === "ADMIN" || perms.has("settings.backup");
   const now = new Date();
-  const soon = new Date(); soon.setDate(soon.getDate() + 60);
+  const soon = new Date(); soon.setDate(soon.getDate() + EXPIRY_SOON_DAYS);
   const last24h = new Date(now.getTime() - 24 * 3600000);
   const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
   const backupOverview = getBackupOverview();
   const systemStatus = await getSystemStatus();
 
+  const stockViewer = await currentStockViewer();
+  const rxScope = await pharmacyPrescriptionWhere();
   const [systemChecks, incompletePatients, devicesDue, rxPending, expiringSoon, lowStock, pendingLeaves, urgentTasks, admissions, officialApproval, org, failedLogins24h, successLogins24h, recentAudits, adminConfig] = await Promise.all([
     getReadinessChecks(),
     prisma.patient.count({ where: { archivedAt: null, OR: [{ phone: null }, { governorateId: null }, { injuryTypeId: null }] } }),
     prisma.device.count({ where: { nextMaintenanceAt: { lte: now }, status: { not: "REPLACED" } } }),
-    prisma.prescription.count({ where: { isDispensed: false, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" } }),
-    prisma.medicationBatch.count({ where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: soon } } }),
-    prisma.medication.findMany({ select: { quantity: true, minQuantity: true } }),
+    prisma.prescription.count({ where: { ...rxScope, isDispensed: false, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE", visitId: { not: null } } }),
+    prisma.medicationBatch.count({ where: { ...batchViewWhere(stockViewer), quantity: { gt: 0 }, expiryDate: { not: null, lte: soon } } }),
+    lowStockMedications(stockViewer),
     prisma.leave.count({ where: { status: "PENDING" } }),
     prisma.task.count({ where: { priority: "URGENT", status: { in: ["OPEN", "IN_PROGRESS"] } } }),
     prisma.admission.findMany({ where: { status: "ADMITTED" }, select: { admissionDate: true, durationDays: true } }),
@@ -61,7 +66,7 @@ export default async function Readiness() {
     prisma.user.groupBy({ by: ["role"], where: { isActive: true, needsActivation: false }, _count: { _all: true } }),
     prisma.rolePermission.count(),
     prisma.medication.count(),
-    prisma.medicationBatch.count({ where: { quantity: { gt: 0 } } }),
+    prisma.medicationBatch.count({ where: { ...batchViewWhere(stockViewer), quantity: { gt: 0 } } }),
   ]) : null;
   const systemCheckMap = new Map(systemChecks.map((check) => [check.key, check]));
   const roleCounts = new Map((setupData?.[3] ?? []).map((item) => [item.role, item._count._all]));
@@ -72,7 +77,7 @@ export default async function Readiness() {
     { label: "المراكز والقاعات", complete: setupData[1] > 0 && setupData[2] > 0, detail: `${setupData[1]} مركز · ${setupData[2]} قاعة فعالة`, href: "/settings?tab=centers" },
     { label: "مستخدمو الأدوار الأساسية", complete: missingEssentialRoles.length === 0, detail: missingEssentialRoles.length ? `ينقص: ${missingEssentialRoles.join("، ")}` : "كل الأدوار التشغيلية الأساسية ممثلة بحساب فعّال", href: "/users" },
     { label: "الصلاحيات الأساسية", complete: systemCheckMap.get("permissions")?.status === "ok", detail: setupData[4] > 0 ? `${setupData[4]} تخصيص دور مخزن، مع بقاء القوالب البرمجية مرجعاً` : "القوالب البرمجية فعالة ولا توجد تخصيصات دور مخزنة", href: "/permissions" },
-    { label: "كتالوج الأدوية", complete: setupData[5] > 0, detail: `${setupData[5]} مادة في الكتالوج`, href: "/pharmacy-inventory?tab=stock" },
+    { label: "كتالوج الأدوية", complete: setupData[5] > 0, detail: `${setupData[5]} مادة في الكتالوج`, href: "/pharmacy/stock" },
     { label: "المخزون الفعلي", complete: setupData[6] > 0, detail: setupData[6] > 0 ? `${setupData[6]} دفعة برصيد فعلي` : "صفر دفعات برصيد فعلي؛ وجود الكتالوج لا يعد مخزوناً", href: "/pharmacy-inventory?tab=batches" },
     { label: "إعداد النسخ", complete: Boolean(org?.autoBackup && systemCheckMap.get("backup")?.status === "ok"), detail: org?.autoBackup ? (systemCheckMap.get("backup")?.detail ?? "النسخ مفعّل") : "النسخ التلقائي غير مفعّل", href: "/backup" },
     { label: "ClamAV", complete: systemCheckMap.get("clamav")?.status === "ok", detail: systemCheckMap.get("clamav")?.detail ?? "غير مفحوص", href: "/readiness" },
@@ -84,10 +89,10 @@ export default async function Readiness() {
   const checks = [
     { label: "مراجعون ببيانات ناقصة (هاتف/محافظة/نوع إصابة)", count: incompletePatients, href: "/patients-care?tab=alerts", fix: "أكمل بياناتهم" },
     { label: "أجهزة فات موعد صيانتها", count: devicesDue, href: "/devices?due=1", fix: "سجّل الصيانة" },
-    { label: "وصفات بانتظار الصرف", count: rxPending, href: "/pharmacy-inventory?tab=dispense", fix: "جهّز الوصفات" },
+    { label: "وصفات بانتظار الصرف", count: rxPending, href: "/pharmacy", fix: "جهّز الوصفات" },
     { label: "أدوية قريبة/منتهية النفاذية", count: expiringSoon, href: "/pharmacy-inventory?tab=batches&batchState=soon", fix: "راجع الدفعات" },
-    { label: "مواد منخفضة بالمخزون", count: lowCount, href: "/pharmacy-inventory?tab=stock&stockState=low", fix: "أعد التزويد" },
-    { label: "رقود انتهى وقته", count: admOver, href: "/therapy-centers?tab=beds", fix: "خروج أو تمديد" },
+    { label: "مواد منخفضة بالمخزون", count: lowCount, href: "/pharmacy/stock?state=low", fix: "أعد التزويد" },
+    { label: "رقود انتهى وقته", count: admOver, href: "/beds", fix: "خروج أو تمديد" },
     { label: "إجازات قيد الموافقة", count: pendingLeaves, href: "/staff?tab=leaves", fix: "اقبل أو ارفض" },
     { label: "مهام عاجلة مفتوحة", count: urgentTasks, href: "/staff?tab=tasks&priority=URGENT", fix: "تابعها" },
     { label: `التقرير الرسمي لهذا الشهر غير معتمد`, count: officialApproval ? 0 : 1, href: "/reports-finance?tab=official", fix: "اعتمده" },

@@ -28,6 +28,8 @@ function draftInput(patientId: string, fd: FormData) {
     requestedService: text(fd, "requestedService") || "",
     clinicalReason: text(fd, "clinicalReason") || "",
     assignedReviewerId: text(fd, "assignedReviewerId"),
+    // Only forms that show the field change it; other draft edits keep the doctor's suggestion.
+    suggestedTherapistId: fd.has("suggestedTherapistId") ? text(fd, "suggestedTherapistId") : undefined,
     destinationCenterId: text(fd, "destinationCenterId") ? Number(text(fd, "destinationCenterId")) : null,
   };
 }

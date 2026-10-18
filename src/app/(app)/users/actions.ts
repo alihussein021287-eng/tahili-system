@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import { canManageUsers } from "@/lib/permissions";
 import { roleDefaultSet, ALL_PERMS } from "@/lib/perms";
+import { templateGrants } from "@/lib/role-templates";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { passwordError } from "@/lib/security";
@@ -13,6 +14,9 @@ import { assertCanApplyAdminChange } from "@/lib/admin-security";
 import { incrementAuthVersion, incrementAuthVersionIf } from "@/lib/auth-version";
 import { initialCredentialError } from "@/lib/account-activation";
 import { userDeletionBlockers } from "@/lib/user-deletion";
+import { CenterMembershipRole, CenterMembershipStatus } from "@prisma/client";
+import { allowsMultipleActiveCenters, centerRoleForUserRole } from "@/lib/center-membership";
+import { redirect } from "next/navigation";
 
 async function requireAdmin() {
   const s = await requireSession();
@@ -75,6 +79,103 @@ export async function createUser(fd: FormData) {
   });
   await logAudit({ action: "CREATE", tableName: "users", recordId: created.id });
   revalidatePath("/users");
+  redirect(`/users/${created.id}?tab=membership&new=1`);
+}
+
+function membershipFields(fd: FormData, expectedRole: CenterMembershipRole | null) {
+  const centerId = Number(fd.get("centerId"));
+  const role = fd.get("role")?.toString() as CenterMembershipRole;
+  const specialty = fd.get("specialty")?.toString().trim() || null;
+  if (!Number.isInteger(centerId) || centerId < 1 || !expectedRole || role !== expectedRole) {
+    throw new Error("اختر مركزاً وصفة صحيحتين");
+  }
+  return { centerId, role, specialty };
+}
+
+function effectiveMembershipWhere(now: Date) {
+  return {
+    status: CenterMembershipStatus.ACTIVE,
+    startDate: { lte: now },
+    OR: [{ endDate: null }, { endDate: { gte: now } }],
+  };
+}
+
+function refreshMembershipViews(userId: string) {
+  revalidatePath(`/users/${userId}`);
+  revalidatePath("/users");
+  revalidatePath("/staff");
+  revalidatePath("/settings");
+  revalidatePath("/centers");
+  revalidatePath("/therapy-centers");
+}
+
+// This is the only write path for staff centre placement. For one-centre roles,
+// a placement in a new centre closes the prior effective placement first.
+export async function placeUserInCenter(userId: string, fd: FormData) {
+  await requireAdmin();
+  const account = await prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { role: true } });
+  const { centerId, role, specialty } = membershipFields(fd, account ? centerRoleForUserRole(account.role) : null);
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    const [user, center] = await Promise.all([
+      tx.user.findFirst({ where: { id: userId, isActive: true }, select: { id: true } }),
+      tx.center.findFirst({ where: { id: centerId, active: true }, select: { id: true, name: true } }),
+    ]);
+    if (!user) throw new Error("المستخدم غير متاح");
+    if (!center) throw new Error("المركز غير متاح");
+    if (!allowsMultipleActiveCenters(role)) {
+      await tx.centerMembership.updateMany({
+        where: { userId, role, centerId: { not: centerId }, ...effectiveMembershipWhere(now) },
+        data: { status: CenterMembershipStatus.INACTIVE, endDate: now },
+      });
+    }
+    const row = await tx.centerMembership.upsert({
+      where: { centerId_userId_role: { centerId, userId, role } },
+      update: { specialty, status: CenterMembershipStatus.ACTIVE, startDate: now, endDate: null },
+      create: { centerId, userId, role, specialty, status: CenterMembershipStatus.ACTIVE, startDate: now },
+    });
+    await tx.auditLog.create({ data: { action: "UPDATE", tableName: "center_memberships", recordId: row.id, newValue: { userId, centerId, role, placement: "active" } } });
+  }, { isolationLevel: "Serializable" });
+  refreshMembershipViews(userId);
+}
+
+export async function updateUserCenterMembership(userId: string, membershipId: string, fd: FormData) {
+  await requireAdmin();
+  const account = await prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { role: true } });
+  const { centerId, role, specialty } = membershipFields(fd, account ? centerRoleForUserRole(account.role) : null);
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    const membership = await tx.centerMembership.findFirst({ where: { id: membershipId, userId } });
+    if (!membership) throw new Error("عضوية المركز غير موجودة");
+    if (membership.centerId === centerId && membership.role === role) {
+      await tx.centerMembership.update({ where: { id: membershipId }, data: { specialty } });
+      return;
+    }
+    if (!allowsMultipleActiveCenters(role)) {
+      await tx.centerMembership.updateMany({
+        where: { userId, role, centerId: { not: centerId }, ...effectiveMembershipWhere(now) },
+        data: { status: CenterMembershipStatus.INACTIVE, endDate: now },
+      });
+    }
+    await tx.centerMembership.update({ where: { id: membershipId }, data: { status: CenterMembershipStatus.INACTIVE, endDate: now } });
+    const row = await tx.centerMembership.upsert({
+      where: { centerId_userId_role: { centerId, userId, role } },
+      update: { specialty, status: CenterMembershipStatus.ACTIVE, startDate: now, endDate: null },
+      create: { centerId, userId, role, specialty, status: CenterMembershipStatus.ACTIVE, startDate: now },
+    });
+    await tx.auditLog.create({ data: { action: "UPDATE", tableName: "center_memberships", recordId: row.id, newValue: { userId, centerId, role, placement: "updated" } } });
+  }, { isolationLevel: "Serializable" });
+  refreshMembershipViews(userId);
+}
+
+export async function endUserCenterMembership(userId: string, membershipId: string) {
+  await requireAdmin();
+  const now = new Date();
+  const membership = await prisma.centerMembership.findFirst({ where: { id: membershipId, userId } });
+  if (!membership) throw new Error("عضوية المركز غير موجودة");
+  await prisma.centerMembership.update({ where: { id: membershipId }, data: { status: CenterMembershipStatus.INACTIVE, endDate: now } });
+  await logAudit({ action: "UPDATE", tableName: "center_memberships", recordId: membershipId, newValue: { userId, centerId: membership.centerId, placement: "ended" } });
+  refreshMembershipViews(userId);
 }
 
 export async function toggleUser(id: string, isActive: boolean) {
@@ -187,7 +288,8 @@ export async function clearUserPerms(userId: string) {
 // تعبئة سريعة من قالب دور — يكتب قراراً صريحاً لكل مفتاح (يجعل صلاحيات المستخدم مستقلة)
 export async function applyRoleTemplate(userId: string, role: string, alsoSetRole = false) {
   await requireAdmin();
-  const tmpl = roleDefaultSet(role as any);
+  const existing = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { role: true } });
+  const tmpl = templateGrants(existing.role, role, alsoSetRole); // throws for privileged templates on other roles
   await prisma.$transaction(async (tx) => {
     if (alsoSetRole) {
       const target = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { role: true, isActive: true } });

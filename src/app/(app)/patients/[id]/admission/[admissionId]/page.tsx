@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { requirePatientPageScope } from "@/lib/patient-guard";
 import { getOrg } from "@/lib/org";
 import { requirePerm } from "@/lib/access";
 import { PrintButton } from "@/components/PrintButton";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function AdmissionPrint({ params }: { params: Promise<{ id: string; admissionId: string }> }) {
   await requirePerm("clinical.admission");
   const { id, admissionId } = await params;
+  await requirePatientPageScope(id, "record");
   const [org, admission] = await Promise.all([getOrg(), prisma.admission.findFirst({ where: { id: admissionId, patientId: id }, include: { patient: true, center: true, room: true, bed: true } })]);
   if (!admission) notFound();
   const rows = [["المراجع", admission.patient.fullName], ["رقم الملف", `#${admission.patient.fileNumber}`], ["المركز", admission.center?.name], ["الغرفة", admission.room?.name], ["السرير", admission.bed?.label], ["تاريخ الدخول", fmtDate(admission.admissionDate)], ["المدة", admission.durationDays ? `${admission.durationDays} يوم` : null], ["الخروج المتوقع", fmtDate(admission.expectedDischargeDate)], ["الطبيب الموصي", admission.recommendingDoctor], ["سبب الرقود", admission.admissionReason]];

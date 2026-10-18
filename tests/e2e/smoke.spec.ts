@@ -50,12 +50,14 @@ test("المدير ينشئ حساباً مؤقتاً ثم يفعّله المس
   expect(NEW_PASSWORD, "ACTIVATION_E2E_NEW_PASSWORD is required for this scenario").not.toBe("");
 
   await login(page, USERNAME, PASSWORD);
-  await page.goto("/users");
+  // The account form lives on the users hub "create" tab.
+  await page.goto("/users?tab=create");
   await page.locator('input[name="username"]').fill(ACTIVATION_USER);
   await page.locator('input[name="fullName"]').fill(`E2E Activation ${ACTIVATION_USER}`);
   await page.locator('input[name="password"]').fill(TEMPORARY_PASSWORD);
   await page.getByRole("button", { name: "إضافة مستخدم" }).click();
-  await expect(page.getByText(ACTIVATION_USER, { exact: true })).toBeVisible();
+  // After creation the hub shows the account (name and username are rendered together, so match as a substring).
+  await expect(page.locator("body")).toContainText(ACTIVATION_USER);
 
   await context.clearCookies();
   await page.goto("/login");

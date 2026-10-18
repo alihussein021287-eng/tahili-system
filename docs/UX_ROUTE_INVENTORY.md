@@ -6,14 +6,14 @@
 
 | التصنيف | العدد | المعنى |
 | --- | ---: | --- |
-| `VISUAL` | 74 | صفحة تشغيل فُحصت واستفادت من نظام التصميم أو مكونات الصفحة المشتركة |
+| `VISUAL` | 78 | صفحة تشغيل فُحصت واستفادت من نظام التصميم أو مكونات الصفحة المشتركة |
 | `UNCHANGED` | 4 | شاشة متخصصة خارج AppShell ولا تحتاج توحيد واجهة التشغيل |
 | `PRINT` | 13 | صفحة طباعة أو مستند ثابت؛ راجعت للطباعة والاستجابة ولا تعامل كواجهة تشغيل |
 | `LEGACY` | 3 | route قديم محفوظ للتوافق ويحوّل إلى الصفحة الجامعة مع query parameters |
-| `API` | 21 | Route Handler بلا واجهة مرئية |
+| `API` | 26 | Route Handler بلا واجهة مرئية |
 | غير مفحوص | 0 | لا توجد صفحة مستخدم فعلية خارج الجرد |
 
-إجمالي صفحات الواجهة `page.tsx`: **94**. إجمالي Route Handlers: **21**. إجمالي routes في الجرد: **115**.
+إجمالي صفحات الواجهة `page.tsx`: **98**. إجمالي Route Handlers: **25**. إجمالي routes في الجرد: **123**.
 
 ## Pages
 
@@ -26,6 +26,8 @@
 | `/appointments/[id]/qr` | `PRINT` | بطاقة موعد وQR للطباعة |
 | `/appointments/calendar` | `VISUAL` | تقويم أسبوعي متجاوب |
 | `/approvals` | `VISUAL` | دورة الموافقات والإجراءات |
+| `/data-center` | `VISUAL` | مركز استيراد وتصدير البيانات (صلاحيات `datacenter.*` منفصلة) |
+| `/data-center/import/[id]` | `VISUAL` | معاينة عملية استيراد وإيصالها |
 | `/attendance` | `LEGACY` | يحوّل إلى `/staff?tab=attendance` ويحفظ المعلمات |
 | `/audit` | `VISUAL` | سجل تدقيق مقيد الصلاحية |
 | `/backup` | `VISUAL` | النسخ الاحتياطي وحالات التشغيل |
@@ -56,6 +58,7 @@
 | `/maintenance` | `VISUAL` | الصيانة وإجراءات النظام |
 | `/meds` | `VISUAL` | أدوية الراقدين |
 | `/my-work` | `VISUAL` | قائمة عمل مشتقة من الوحدات الحالية حسب الصلاحية |
+| `/my-work/authored` | `UNCHANGED` | سجلات مؤلَّفة للقراءة فقط بعد تسليم مكتمل (استثناء مقيّد بالتأليف الموثق) |
 | `/notifications` | `VISUAL` | مركز التنبيهات والفلاتر |
 | `/observability` | `VISUAL` | ملخص مراقبة read-only للأدمن؛ بيانات مجمعة بلا logs أو traces خام |
 | `/official-docs` | `VISUAL` | الأرشيف الرسمي |
@@ -101,6 +104,8 @@
 | `/settings` | `VISUAL` | الإعدادات بتبويبات URL |
 | `/setup` | `UNCHANGED` | تهيئة أولية محمية ولا تظهر بعد وجود مدير |
 | `/shifts` | `LEGACY` | يحوّل إلى `/staff?tab=shifts|leaves` ويحفظ المعلمات |
+| `/staff/employees` | `VISUAL` | سجلات الموظفين (Employee) وأعدادها ومراجعة تعيين الأدوار |
+| `/staff/employees/[id]` | `VISUAL` | ملف سجل موظف وتعديله وربط/تجهيز حسابه |
 | `/staff` | `VISUAL` | الصفحة الجامعة للموظفين والمهام |
 | `/station-kpis` | `VISUAL` | مؤشرات محطات الرعاية |
 | `/tasks` | `LEGACY` | يحوّل إلى `/staff?tab=tasks` ويحفظ الفلاتر |
@@ -120,6 +125,9 @@
 | --- | --- | --- |
 | `/api/auth/[...nextauth]` | `API` | المصادقة |
 | `/api/backup-download` | `API` | النسخ الاحتياطي |
+| `/api/data-center/export` | `API` | تصدير محكوم بالصلاحية والفرع |
+| `/api/data-center/operations/[id]/errors` | `API` | تقرير أخطاء الاستيراد المحمي |
+| `/api/data-center/templates/[domain]` | `API` | قوالب الاستيراد الرسمية |
 | `/api/collaboration/conversations/[id]/messages` | `API` | رسائل التعاون |
 | `/api/collaboration/files` | `API` | رفع ملفات التعاون |
 | `/api/collaboration/files/[id]/download` | `API` | تنزيل ملف تعاون |
@@ -132,8 +140,10 @@
 | `/api/export/wounded-expenses` | `API` | تصدير الصرفيات |
 | `/api/files/[...key]` | `API` | الملفات المحمية |
 | `/api/observability/client-error` | `API` | تقرير خطأ واجهة منقح |
+| `/api/observability/user-error` | `API` | سبب رفض الحفظ لنفس جلسة المستخدم فقط |
 | `/api/observability/faro` | `API` | تجميع Faro محلي منقح عبر same-origin |
 | `/api/observability/faro/metrics` | `API` | مقاييس Faro مجمعة للـPrometheus عبر Docker الداخلي |
+| `/api/patients/picker` | `API` | بحث المرضى للاختيار (نطاق المستخدم، صفحات محدودة) |
 | `/api/permissions/export` | `API` | تصدير الصلاحيات |
 | `/api/presence/ping` | `API` | حالة الاتصال |
 | `/api/queue/today` | `API` | بيانات طابور اليوم |

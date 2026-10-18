@@ -2,13 +2,14 @@ import Link from "next/link";
 import { createReferralFromPatient } from "@/app/(app)/referrals/actions";
 import { ReferralStatus } from "./ReferralStatus";
 
-export function PatientReferralTab({ patientId, rows, canCreate, centers, reviewers, residentReviews }: {
+export function PatientReferralTab({ patientId, rows, canCreate, centers, reviewers, residentReviews, therapists = [] }: {
   patientId: string;
   rows: any[];
   canCreate: boolean;
   centers: any[];
   reviewers: any[];
   residentReviews: any[];
+  therapists?: any[];
 }) {
   return (
     <section className="space-y-4" aria-labelledby="patient-referrals-title">
@@ -24,6 +25,7 @@ export function PatientReferralTab({ patientId, rows, canCreate, centers, review
             <label className="label">نوع الطلب<select name="type" className="input mt-1" required defaultValue="LAB"><option value="LAB">مختبر خارجي</option><option value="RADIOLOGY">أشعة خارجية</option><option value="IMAGING">تصوير خارجي</option><option value="SPECIALIST">طبيب اختصاص</option><option value="TREATMENT_CENTER">مركز علاجي</option><option value="HOSPITAL">مستشفى</option><option value="OTHER">أخرى</option></select></label>
             <label className="label">الجهة الخارجية<input name="externalEntity" className="input mt-1" placeholder="مثال: مستشفى المدينة…" /></label>
             <label className="label">المركز الداخلي<select name="destinationCenterId" className="input mt-1" defaultValue=""><option value="">غير محدد</option>{centers.map((center) => <option key={center.id} value={center.id}>{center.name}</option>)}</select></label>
+            {therapists.length ? <label className="label">معالج مقترح (اختياري)<select name="suggestedTherapistId" className="input mt-1" defaultValue=""><option value="">يقرر رئيس المعالجين</option>{therapists.map((therapist) => <option key={therapist.id} value={therapist.id}>{therapist.fullName}</option>)}</select><span className="mt-1 block text-xs font-normal text-gray-500">للمركز الداخلي بس. رئيس المعالجين يوافق أو يغيّر.</span></label> : null}
             <label className="label">الطبيب المراجع<select name="assignedReviewerId" className="input mt-1" defaultValue=""><option value="">غير محدد</option>{reviewers.map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.fullName}</option>)}</select></label>
             <label className="label">تقييم الطبيب المقيم<select name="residentReviewId" className="input mt-1" defaultValue=""><option value="">دون ربط</option>{residentReviews.map((review) => <option key={review.id} value={review.id}>{new Intl.DateTimeFormat("ar-IQ").format(new Date(review.date))}</option>)}</select></label>
             <label className="label md:col-span-2">الخدمة أو الاختصاص المطلوب<input name="requestedService" className="input mt-1" required placeholder="اكتب الفحص أو الاختصاص المطلوب…" /></label>

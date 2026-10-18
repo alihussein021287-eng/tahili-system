@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { PERM_GROUPS, ROLE_DEFAULTS } from "@/lib/perms";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { setRolePerm, setUserPerm, clearUserPerms, resetRolePerms, copyUserPerms } from "@/app/(app)/permissions/actions";
+import { clearUserPermissionSnapshot, setRolePermissionSnapshot, setUserPermissionSnapshot } from "@/lib/permission-matrix-state";
 
-const ROLES = ["MANAGER", "DOCTOR", "HEAD_THERAPIST", "THERAPIST", "PHARMACIST", "ACCOUNTANT", "RECEPTION", "RESIDENT", "DATA_ENTRY", "LAB", "RADIOLOGY", "DRESSING", "PROSTHETICS", "VIEWER"];
+const ROLES = Object.keys(ROLE_DEFAULTS).filter((role) => role !== "ADMIN" && role in ROLE_LABELS);
 const SENSITIVE = new Set(["users.manage", "users.permissions", "settings.edit", "settings.backup", "reports.approve", "finance.delete", "patients.delete", "appointments.delete", "devices.delete", "tasks.delete", "audit.view"]);
 
 type Props = {
@@ -22,21 +23,35 @@ export function PermMatrix({ roleSets, users, userOverrides }: Props) {
   const [userId, setUserId] = useState(users[0]?.id ?? "");
   const [pending, start] = useTransition();
   const [query, setQuery] = useState("");
+  const [roleSnapshots, setRoleSnapshots] = useState(roleSets);
+  const [userSnapshots, setUserSnapshots] = useState(userOverrides);
 
-  const roleSet = new Set(roleSets[role] ?? []);
+  const roleSet = new Set(roleSnapshots[role] ?? []);
   const defaultRoleSet = new Set((ROLE_DEFAULTS as any)[role] ?? []);
   const selUser = users.find((u) => u.id === userId);
-  const baseForUser = new Set(roleSets[selUser?.role ?? ""] ?? []);
-  const ov = userOverrides[userId] ?? {};
+  const baseForUser = new Set(roleSnapshots[selUser?.role ?? ""] ?? []);
+  const ov = userSnapshots[userId] ?? {};
 
   const approveSensitive = (key: string, checked: boolean) => !SENSITIVE.has(key) || confirm(`${checked ? "منح" : "إزالة"} صلاحية حساسة: ${key}؟`);
-  const toggleRole = (key: string, checked: boolean) => { if (approveSensitive(key, checked)) start(async () => { await setRolePerm(role, key, checked); router.refresh(); }); };
+  const toggleRole = (key: string, checked: boolean) => {
+    if (!approveSensitive(key, checked)) return;
+    setRoleSnapshots((current) => setRolePermissionSnapshot(current, role, key, checked));
+    start(async () => { await setRolePerm(role, key, checked); router.refresh(); });
+  };
   const resetRole = () => {
     if (!confirm(`إرجاع صلاحيات هذا الدور للقالب الافتراضي؟ سيتم حذف كل التخصيصات المحفوظة له.`)) return;
+    setRoleSnapshots((current) => ({ ...current, [role]: Array.from(defaultRoleSet) as string[] }));
     start(async () => { await resetRolePerms(role); router.refresh(); });
   };
-  const toggleUser = (key: string, checked: boolean) => { if (approveSensitive(key, checked)) start(async () => { await setUserPerm(userId, key, checked); router.refresh(); }); };
-  const resetUser = () => start(async () => { await clearUserPerms(userId); router.refresh(); });
+  const toggleUser = (key: string, checked: boolean) => {
+    if (!approveSensitive(key, checked)) return;
+    setUserSnapshots((current) => setUserPermissionSnapshot(current, userId, key, checked));
+    start(async () => { await setUserPerm(userId, key, checked); router.refresh(); });
+  };
+  const resetUser = () => {
+    setUserSnapshots((current) => clearUserPermissionSnapshot(current, userId));
+    start(async () => { await clearUserPerms(userId); router.refresh(); });
+  };
 
   return (
     <div className="space-y-4">

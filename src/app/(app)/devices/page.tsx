@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
+import { PatientSearchField } from "@/components/PatientSearchField";
 import { Combobox } from "@/components/Combobox";
+import { currentPatientScope } from "@/lib/patient-guard";
 import { PageHeader } from "@/components/PageHeader";
 import { requirePerm, currentPerms } from "@/lib/access";
 import Link from "next/link";
@@ -40,7 +42,7 @@ export default async function Devices({ searchParams }: { searchParams: Promise<
 
   const [devices, patients, total, dueCount, delivered, replaced, maintained] = await Promise.all([
     prisma.device.findMany({ where, include: { patient: true }, orderBy: [{ nextMaintenanceAt: "asc" }, { deliveredAt: "desc" }], take: 400 }),
-    prisma.patient.findMany({ orderBy: { fullName: "asc" }, select: { id: true, fullName: true, fileNumber: true } }),
+    Promise.resolve([] as Array<{ id: string; fullName: string; fileNumber: number; phone?: string | null; status?: string }>),
     prisma.device.count(),
     prisma.device.count({ where: { nextMaintenanceAt: { lte: now }, status: { not: "REPLACED" } } }),
     prisma.device.count({ where: { status: "DELIVERED" } }),
@@ -67,8 +69,7 @@ export default async function Devices({ searchParams }: { searchParams: Promise<
       {cCreate && (
         <form action={createDevice} className="card grid gap-3 p-4 md:grid-cols-3">
           <div>
-            <Combobox name="patientId" label="المريض" required allowFree={false} defaultValue={sp.patientId ?? ""}
-              options={patients.map((p: any) => ({ value: String(p.id), label: `${p.fullName} (#${p.fileNumber})` }))} />
+            <PatientSearchField name="patientId" label="المريض" required defaultValue={sp.patientId ?? ""} scope="record" />
           </div>
           <Combobox name="type" label="نوع الجهاز" options={["طرف صناعي", "كرسي متحرك", "كرسي كهربائي", "مشّاية", "عكازات", "سماعة طبية"]} />
           <div><label className="label">الرقم التسلسلي (اختياري)</label><input name="serialNo" className="input" /></div>

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { requirePatientPageScope } from "@/lib/patient-guard";
 import { getOrg } from "@/lib/org";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function SickLeavePrint({ params }: { params: Promise<{ id: string; lid: string }> }) {
   await requirePerm("sickleave.view");
   const { id, lid } = await params;
+  await requirePatientPageScope(id, "record");
   const org = await getOrg();
   const [patient, leave, approval] = await Promise.all([
     prisma.patient.findUnique({ where: { id }, include: { governorate: true, injuryType: true } }),

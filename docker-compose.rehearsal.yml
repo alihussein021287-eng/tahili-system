@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${REHEARSAL_DB_USER:?required}
+      POSTGRES_PASSWORD: ${REHEARSAL_DB_PASSWORD:?required}
+      POSTGRES_DB: ${REHEARSAL_DB_NAME:?required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [rehearsal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    user: "0:0"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${REHEARSAL_MINIO_USER:?required}
+      MINIO_ROOT_PASSWORD: ${REHEARSAL_MINIO_PASSWORD:?required}
+    volumes:
+      - miniodata:/data
+    networks: [rehearsal]
+
+  clamav:
+    image: clamav/clamav:stable
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "true"
+    volumes:
+      - clamavdata:/var/lib/clamav
+    networks: [rehearsal]
+
+  app:
+    image: tahili-clean-rehearsal:${REHEARSAL_RELEASE_TAG:?required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      clamav:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      TAHILI_ENVIRONMENT: development
+      FARO_ENABLED: "false"
+      OTEL_ENABLED: "false"
+      DATABASE_URL: postgresql://${REHEARSAL_DB_USER:?required}:${REHEARSAL_DB_PASSWORD:?required}@postgres:5432/${REHEARSAL_DB_NAME:?required}
+      NEXTAUTH_SECRET: ${REHEARSAL_NEXTAUTH_SECRET:?required}
+      TAHILI_LOCAL_ACCESS: "true"
+      TAHILI_LOCAL_PORT: "3101"
+      NEXTAUTH_URL: http://localhost:3101
+      NEXTAUTH_URL_INTERNAL: http://localhost:3101
+      NEXTAUTH_ALLOW_HTTP_LOGIN: "true"
+      AUTH_TRUST_HOST: "true"
+      ALLOW_INITIAL_SETUP: "false"
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_ACCESS_KEY: ${REHEARSAL_MINIO_USER:?required}
+      MINIO_SECRET_KEY: ${REHEARSAL_MINIO_PASSWORD:?required}
+      COLLABORATION_MINIO_BUCKET: tahili-clean-rehearsal
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      UPLOAD_DIR: /app/uploads
+      REMINDER_KEY: ${REHEARSAL_REMINDER_KEY:?required}
+      TZ: Asia/Baghdad
+    volumes:
+      - uploads:/app/uploads
+    networks: [rehearsal]
+
+  proxy:
+    image: tahili-clean-rehearsal:runtime-base-m06
+    command: ["node", "/proxy.cjs"]
+    depends_on: [app]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ../tahili-clean-rehearsal-proxy.cjs:/proxy.cjs:ro
+    ports:
+      - "127.0.0.1:3101:3000"
+    networks: [rehearsal, edge]
+
+networks:
+  rehearsal:
+    internal: true
+  edge: {}
+
+volumes:
+  pgdata:
+  miniodata:
+  clamavdata:
+  uploads:

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { invoiceViewWhere } from "@/lib/patient-guard";
 import { requirePerm } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
 import { getServerSession } from "next-auth";
@@ -23,7 +24,7 @@ export default async function FinanceReport({ searchParams }: { searchParams: Pr
   const org = await getOrg();
 
   const invoices = await prisma.invoice.findMany({
-    where: { issuedAt: { gte: start, lt: end } },
+    where: { issuedAt: { gte: start, lt: end }, AND: [await invoiceViewWhere()] },
     select: { amount: true, paidAmount: true, issuedAt: true },
   });
 

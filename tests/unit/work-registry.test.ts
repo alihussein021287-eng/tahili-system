@@ -14,7 +14,7 @@ import {
 describe("work and navigation registry", () => {
   it("declares a permission for every visible route and uses canonical hubs", () => {
     expect(ALL_ITEMS.every((item) => Boolean(item.perm || item.perms?.length))).toBe(true);
-    expect(ALL_ITEMS.some((item) => ["/tasks", "/appointments", "/queue", "/visits", "/pharmacy", "/inventory", "/finance"].includes(item.href))).toBe(false);
+    expect(ALL_ITEMS.some((item) => ["/tasks", "/inventory"].includes(item.href))).toBe(false);
     expect(requiredPermissionsForHref("/my-work")).toEqual(["dashboard.view"]);
   });
 
@@ -33,7 +33,7 @@ describe("work and navigation registry", () => {
   });
 
   it("keeps journey order and excludes each hub from its own children", () => {
-    expect(STANDALONE).toEqual(["/", "/workspaces", "/my-work", "/notifications", "/collaboration"]);
+    expect(STANDALONE).toEqual(["/", "/my-work", "/notifications", "/collaboration"]);
     expect(NAV_GROUPS.map((group) => group.key)).toEqual(["care", "therapy", "pharm", "reports", "staff", "system"]);
     for (const group of NAV_GROUPS) {
       expect(navigationGroupChildren(group)).not.toContain(group.href);

@@ -7,10 +7,11 @@ import { ROLE_LABELS } from "@/lib/permissions";
 import {
   updateUser, resetPassword, toggleUser, deleteUnusedUser,
   setUserPerm, setUserPermsBulk, clearUserPerms, applyRoleTemplate, getUserActivity,
+  placeUserInCenter, updateUserCenterMembership, endUserCenterMembership,
 } from "@/app/(app)/users/actions";
 import { fmtDate, fmtDateTime } from "@/lib/labels";
 
-const ROLE_KEYS = ["MANAGER", "DOCTOR", "HEAD_THERAPIST", "THERAPIST", "PHARMACIST", "ACCOUNTANT", "RECEPTION", "RESIDENT", "DATA_ENTRY", "LAB", "RADIOLOGY", "DRESSING", "PROSTHETICS", "VIEWER"];
+const ROLE_KEYS = ["MANAGER", "DOCTOR", "HEAD_THERAPIST", "THERAPIST", "PHARMACIST", "ACCOUNTANT", "RECEPTION", "SECRETARY", "RESIDENT", "DATA_ENTRY", "LAB", "RADIOLOGY", "DRESSING", "PROSTHETICS", "VIEWER"];
 
 type User = {
   id: string; username: string; fullName: string; role: string; isActive: boolean;
@@ -21,23 +22,46 @@ type User = {
 
 const MAIN = [
   { key: "profile", label: "معلومات الشخص", icon: "👤" },
+  { key: "membership", label: "مراكز العمل", icon: "🏥" },
   { key: "perms", label: "الصلاحيات", icon: "🔐" },
   { key: "security", label: "الأمان", icon: "🔑" },
   { key: "activity", label: "النشاط", icon: "📌" },
 ] as const;
+
+const CENTER_ROLE_OPTIONS = [
+  { value: "CENTER_MANAGEMENT", label: "إدارة مركز" },
+  { value: "HEAD_THERAPIST", label: "رئيس المعالجين" },
+  { value: "THERAPIST", label: "معالج" },
+  { value: "DEVICE_OPERATOR", label: "مشغّل جهاز" },
+  { value: "SECRETARY", label: "سكرتارية" },
+  { value: "RESIDENT", label: "طبيب مقيم" },
+  { value: "SPECIALIST", label: "طبيب اختصاص" },
+];
+const CENTER_ROLE_LABELS = Object.fromEntries(CENTER_ROLE_OPTIONS.map((item) => [item.value, item.label]));
+const MULTI_CENTER_ROLES = new Set(["THERAPIST", "DEVICE_OPERATOR"]);
+const CENTER_ROLE_BY_ACCOUNT_ROLE: Record<string, string | undefined> = {
+  MANAGER: "CENTER_MANAGEMENT",
+  HEAD_THERAPIST: "HEAD_THERAPIST",
+  THERAPIST: "THERAPIST",
+  SECRETARY: "SECRETARY",
+  RESIDENT: "RESIDENT",
+  DOCTOR: "SPECIALIST",
+  DRESSING: "DEVICE_OPERATOR",
+  PROSTHETICS: "DEVICE_OPERATOR",
+};
 
 const PROFILE_SUBS = [
   { key: "overview", label: "نظرة عامة" },
   { key: "edit", label: "تعديل البيانات" },
 ];
 
-export function UserTabs({ user, isAdmin, effective, overrides, activity, logins = [], branches = [], initialTab, deletionBlockers = [], isCurrentUser = false }: {
-  user: User; isAdmin: boolean; effective: string[]; overrides: Record<string, boolean>; activity?: any[]; logins?: any[]; branches?: any[]; initialTab?: string; deletionBlockers?: { table: string; count: number }[]; isCurrentUser?: boolean;
+export function UserTabs({ user, isAdmin, effective, overrides, activity, logins = [], branches = [], initialTab, deletionBlockers = [], isCurrentUser = false, centers = [], memberships = [], isNewAccount = false }: {
+  user: User; isAdmin: boolean; effective: string[]; overrides: Record<string, boolean>; activity?: any[]; logins?: any[]; branches?: any[]; initialTab?: string; deletionBlockers?: { table: string; count: number }[]; isCurrentUser?: boolean; centers?: { id: number; name: string }[]; memberships?: any[]; isNewAccount?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const validInitial = initialTab === "perms" || initialTab === "security" || initialTab === "activity" ? initialTab : "profile";
-  const [main, setMain] = useState<"profile" | "perms" | "security" | "activity">(validInitial as any);
+  const validInitial = initialTab === "membership" || initialTab === "perms" || initialTab === "security" || initialTab === "activity" ? initialTab : "profile";
+  const [main, setMain] = useState<"profile" | "membership" | "perms" | "security" | "activity">(validInitial as any);
   const [sub, setSub] = useState<string>("overview");
   const [acts, setActs] = useState<any[] | undefined>(activity);
 
@@ -48,7 +72,7 @@ export function UserTabs({ user, isAdmin, effective, overrides, activity, logins
   const togglePerm = (k: string, c: boolean) => start(async () => { await setUserPerm(user.id, k, c); router.refresh(); });
   const toggleSection = (keys: string[], c: boolean) => start(async () => { await setUserPermsBulk(user.id, keys, c); router.refresh(); });
   const reset = () => start(async () => { await clearUserPerms(user.id); router.refresh(); });
-  const applyTmpl = (role: string) => start(async () => { await applyRoleTemplate(user.id, role, false); router.refresh(); });
+  const applyTmpl = (role: string) => start(async () => { try { await applyRoleTemplate(user.id, role, false); router.refresh(); } catch (e) { alert((e as Error).message || "تعذّر تطبيق القالب"); } });
 
   const loadActivity = () => { if (acts === undefined) getUserActivity(user.id).then(setActs).catch(() => setActs([])); };
 
@@ -93,6 +117,19 @@ export function UserTabs({ user, isAdmin, effective, overrides, activity, logins
         {main === "profile" && sub === "overview" && <Overview user={user} effectiveCount={effective.length} overridesCount={Object.keys(overrides).length} logins={logins ?? []} />}
         {main === "profile" && sub === "edit" && (
           <EditForm user={user} branches={branches ?? []} pending={pending} start={start} onSaved={() => router.refresh()} />
+        )}
+
+        {main === "membership" && (
+          <MembershipManager
+            userId={user.id}
+            centers={centers}
+            memberships={memberships}
+            pending={pending}
+            start={start}
+            onSaved={() => router.refresh()}
+            isNewAccount={isNewAccount}
+            accountRole={user.role}
+          />
         )}
 
         {/* الصلاحيات */}
@@ -143,6 +180,58 @@ export function UserTabs({ user, isAdmin, effective, overrides, activity, logins
         {/* النشاط */}
         {main === "activity" && <Activity acts={acts} />}
       </div>
+    </div>
+  );
+}
+
+function MembershipManager({ userId, centers, memberships, pending, start, onSaved, isNewAccount, accountRole }: any) {
+  const now = Date.now();
+  const [error, setError] = useState("");
+  const active = memberships.filter((membership: any) => membership.status === "ACTIVE" && new Date(membership.startDate).getTime() <= now && (!membership.endDate || new Date(membership.endDate).getTime() >= now));
+  const history = memberships.filter((membership: any) => !active.some((item: any) => item.id === membership.id));
+  const run = (task: () => Promise<void>) => start(async () => { try { setError(""); await task(); onSaved(); } catch (caught) { setError(caught instanceof Error ? caught.message : "تعذر حفظ عضوية المركز"); } });
+  const savePlacement = (fd: FormData) => run(() => placeUserInCenter(userId, fd));
+  const saveMembership = (id: string, fd: FormData) => run(() => updateUserCenterMembership(userId, id, fd));
+  const endMembership = (id: string) => run(() => endUserCenterMembership(userId, id));
+  const fixedRole = CENTER_ROLE_BY_ACCOUNT_ROLE[accountRole];
+  const fixedRoleLabel = fixedRole ? CENTER_ROLE_LABELS[fixedRole] : null;
+
+  return (
+    <div className="space-y-5">
+      {isNewAccount && fixedRole ? <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">تم إنشاء الحساب. صفته داخل المركز ستكون «{fixedRoleLabel}» بحسب دور الحساب؛ حدّد المركز فقط.</div> : null}
+      {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+      <section className="rounded-xl border border-gray-200 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold text-gray-900">مركز العمل الحالي</h3><p className="mt-1 text-sm text-gray-500">كل تعديل هنا ينعكس مباشرة في فريق المركز والتحويلات المستقبلية.</p></div><span className="badge-neutral">{active.length} ارتباط فعّال</span></div>
+        {active.length ? <div className="mt-4 space-y-3">{active.map((membership: any) => {
+          const canEdit = fixedRole === membership.role;
+          return (
+          <form key={membership.id} action={(fd) => saveMembership(membership.id, fd)} className="grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 md:grid-cols-4">
+            <label className="label">المركز{canEdit ? <select name="centerId" className="input mt-1" defaultValue={membership.centerId}>{centers.map((center: any) => <option key={center.id} value={center.id}>{center.name}</option>)}</select> : <div className="input mt-1 bg-gray-100">{membership.center.name}</div>}</label>
+            <label className="label">الصفة<input type="hidden" name="role" value={membership.role} /><div className="input mt-1 bg-gray-100">{CENTER_ROLE_LABELS[membership.role] ?? membership.role}</div></label>
+            <label className="label">الاختصاص<input name="specialty" className="input mt-1" defaultValue={membership.specialty ?? ""} disabled={!canEdit} /></label>
+            <div className="flex items-end gap-2">{canEdit ? <button className="btn-primary" disabled={pending} type="submit">حفظ التعديل</button> : null}<button className="btn-ghost text-red-700" disabled={pending} type="button" onClick={() => { if (confirm(`إنهاء ارتباطه بـ ${membership.center.name}؟`)) endMembership(membership.id); }}>إنهاء</button></div>
+            {!canEdit ? <p className="md:col-span-4 text-xs text-amber-800">هذه عضوية قديمة لا تطابق دور الحساب الحالي؛ يمكنك إنهاؤها، أما إنشاء أو نقل عضوية جديدة فيتبع دور الحساب.</p> : null}
+            <p className="md:col-span-4 text-xs text-gray-500">{MULTI_CENTER_ROLES.has(membership.role) ? "هذه الصفة يمكن أن تكون فعّالة في أكثر من مركز." : "هذه الصفة تكون فعّالة في مركز واحد؛ اختيار مركز آخر ينقل الموظف إليه ويحفظ ارتباطه السابق في السجل."}</p>
+          </form>
+          );
+        })}</div> : <p className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{fixedRole ? "لا يوجد مركز عمل فعّال لهذا الموظف. أضف ارتباطه من النموذج أدناه." : "هذا الدور يعمل على مستوى الفرع ولا يحتاج ارتباطاً بمركز علاجي."}</p>}
+      </section>
+
+      {fixedRole ? <section className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4">
+        <h3 className="font-semibold text-gray-900">إضافة أو نقل إلى مركز</h3>
+        <p className="mt-1 text-sm text-gray-500">الصفة مثبتة من دور الحساب: <b>{fixedRoleLabel}</b>. {MULTI_CENTER_ROLES.has(fixedRole) ? "يمكن ربط هذا الدور بأكثر من مركز." : "اختيار مركز جديد ينهي الارتباط الفعّال السابق تلقائياً ولا يحذف تاريخه."}</p>
+        <form action={savePlacement} className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="label">المركز<select name="centerId" className="input mt-1" required defaultValue=""><option value="" disabled>اختر المركز</option>{centers.map((center: any) => <option key={center.id} value={center.id}>{center.name}</option>)}</select></label>
+          <label className="label">الصفة<input type="hidden" name="role" value={fixedRole} /><div className="input mt-1 bg-gray-100">{fixedRoleLabel}</div></label>
+          <label className="label">الاختصاص<input name="specialty" className="input mt-1" /></label>
+          <div className="md:col-span-2"><button className="btn-primary" disabled={pending} type="submit">حفظ مركز العمل</button></div>
+        </form>
+      </section> : null}
+
+      <section className="rounded-xl border border-gray-200 p-4">
+        <h3 className="font-semibold text-gray-900">سجل المراكز السابق</h3>
+        {history.length ? <div className="mt-3 space-y-2">{history.map((membership: any) => <div key={membership.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm"><span className="font-medium text-gray-800">{membership.center.name} · {CENTER_ROLE_LABELS[membership.role] ?? membership.role}</span><span className="text-gray-500">من {fmtDate(membership.startDate)} إلى {membership.endDate ? fmtDate(membership.endDate) : "—"}</span></div>)}</div> : <p className="mt-2 text-sm text-gray-400">لا يوجد سجل سابق.</p>}
+      </section>
     </div>
   );
 }
@@ -237,7 +326,7 @@ function Security({ user, pending, start, onChanged, deletionBlockers, isCurrent
     <div className="max-w-2xl space-y-5">
       <form action={doPw} className="space-y-2 rounded-lg border border-gray-200 p-4">
         <div><div className="font-semibold text-gray-700">تغيير كلمة السر</div><p className="mt-1 text-sm text-gray-500">إجراء أمان مستقل؛ لا يغيّر بيانات الحساب أو صلاحياته.</p></div>
-        <label className="label">كلمة السر الجديدة<input name="password" type="text" placeholder="6 أحرف فأكثر" className="input mt-1 w-full" /></label>
+        <label className="label">كلمة السر الجديدة<input name="password" type="text" placeholder="8 أحرف فأكثر بحروف وأرقام (حسب سياسة النظام)" className="input mt-1 w-full" /></label>
         <button className="btn-primary" disabled={pending} type="submit">تحديث كلمة السر</button>
       </form>
       <div className="space-y-3 rounded-lg border border-gray-200 p-4">

@@ -1,6 +1,8 @@
 import { getApiSession } from "@/lib/access";
 import { apiPermissionResponse, checkApiPermission } from "@/lib/api-permissions";
 import { getPatientDataQuality } from "@/lib/data-quality";
+import { patientScopeWhere } from "@/lib/patient-access";
+import { prisma } from "@/lib/db";
 import { fmtDate } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +19,8 @@ export async function GET(req: Request) {
   if (permission.allowed === false) return apiPermissionResponse(permission);
 
   const url = new URL(req.url);
-  const report = await getPatientDataQuality(url.searchParams.get("kind") ?? undefined);
+  const scope = await patientScopeWhere(prisma, { userId: (session.user as any)?.id, role: (session.user as any)?.role, permissions: permission.permissions });
+  const report = await getPatientDataQuality(url.searchParams.get("kind") ?? undefined, scope);
   const headers = ["نوع المشكلة", "رقم الملف", "الاسم", "الهاتف", "سنة التولد", "المحافظة", "نوع الإصابة", "نوع الحالة", "تاريخ الأرشفة", "التفاصيل"];
   const rows = report.issues.map((i) => [
     i.label,

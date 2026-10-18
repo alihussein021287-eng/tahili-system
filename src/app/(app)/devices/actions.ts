@@ -1,5 +1,6 @@
 "use server";
 import { requireSession } from "@/lib/access";
+import { assertOptionalPatientScope } from "@/lib/patient-guard";
 import { prisma } from "@/lib/db";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { revalidatePath } from "next/cache";
@@ -21,6 +22,7 @@ async function guard(key: string) {
 export async function createDevice(fd: FormData) {
   const s = await guard("devices.create");
   const patientId = fd.get("patientId")?.toString();
+  await assertOptionalPatientScope(patientId);
   const type = fd.get("type")?.toString().trim();
   if (!patientId || !type) redirect(withSaved("/devices", "اختر المريض وأدخل نوع الجهاز"));
   const deliveredAt = fd.get("deliveredAt")?.toString();
@@ -40,6 +42,7 @@ export async function createDevice(fd: FormData) {
 
 export async function recordMaintenance(id: string, fd: FormData) {
   const s = await guard("devices.maintain");
+  await assertOptionalPatientScope((await prisma.device.findUnique({ where: { id }, select: { patientId: true } }))?.patientId);
   const nextM = fd.get("nextMaintenanceAt")?.toString();
   await prisma.device.update({ where: { id }, data: { status: "MAINTAINED", nextMaintenanceAt: nextM ? new Date(nextM) : null } });
   await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "devices", recordId: id });
@@ -68,6 +71,7 @@ export async function createMaintenanceTask(id: string) {
     include: { patient: { select: { id: true, fullName: true, fileNumber: true } } },
   });
   if (!device) redirect(withSaved("/devices", "الجهاز غير موجود"));
+  await assertOptionalPatientScope(device!.patient?.id);
   const dueText = device.nextMaintenanceAt ? `موعد الصيانة: ${device.nextMaintenanceAt.toLocaleDateString("ar-IQ", { timeZone: "Asia/Baghdad" })}` : "بدون موعد محدد";
   const task = await prisma.task.create({
     data: {

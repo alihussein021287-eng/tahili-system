@@ -1,4 +1,6 @@
 import { requireSession } from "@/lib/access";
+import { filterRoleNoticesToPatientScope } from "@/lib/patient-access";
+import { EXPIRY_SOON_DAYS } from "@/lib/pharmacy-expiry";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { prisma } from "@/lib/db";
@@ -8,6 +10,8 @@ import { canOpenNotification } from "@/lib/notifications";
 import { collaborationUnreadCount } from "@/lib/collaboration-service";
 import { getAdminConfig } from "@/lib/admin-config";
 import { normalizePresenceConfig } from "@/lib/presence";
+import { currentStockViewer, batchViewWhere, lowStockMedications } from "@/lib/pharmacy-stock";
+import { pharmacyPrescriptionWhere } from "@/lib/pharmacy-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -24,14 +28,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const permSet = new Set(perms);
 
   const now = new Date();
-  const soon = new Date(); soon.setDate(soon.getDate() + 60);
+  const soon = new Date(); soon.setDate(soon.getDate() + EXPIRY_SOON_DAYS);
   const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const stockViewer = await currentStockViewer();
+  const rxScope = await pharmacyPrescriptionWhere();
   const [admitted, devicesDue, meds, rxPending, expiringSoon, myTasks, overdueTasks, appointmentSoon, org, collaborationUnread, adminConfig] = await Promise.all([
     prisma.admission.findMany({ where: { status: "ADMITTED" }, select: { admissionDate: true, durationDays: true } }),
     prisma.device.count({ where: { nextMaintenanceAt: { lte: now }, status: { not: "REPLACED" } } }),
-    prisma.medication.findMany({ select: { quantity: true, minQuantity: true } }),
-    prisma.prescription.count({ where: { isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE" } }),
-    prisma.medicationBatch.count({ where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: soon } } }),
+    lowStockMedications(stockViewer),
+    prisma.prescription.count({ where: { ...rxScope, isDispensed: false, status: { not: "REJECTED" }, prescriptionType: "INTERNAL", eligibilityDecision: "ELIGIBLE", visitId: { not: null } } }),
+    prisma.medicationBatch.count({ where: { ...batchViewWhere(stockViewer), quantity: { gt: 0 }, expiryDate: { not: null, lte: soon } } }),
     prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, OR: [{ assignedToId: uid }, { assignedRole: role }] } }),
     prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, dueDate: { lt: now }, OR: [{ assignedToId: uid }, { assignedRole: role }] } }),
     prisma.appointment.count({ where: { status: "SCHEDULED", scheduledAt: { gte: now, lte: inTwoHours }, OR: [{ assignedTo: name }, { assignedTo: null }] } }),
@@ -57,9 +63,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     backupStopped: permSet.has("settings.backup") && org?.autoBackup === false ? 1 : 0,
   };
   maybeAutoBackup();
-  const notifs = (await prisma.notification.findMany({ where: { read: false, OR: [{ targetUserId: uid }, { targetRole: role }] }, orderBy: { createdAt: "desc" }, take: 30 }))
-    .filter((n) => canOpenNotification(n.link, permSet))
-    .slice(0, 15);
+  const notificationRows = await prisma.notification.findMany({
+    // Unread FOR THIS USER: legacy/closed flag is false and this user has no receipt for the role-wide notice.
+    where: { read: false, readReceipts: { none: { userId: uid } }, OR: [{ targetUserId: uid }, { targetRole: role }] },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, targetRole: true, targetUserId: true, title: true, body: true, link: true, read: true, createdAt: true },
+  });
+  const permittedRows = notificationRows.filter((n) => canOpenNotification(n.link, permSet));
+  const visibleNotificationRows = await filterRoleNoticesToPatientScope(prisma, { userId: uid, role: role as any, permissions: permSet }, permittedRows);
+  const notifs = visibleNotificationRows.slice(0, 15);
+  const notificationUnreadCount = visibleNotificationRows.length;
 
-  return <AppShell role={role} name={name} alerts={alerts} perms={perms} notifs={JSON.parse(JSON.stringify(notifs))} presenceConfig={normalizePresenceConfig(adminConfig)}>{children}</AppShell>;
+  return <AppShell role={role} name={name} alerts={alerts} perms={perms} notifs={JSON.parse(JSON.stringify(notifs))} notificationUnreadCount={notificationUnreadCount} presenceConfig={normalizePresenceConfig(adminConfig)}>{children}</AppShell>;
 }

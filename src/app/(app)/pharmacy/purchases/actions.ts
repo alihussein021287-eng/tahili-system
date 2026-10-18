@@ -1,11 +1,13 @@
 "use server";
 
 import { randomBytes } from "crypto";
+import { withSerializableRetry } from "@/lib/serializable-retry";
 import { prisma } from "@/lib/db";
 import { assertPerm, currentPerms, requireSession } from "@/lib/access";
 import { saveFile } from "@/lib/storage";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { requireStockActor } from "@/lib/pharmacy-stock";
 
 async function actor(permission: string) {
   const session = await requireSession(); await assertPerm(permission);
@@ -15,16 +17,17 @@ const orderNo = () => `PO-${new Date().getFullYear()}-${randomBytes(4).toString(
 const receiptNo = () => `GRN-${new Date().getFullYear()}-${randomBytes(4).toString("hex").toUpperCase()}`;
 
 function refresh(id?: string) {
-  revalidatePath("/pharmacy/purchases"); revalidatePath("/pharmacy/purchases/reports"); revalidatePath("/pharmacy/stock"); revalidatePath("/inventory"); revalidatePath("/pharmacy");
+  revalidatePath("/pharmacy/purchases"); revalidatePath("/pharmacy/reports"); revalidatePath("/pharmacy/stock"); revalidatePath("/inventory"); revalidatePath("/pharmacy");
   if (id) revalidatePath(`/pharmacy/purchases/${id}`);
 }
 
 export async function createPurchaseOrder(fd: FormData) {
   const who = await actor("pharmacy.purchase.create");
+  const stock = await requireStockActor();
   const attachment = fd.get("attachment") as File | null;
   const saved = attachment && attachment.size > 0 ? await saveFile(attachment) : null;
   const order = await prisma.$transaction(async (tx) => {
-    const created = await tx.purchaseOrder.create({ data: { orderNo: orderNo(), supplierId: Number(fd.get("supplierId")), expectedDeliveryDate: fd.get("expectedDeliveryDate") ? new Date(fd.get("expectedDeliveryDate")!.toString()) : null, notes: fd.get("notes")?.toString() || null, createdById: who.id } });
+    const created = await tx.purchaseOrder.create({ data: { orderNo: orderNo(), supplierId: Number(fd.get("supplierId")), expectedDeliveryDate: fd.get("expectedDeliveryDate") ? new Date(fd.get("expectedDeliveryDate")!.toString()) : null, notes: fd.get("notes")?.toString() || null, createdById: who.id, branchId: stock.branchId } });
     if (saved) await tx.purchaseOrderAttachment.create({ data: { purchaseOrderId: created.id, fileName: saved.name, fileUrl: `/api/files/${saved.key}` } });
     await tx.auditLog.create({ data: { userId: who.id, action: "CREATE", tableName: "purchase_orders", recordId: created.id, newValue: { orderNo: created.orderNo, supplierId: created.supplierId, status: created.status } } });
     return created;
@@ -34,8 +37,10 @@ export async function createPurchaseOrder(fd: FormData) {
 
 export async function addPurchaseItem(orderId: string, fd: FormData) {
   const who = await actor("pharmacy.purchase.create");
+  const stock = await requireStockActor();
   await prisma.$transaction(async (tx) => {
     const order = await tx.purchaseOrder.findUniqueOrThrow({ where: { id: orderId } });
+    if (order.branchId !== stock.branchId) throw new Error("أمر الشراء خارج نطاق صيدلية فرعك");
     if (order.status !== "DRAFT") throw new Error("يمكن تعديل بنود المسودة فقط");
     const item = await tx.purchaseOrderItem.create({ data: { purchaseOrderId: orderId, medicationId: fd.get("medicationId") ? Number(fd.get("medicationId")) : null, materialName: fd.get("materialName")?.toString() || null, unit: fd.get("unit")?.toString() || "وحدة", orderedQuantity: Math.max(1, Number(fd.get("orderedQuantity")) || 1), unitPrice: who.permissions.has("pharmacy.purchase.prices") && fd.get("unitPrice") ? fd.get("unitPrice")!.toString() : null, batchNo: fd.get("batchNo")?.toString() || null, expiryDate: fd.get("expiryDate") ? new Date(fd.get("expiryDate")!.toString()) : null } });
     await tx.auditLog.create({ data: { userId: who.id, action: "CREATE", tableName: "purchase_order_items", recordId: item.id, newValue: { purchaseOrderId: orderId, medicationId: item.medicationId, orderedQuantity: item.orderedQuantity } } });
@@ -45,31 +50,46 @@ export async function addPurchaseItem(orderId: string, fd: FormData) {
 export async function transitionPurchaseOrder(orderId: string, status: "PENDING_APPROVAL" | "APPROVED" | "ORDERED" | "CANCELLED", fd: FormData) {
   const permission = status === "APPROVED" ? "pharmacy.purchase.approve" : "pharmacy.purchase.create";
   const who = await actor(permission);
-  await prisma.$transaction(async (tx) => {
+  const stock = await requireStockActor();
+  await withSerializableRetry(() => prisma.$transaction(async (tx) => {
     const order = await tx.purchaseOrder.findUniqueOrThrow({ where: { id: orderId }, include: { items: true } });
+    if (order.branchId !== stock.branchId) throw new Error("أمر الشراء خارج نطاق صيدلية فرعك");
     if (["FULLY_RECEIVED","CANCELLED"].includes(order.status)) throw new Error("لا يمكن تعديل أمر مكتمل أو ملغى");
     const allowed: Record<string,string[]> = { DRAFT:["PENDING_APPROVAL","CANCELLED"], PENDING_APPROVAL:["APPROVED","CANCELLED"], APPROVED:["ORDERED","CANCELLED"], ORDERED:["CANCELLED"] };
     if (!allowed[order.status]?.includes(status)) throw new Error("انتقال حالة غير صالح");
     if (status === "PENDING_APPROVAL" && order.items.length === 0) throw new Error("أضف بنداً واحداً على الأقل");
-    const updated = await tx.purchaseOrder.update({ where: { id: orderId }, data: { status, approvedById: status === "APPROVED" ? who.id : order.approvedById, approvedAt: status === "APPROVED" ? new Date() : order.approvedAt, cancellationReason: status === "CANCELLED" ? fd.get("reason")?.toString() || "ملغى إدارياً" : null } });
-    await tx.auditLog.create({ data: { userId: who.id, action: "UPDATE", tableName: "purchase_orders", recordId: orderId, oldValue: { status: order.status }, newValue: { status } } });
-    if (status === "PENDING_APPROVAL") await tx.notification.create({ data: { targetRole: "MANAGER", title: "أمر شراء ينتظر الاعتماد", body: "يوجد أمر شراء يحتاج مراجعة.", link: `/pharmacy/purchases/${orderId}` } });
-    if (status === "APPROVED") await tx.notification.create({ data: { targetUserId: order.createdById, title: "اعتمد أمر الشراء", body: "يمكن متابعة الطلب مع المورد.", link: `/pharmacy/purchases/${orderId}` } });
-    return updated;
-  }); refresh(orderId);
+    // Separation of duties: the requester never approves (or rejects as an approver) their own request.
+    if (status === "APPROVED" && order.createdById === who.id) throw new Error("لا يجوز لمقدّم الطلب اعتماد طلبه");
+    // A cancellation of a PENDING_APPROVAL order by another holder of the approve permission is an approver REJECTION (reason required).
+    const perms = who.permissions;
+    const rejection = status === "CANCELLED" && order.status === "PENDING_APPROVAL" && perms.has("pharmacy.purchase.approve") && order.createdById !== who.id;
+    const reason = fd.get("reason")?.toString().trim() || "";
+    if (rejection && !reason) throw new Error("سبب الرفض مطلوب");
+    const moved = await tx.purchaseOrder.updateMany({ where: { id: orderId, status: order.status, branchId: stock.branchId }, data: { status, approvedById: status === "APPROVED" ? who.id : order.approvedById, approvedAt: status === "APPROVED" ? new Date() : order.approvedAt, cancellationReason: status === "CANCELLED" ? (rejection ? `رُفض الاعتماد: ${reason}` : reason || "ملغى إدارياً") : null } });
+    if (moved.count !== 1) throw new Error("تغيّرت حالة الأمر؛ أعد المحاولة");
+    await tx.auditLog.create({ data: { userId: who.id, action: "UPDATE", tableName: "purchase_orders", recordId: orderId, oldValue: { status: order.status }, newValue: { status, branchId: stock.branchId, ...(status === "APPROVED" ? { decision: "APPROVED" } : rejection ? { decision: "REJECTED", reason } : {}) } } });
+    if (status === "PENDING_APPROVAL") {
+      const managers = await tx.user.findMany({ where: { role: "MANAGER", isActive: true, branchId: stock.branchId }, select: { id: true } });
+      if (managers.length) await tx.notification.createMany({ data: managers.map((m) => ({ targetUserId: m.id, title: "أمر شراء ينتظر الاعتماد", body: "يوجد أمر شراء يحتاج مراجعة.", link: `/pharmacy/purchases/${orderId}` })) });
+    }
+    if (status === "APPROVED" || rejection) await tx.notification.create({ data: { targetUserId: order.createdById, title: status === "APPROVED" ? "اعتمد أمر الشراء" : "رُفض أمر الشراء", body: status === "APPROVED" ? "يمكن متابعة الطلب مع المورد." : reason, link: `/pharmacy/purchases/${orderId}` } });
+  }, { isolationLevel: "Serializable" })); refresh(orderId);
 }
 
 export async function receivePurchaseItem(orderId: string, itemId: string, fd: FormData) {
   const who = await actor("pharmacy.purchase.receive");
+  const stock = await requireStockActor();
   const idempotencyKey = fd.get("idempotencyKey")?.toString() || "";
   const accepted = Math.max(0, Number(fd.get("acceptedQuantity")) || 0);
   const rejected = Math.max(0, Number(fd.get("rejectedQuantity")) || 0);
   const damaged = Math.max(0, Number(fd.get("damagedQuantity")) || 0);
   if (!idempotencyKey || accepted + rejected + damaged <= 0) throw new Error("أدخل كميات الاستلام");
-  await prisma.$transaction(async (tx) => {
+  await withSerializableRetry(() => prisma.$transaction(async (tx) => {
     if (await tx.purchaseReceipt.findUnique({ where: { idempotencyKey } })) return;
     const item = await tx.purchaseOrderItem.findFirst({ where: { id: itemId, purchaseOrderId: orderId }, include: { purchaseOrder: true, medication: true } });
     if (!item || !["APPROVED","ORDERED","PARTIALLY_RECEIVED"].includes(item.purchaseOrder.status)) throw new Error("الأمر غير متاح للاستلام");
+    if (item.purchaseOrder.branchId == null) throw new Error("أمر الشراء غير مرتبط بفرع صيدلية (تحتاج مطابقة قبل الاستلام)");
+    if (item.purchaseOrder.branchId !== stock.branchId) throw new Error("لا يمكن الاستلام إلا في صيدلية الفرع المقصود بالأمر");
     const remaining = Math.max(0, item.orderedQuantity - item.receivedQuantity);
     const over = accepted > remaining;
     const overrideReason = fd.get("overrideReason")?.toString().trim() || null;
@@ -79,9 +99,9 @@ export async function receivePurchaseItem(orderId: string, itemId: string, fd: F
     await tx.purchaseReceiptItem.create({ data: { receiptId: receipt.id, purchaseItemId: itemId, acceptedQuantity: accepted, rejectedQuantity: rejected, damagedQuantity: damaged, batchNo: fd.get("batchNo")?.toString() || item.batchNo, expiryDate: fd.get("expiryDate") ? new Date(fd.get("expiryDate")!.toString()) : item.expiryDate, rejectionReason: fd.get("rejectionReason")?.toString() || null } });
     let batchId: number | null = null;
     if (accepted > 0 && item.medicationId) {
-      const batch = await tx.medicationBatch.create({ data: { medicationId: item.medicationId, supplierId: item.purchaseOrder.supplierId, batchNo: fd.get("batchNo")?.toString() || item.batchNo, quantity: accepted, expiryDate: fd.get("expiryDate") ? new Date(fd.get("expiryDate")!.toString()) : item.expiryDate, purchaseOrderId: orderId, purchaseItemId: itemId, purchaseReceiptId: receipt.id, note: "استلام أمر شراء" } });
+      const batch = await tx.medicationBatch.create({ data: { medicationId: item.medicationId, branchId: stock.branchId, supplierId: item.purchaseOrder.supplierId, batchNo: fd.get("batchNo")?.toString() || item.batchNo, quantity: accepted, expiryDate: fd.get("expiryDate") ? new Date(fd.get("expiryDate")!.toString()) : item.expiryDate, purchaseOrderId: orderId, purchaseItemId: itemId, purchaseReceiptId: receipt.id, note: "استلام أمر شراء" } });
       batchId = batch.id;
-      await tx.stockMovement.create({ data: { type: "IN", medicationId: item.medicationId, batchId, quantity: accepted, reason: "استلام أمر شراء", byName: who.name, purchaseReceiptId: receipt.id } });
+      await tx.stockMovement.create({ data: { type: "IN", medicationId: item.medicationId, batchId, quantity: accepted, reason: "استلام أمر شراء", byName: who.name, branchId: stock.branchId, actorId: who.id, purchaseReceiptId: receipt.id } });
       const total = await tx.medicationBatch.aggregate({ where: { medicationId: item.medicationId }, _sum: { quantity: true } });
       await tx.medication.update({ where: { id: item.medicationId }, data: { quantity: Math.max(0, total._sum.quantity || 0) } });
     }
@@ -92,5 +112,5 @@ export async function receivePurchaseItem(orderId: string, itemId: string, fd: F
     await tx.purchaseOrder.update({ where: { id: orderId }, data: { status } });
     await tx.auditLog.create({ data: { userId: who.id, action: "CREATE", tableName: "purchase_receipts", recordId: receipt.id, newValue: { purchaseOrderId: orderId, itemId, accepted, rejected, damaged, batchId, overReceived: over } } });
     await tx.notification.create({ data: { targetUserId: item.purchaseOrder.createdById, title: full ? "اكتمل استلام أمر الشراء" : "استلام جزئي يحتاج متابعة", body: full ? "اكتمل الاستلام وتحديث المخزون." : "سُجل استلام جزئي وبقيت كميات للمتابعة.", link: `/pharmacy/purchases/${orderId}` } });
-  }, { isolationLevel: "Serializable" }); refresh(orderId);
+  }, { isolationLevel: "Serializable" })); refresh(orderId);
 }

@@ -31,10 +31,46 @@ export const AUDIT_ACTION: Record<string, string> = {
 export function fmtDateTime(d?: Date | string | null) {
   if (!d) return "—";
   const date = typeof d === "string" ? new Date(d) : d;
-  return date.toLocaleString("ar-IQ", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Baghdad" });
+  // Date and time are formatted apart and joined with a space: a combined format puts a comma
+  // between them in some ICU builds (browsers) and not others (Node), which breaks hydration.
+  const day = date.toLocaleDateString("ar-IQ", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Baghdad" });
+  const time = date.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Baghdad" });
+  return `${day} ${time}`;
 }
 
 export const APPT_STATUS = { SCHEDULED: "مجدول", COMPLETED: "تم", CANCELLED: "ملغى", NOSHOW: "لم يحضر" } as const;
+export const WORK_STATUS: Record<string, string> = {
+  OPEN: "مفتوح",
+  IN_PROGRESS: "قيد التنفيذ",
+  SCHEDULED: "مجدول",
+  WAITING: "بالانتظار",
+  CALLED: "تم الاستدعاء",
+  IN_SESSION: "داخل الجلسة",
+  DONE: "مكتمل",
+  DRAFT: "مسودة",
+  PENDING: "قيد الانتظار",
+  PENDING_PRINT: "بانتظار الطباعة",
+  READY: "جاهز",
+  SENT: "تم الإرسال",
+  RESULT_RECEIVED: "وصلت النتيجة",
+  REVIEWED: "تمت المراجعة",
+  ACCEPTED: "مقبول",
+  ACTIVE: "نشط",
+  PAUSED: "متوقف مؤقتاً",
+  NOSHOW: "لم يحضر",
+  NO_SHOW: "لم يحضر",
+  PARTIAL: "جزئي",
+  PENDING_APPROVAL: "بانتظار الموافقة",
+  APPROVED: "معتمد",
+  ORDERED: "تم الطلب",
+  PARTIALLY_RECEIVED: "مستلم جزئياً",
+  SUBMITTED: "مُرسل للمراجعة",
+  READY_FOR_PAYMENT: "جاهز للصرف",
+  PENDING_REVIEW: "بانتظار المراجعة",
+};
+export function workStatusLabel(status: string) {
+  return WORK_STATUS[status] ?? status;
+}
 export function fmtTime(d?: Date | string | null) {
   if (!d) return "—";
   const date = typeof d === "string" ? new Date(d) : d;

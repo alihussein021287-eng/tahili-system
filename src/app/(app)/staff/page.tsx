@@ -1,16 +1,24 @@
 import Link from "next/link";
+import { PatientSearchField } from "@/components/PatientSearchField";
 import { redirect } from "next/navigation";
+import { currentPatientScope } from "@/lib/patient-guard";
 import type { UserRole } from "@prisma/client";
 import { Combobox } from "@/components/Combobox";
 import { PageHeader } from "@/components/PageHeader";
 import { DataTable, EmptyState, ResultCount, TableEmptyRow } from "@/components/Ui";
 import { AdminIntro, AdminSection, AdminSectionTabs, StatCard } from "@/components/AdminPageSections";
 import { currentPerms, requireSession } from "@/lib/access";
+import { FilterBar } from "@/components/hub/FilterBar";
+import { getAdminConfig } from "@/lib/admin-config";
+import { getPresenceStatus, normalizePresenceConfig, presenceBadgeClass, presenceWindows, PRESENCE_LABELS } from "@/lib/presence";
 import { prisma } from "@/lib/db";
 import { fmtDate, fmtDateTime, fmtTime } from "@/lib/labels";
 import { canManageUsers, ROLE_LABELS } from "@/lib/permissions";
 import { checkIn, checkOut, deleteAttendance } from "../attendance/actions";
 import { addShift, deleteLeave, deleteShift, requestLeave, setLeaveStatus } from "../shifts/actions";
+import { currentActor } from "@/lib/data-center/access";
+import { attendanceRequired, staffCounts } from "@/lib/employees/service";
+import { staffNavActive, staffNavTabs } from "@/lib/staff-nav";
 import { completeTask, createTask, deleteTask, reopenTask, startTask } from "../tasks/actions";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +26,8 @@ export const dynamic = "force-dynamic";
 type StaffTab = "overview" | "employees" | "attendance" | "shifts" | "leaves" | "tasks" | "reports";
 
 const STAFF_TABS: { key: StaffTab; label: string; title: string; description: string; perms: string[] }[] = [
-  { key: "overview", label: "نظرة عامة", title: "لوحة الموظفين والمهام", description: "ملخص سريع للحضور، الحسابات، المناوبات، الإجازات، والمهام المفتوحة.", perms: ["users.view", "attendance.view", "shifts.view", "tasks.view"] },
-  { key: "employees", label: "الموظفون", title: "الموظفون والحسابات", description: "عرض حسابات الموظفين مع فلاتر الدور، القسم، الفرع، والحالة دون تعديل من هذه الصفحة.", perms: ["users.view"] },
+  { key: "overview", label: "نظرة عامة", title: "لوحة الموظفين والمهام", description: "ملخص سريع للحضور، الحسابات، المناوبات، الإجازات، والمهام المفتوحة.", perms: ["users.view", "attendance.view", "shifts.view", "tasks.view", "employees.view"] },
+  { key: "employees", label: "الموظفون", title: "الموظفون والحسابات", description: "هذه هي القائمة الرئيسية للموظفين: ابحث وفلتر ثم افتح ملف الموظف لإدارة الحساب والمركز والصلاحيات.", perms: ["users.view"] },
   { key: "attendance", label: "الحضور", title: "الحضور اليومي", description: "تسجيلات الحضور والانصراف حسب اليوم، مع إظهار المناوبات والإجازات المؤثرة.", perms: ["attendance.view"] },
   { key: "shifts", label: "الدوام والشفتات", title: "الدوام والشفتات", description: "مناوبات الأسبوع أو المدى المحدد، وإضافة المناوبات لمن يملك صلاحية الإدارة.", perms: ["shifts.view"] },
   { key: "leaves", label: "الإجازات", title: "الإجازات", description: "طلبات الإجازات الحالية والقادمة، مع إجراءات القبول والرفض حسب الصلاحية.", perms: ["shifts.view"] },
@@ -95,6 +103,9 @@ export default async function StaffPage({
   const role = (session.user as any)?.role as UserRole;
   const uid = (session.user as any)?.id as string;
   const canUserAdmin = canManageUsers(role);
+  const canEmployees = perms.has("employees.view");
+  const employeeActor = canEmployees ? await currentActor() : null;
+  const personnel = employeeActor ? await staffCounts(prisma, employeeActor) : null;
   const canUsers = perms.has("users.view");
   const canAttendance = perms.has("attendance.view");
   const canAttendanceManage = perms.has("attendance.manage");
@@ -138,6 +149,14 @@ export default async function StaffPage({
   if (sp.userStatus === "disabled") userWhere.isActive = false;
   if (sp.branch) userWhere.branchId = Number(sp.branch);
   if (sp.department) userWhere.department = sp.department;
+  // Presence (online / idle / offline) uses the same windows as the admin settings.
+  const presenceConfig = normalizePresenceConfig(await getAdminConfig());
+  const { onlineWindowMs, idleWindowMs } = presenceWindows(presenceConfig);
+  const onlineSince = new Date(now.getTime() - onlineWindowMs);
+  const idleSince = new Date(now.getTime() - idleWindowMs);
+  if (sp.presence === "online") userWhere.lastSeenAt = { gte: onlineSince };
+  else if (sp.presence === "idle") userWhere.lastSeenAt = { gte: idleSince, lt: onlineSince };
+  else if (sp.presence === "offline") userWhere.AND = [{ OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: idleSince } }] }];
 
   const taskWhere: any = {};
   if (!sp.taskStatus || sp.taskStatus === "open") taskWhere.status = { in: ["OPEN", "IN_PROGRESS"] };
@@ -212,17 +231,17 @@ export default async function StaffPage({
     canTasks ? prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } } }) : Promise.resolve(0),
     canTasks ? prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, priority: "URGENT" } }) : Promise.resolve(0),
     canTasks ? prisma.task.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, dueDate: { lt: now } } }) : Promise.resolve(0),
-    canTaskCreate ? prisma.patient.findMany({ select: { id: true, fullName: true, fileNumber: true }, orderBy: { fullName: "asc" }, take: 300 }) : Promise.resolve([]),
+    canTaskCreate ? Promise.resolve([] as Array<{ id: string; fullName: string; fileNumber: number; phone?: string | null; status?: string }>) : Promise.resolve([]),
   ]);
 
   const departments = Array.from(new Set(allUsers.map((user: any) => user.department).filter(Boolean))).sort();
   const employeeNames = Array.from(new Set([...employeeRoster.map((item: any) => item.name), ...allUsers.map((user: any) => user.fullName)].filter(Boolean))).sort();
   const presentNames = new Set(todayAttendance.map((row: any) => row.name));
   const leaveNames = new Set(todayLeaves.map((row: any) => row.name));
-  const absentRoster = employeeRoster.filter((employee: any) => !presentNames.has(employee.name) && !leaveNames.has(employee.name));
+  const absentRoster = employeeRoster.filter((employee: any) => attendanceRequired(employee) && !presentNames.has(employee.name) && !leaveNames.has(employee.name));
   const presentNow = todayAttendance.filter((row: any) => row.checkIn && !row.checkOut).length;
   const completedToday = todayAttendance.filter((row: any) => row.checkOut).length;
-  const navTabs = visibleTabs.map((tab) => ({ key: tab.key, label: tab.label, href: tabHref(tab.key) }));
+  const navTabs = staffNavTabs(perms, role);
   const activeInfo = STAFF_TABS.find((tab) => tab.key === activeTab)!;
   const canDeleteStaffRows = role === "ADMIN";
   const taskAssigneeOptions = [
@@ -236,29 +255,37 @@ export default async function StaffPage({
 
   return (
     <div className="min-w-0 space-y-6">
-      <PageHeader title="الموظفون والمهام" subtitle="صفحة جامعة للحضور، الدوام، الإجازات، والمهام" icon="🗂" />
-      <AdminSectionTabs tabs={navTabs} active={activeTab} label="تبويبات الموظفين والمهام" />
+      <PageHeader title="الموظفون والمهام" subtitle="صفحة جامعة للحضور، الدوام، الإجازات، والمهام" icon="🗂">
+        {perms.has("datacenter.view") && (perms.has("datacenter.import.personnel") || perms.has("datacenter.export.personnel")) ? <a className="btn-ghost" href="/data-center?tab=import">🗄 استيراد/تصدير الموظفين</a> : null}
+      </PageHeader>
+      <AdminSectionTabs tabs={navTabs} active={staffNavActive(activeTab)} label="تبويبات الموظفين والمهام" />
       <AdminIntro title={activeInfo.title} description={activeInfo.description}>
-        <div className="flex flex-wrap gap-2">
-          {canUserAdmin ? <Link href="/users?tab=create" className="btn-ghost btn-sm">إضافة موظف</Link> : null}
-          {canAttendanceManage ? <Link href="/staff?tab=attendance" className="btn-ghost btn-sm">تسجيل حضور</Link> : null}
-          {canShiftManage ? <Link href="/staff?tab=leaves" className="btn-ghost btn-sm">طلب إجازة</Link> : null}
-          {canTaskCreate ? <Link href="/staff?tab=tasks" className="btn-ghost btn-sm">إضافة مهمة</Link> : null}
-        </div>
+        {activeTab === "overview" ? (
+          <div className="flex flex-wrap gap-2">
+            {canEmployees ? <Link href="/staff/employees" className="btn-ghost btn-sm">سجلات الموظفين</Link> : null}
+            {canUserAdmin ? <Link href="/users?tab=create" className="btn-ghost btn-sm">إضافة موظف</Link> : null}
+            {canAttendanceManage ? <Link href="/staff?tab=attendance" className="btn-ghost btn-sm">تسجيل حضور</Link> : null}
+            {canShiftManage ? <Link href="/staff?tab=leaves" className="btn-ghost btn-sm">طلب إجازة</Link> : null}
+            {canTaskCreate ? <Link href="/staff?tab=tasks" className="btn-ghost btn-sm">إضافة مهمة</Link> : null}
+          </div>
+        ) : null}
       </AdminIntro>
       {savedMessage(sp.saved)}
 
-      <section className="space-y-3" aria-labelledby="staff-summary-title">
-        <h2 id="staff-summary-title" className="font-semibold text-gray-900">ملخص الموظفين والعمل اليومي</h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {canUsers || employeeRoster.length ? <StatCard label="إجمالي الموظفين" value={canUsers ? totalUsers : employeeRoster.length} /> : null}
-          {canUsers ? <StatCard label="حسابات فعالة" value={activeUsers} tone="text-emerald-700" /> : null}
-          {canAttendance ? <StatCard label="حضور اليوم" value={todayAttendance.length} tone="text-emerald-700" description={`${presentNow} حاضر الآن`} /> : null}
-          {canAttendance ? <StatCard label="غياب من القائمة" value={employeeRoster.length ? absentRoster.length : "—"} tone="text-amber-700" description={employeeRoster.length ? "حسب قائمة الحضور" : "لا توجد قائمة موظفين"} /> : null}
-          {canTasks ? <StatCard label="مهام مفتوحة" value={openTasks} tone="text-sky-700" /> : null}
-          {canTasks ? <StatCard label="مهام عاجلة" value={urgentTasks} tone="text-red-700" description={`${overdueTasks} متأخرة`} /> : null}
-        </div>
-      </section>
+      {activeTab === "overview" ? (
+        <section className="space-y-3" aria-labelledby="staff-summary-title">
+          <h2 id="staff-summary-title" className="font-semibold text-gray-900">ملخص الموظفين والعمل اليومي</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {personnel ? <StatCard label="سجلات الموظفين" value={personnel.personnel} description={`${personnel.residents} مقيم · ${personnel.specialists} اختصاص · ${personnel.unlinked} بلا حساب`} /> : null}
+            {canUsers ? <StatCard label="حسابات المستخدمين" value={totalUsers} description="حسابات الدخول وليست سجلات الأفراد" /> : null}
+            {canUsers ? <StatCard label="حسابات فعالة" value={activeUsers} tone="text-emerald-700" description={`${Math.max(0, totalUsers - activeUsers)} معطلة`} /> : null}
+            {canAttendance ? <StatCard label="حضور اليوم" value={todayAttendance.length} tone="text-emerald-700" description={`${presentNow} حاضر الآن`} /> : null}
+            {canAttendance ? <StatCard label="غياب من القائمة" value={employeeRoster.length ? absentRoster.length : "—"} tone="text-amber-700" description={employeeRoster.length ? "من يُتوقع حضوره فقط" : "لا توجد قائمة موظفين"} /> : null}
+            {canTasks ? <StatCard label="مهام مفتوحة" value={openTasks} tone="text-sky-700" /> : null}
+            {canTasks ? <StatCard label="مهام عاجلة" value={urgentTasks} tone="text-red-700" description={`${overdueTasks} متأخرة`} /> : null}
+          </div>
+        </section>
+      ) : null}
 
       {activeTab === "overview" ? (
         <div className="grid gap-5 xl:grid-cols-2">
@@ -283,23 +310,17 @@ export default async function StaffPage({
 
       {activeTab === "employees" && canUsers ? (
         <AdminSection id="employees" title="قائمة الموظفين" description="فلاتر قراءة فقط؛ التعديل التفصيلي يبقى في صفحة إدارة المستخدم المحدد." className="overflow-hidden">
-          <form action="/staff" className="grid gap-3 md:grid-cols-6">
-            <input type="hidden" name="tab" value="employees" />
-            <div className="md:col-span-2">
-              <label className="label">بحث</label>
-              <input name="q" defaultValue={sp.q ?? ""} className="input" placeholder="اسم، مستخدم، قسم، مسمى" />
-            </div>
+          <FilterBar action="/staff" query={sp.q} placeholder="اسم، مستخدم، قسم، مسمى…" activeCount={[sp.role, sp.userStatus, sp.branch, sp.department, sp.presence].filter(Boolean).length} clearHref="/staff?tab=employees" hidden={<input type="hidden" name="tab" value="employees" />}>
             <Combobox name="role" label="الدور" allowFree={false} defaultValue={sp.role ?? ""} placeholder="كل الأدوار" options={[{ value: "", label: "كل الأدوار" }, ...optionEntries(ROLE_LABELS as any)]} />
             <Combobox name="userStatus" label="الحالة" allowFree={false} defaultValue={sp.userStatus ?? ""} options={[{ value: "", label: "كل الحالات" }, { value: "active", label: "فعّال" }, { value: "disabled", label: "معطّل" }]} />
+            <Combobox name="presence" label="التواجد" allowFree={false} defaultValue={sp.presence ?? ""} options={[{ value: "", label: "الكل" }, { value: "online", label: "أونلاين" }, { value: "idle", label: "خامل" }, { value: "offline", label: "أوفلاين" }]} />
             <Combobox name="branch" label="الفرع" allowFree={false} defaultValue={sp.branch ?? ""} placeholder="كل الفروع" options={[{ value: "", label: "كل الفروع" }, ...branches.map((branch: any) => ({ value: String(branch.id), label: branch.name }))]} />
             <Combobox name="department" label="القسم" allowFree={false} defaultValue={sp.department ?? ""} placeholder="كل الأقسام" options={[{ value: "", label: "كل الأقسام" }, ...departments.map((department) => ({ value: department, label: department }))]} />
-            <div className="flex flex-wrap items-end gap-2 md:col-span-6">
-              <button className="btn-primary" type="submit">تصفية</button>
-              <Link href="/staff?tab=employees" className="btn-ghost">مسح</Link>
-              {canUserAdmin ? <Link href="/users?tab=create" className="btn-ghost">إضافة موظف</Link> : null}
-              <ResultCount count={users.length} label="موظف معروض" />
-            </div>
-          </form>
+          </FilterBar>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <ResultCount count={users.length} label="موظف معروض" />
+            {canUserAdmin ? <Link href="/users?tab=create" className="btn-ghost btn-sm">+ إضافة موظف</Link> : null}
+          </div>
           <DataTable label="قائمة الموظفين" className="-mx-5 -mb-5 rounded-none border-x-0 border-b-0">
             <table className="w-full text-sm">
               <thead><tr><th className="th">المستخدم</th><th className="th">الاسم</th><th className="th">الدور</th><th className="th">القسم/الفرع</th><th className="th">الحالة</th><th className="th">آخر نشاط</th><th className="th">إجراءات</th></tr></thead>
@@ -307,12 +328,12 @@ export default async function StaffPage({
                 {users.map((user: any) => (
                   <tr key={user.id} className="hover:bg-gray-50">
                     <td className="td font-mono text-xs">{user.username}</td>
-                    <td className="td"><Link href={`/users/${user.id}`} className="font-medium text-brand-700 hover:underline">{user.fullName}</Link>{user.jobTitle ? <div className="text-xs text-gray-400">{user.jobTitle}</div> : null}</td>
+                    <td className="td">{canUserAdmin ? <Link href={`/users/${user.id}`} className="font-medium text-brand-700 hover:underline">{user.fullName}</Link> : <span className="font-medium text-gray-800">{user.fullName}</span>}{user.jobTitle ? <div className="text-xs text-gray-400">{user.jobTitle}</div> : null}</td>
                     <td className="td">{ROLE_LABELS[user.role as keyof typeof ROLE_LABELS]}</td>
                     <td className="td"><div>{user.department || "—"}</div><div className="text-xs text-gray-400">{user.branch?.name || "بدون فرع"}</div></td>
                     <td className="td">{user.isActive ? <span className="badge-success">فعّال</span> : <span className="badge-danger">معطّل</span>}</td>
-                    <td className="td"><div>{fmtDateTime(user.lastSeenAt)}</div><div className="text-xs text-gray-400">آخر دخول: {fmtDateTime(user.lastLoginAt)}</div></td>
-                    <td className="td"><Link href={`/users/${user.id}`} className="rounded bg-brand-50 px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100">إدارة</Link></td>
+                    <td className="td"><span className={presenceBadgeClass(getPresenceStatus(user.lastSeenAt, now, presenceConfig))}>{PRESENCE_LABELS[getPresenceStatus(user.lastSeenAt, now, presenceConfig)]}</span><div className="mt-1">{fmtDateTime(user.lastSeenAt)}</div><div className="text-xs text-gray-400">آخر دخول: {fmtDateTime(user.lastLoginAt)}</div></td>
+                    <td className="td">{canUserAdmin ? <Link href={`/users/${user.id}`} className="rounded bg-brand-50 px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100">إدارة</Link> : "—"}</td>
                   </tr>
                 ))}
                 {users.length === 0 ? <TableEmptyRow colSpan={7} title="لا توجد نتائج مطابقة" description="امسح بعض الفلاتر أو استخدم بحثاً أوسع." /> : null}
@@ -339,7 +360,7 @@ export default async function StaffPage({
               <input type="hidden" name="tab" value="attendance" />
               <div><label className="label">اليوم</label><input name="date" type="date" className="input" defaultValue={localDateInput(attendanceDate)} /></div>
               <button className="btn-primary" type="submit">عرض</button>
-              <Link href="/attendance" className="btn-ghost">فتح الصفحة القديمة</Link>
+              
             </form>
             <div className="-mx-5 -mb-5 overflow-x-auto">
               <table className="w-full text-sm">
@@ -366,7 +387,7 @@ export default async function StaffPage({
       {activeTab === "shifts" && canShifts ? (
         <div className="space-y-5">
           {canShiftManage ? (
-            <AdminSection id="shift-create" title="إضافة مناوبة" description="إضافة مناوبة مرتبطة باسم موظف وتاريخ فقط، حسب النموذج الحالي.">
+            <details className="card p-4"><summary className="cursor-pointer font-semibold text-gray-700">+ إضافة مناوبة</summary><div className="mt-3">
               <form action={addShift} className="grid gap-3 md:grid-cols-5">
                 <input type="hidden" name="returnTo" value="staff" />
                 <Combobox name="name" label="الموظف" allowFree options={employeeNames} required />
@@ -376,7 +397,7 @@ export default async function StaffPage({
                 <div><label className="label">إلى</label><input name="endTime" type="time" className="input" /></div>
                 <div className="md:col-span-5"><button className="btn-primary" type="submit">إضافة المناوبة</button></div>
               </form>
-            </AdminSection>
+            </div></details>
           ) : null}
 
           <AdminSection id="shifts-table" title="مناوبات المدى" description="الافتراضي يعرض الأسبوع الحالي والقادم." className="overflow-hidden">
@@ -385,7 +406,7 @@ export default async function StaffPage({
               <div><label className="label">من</label><input name="from" type="date" className="input" defaultValue={localDateInput(weekStart)} /></div>
               <div><label className="label">إلى</label><input name="to" type="date" className="input" defaultValue={localDateInput(weekEnd)} /></div>
               <button className="btn-primary" type="submit">عرض</button>
-              <Link href="/shifts" className="btn-ghost">فتح الصفحة القديمة</Link>
+              
             </form>
             <div className="-mx-5 -mb-5 overflow-x-auto">
               <table className="w-full text-sm">
@@ -411,7 +432,7 @@ export default async function StaffPage({
       {activeTab === "leaves" && canShifts ? (
         <div className="space-y-5">
           {canShiftManage ? (
-            <AdminSection id="leave-request" title="طلب إجازة" description="يسجل الطلب في جدول الإجازات الحالي، ثم ينتظر القبول إذا لزم.">
+            <details className="card p-4"><summary className="cursor-pointer font-semibold text-gray-700">+ طلب إجازة</summary><div className="mt-3">
               <form action={requestLeave} className="grid gap-3 md:grid-cols-5">
                 <input type="hidden" name="returnTo" value="staff" />
                 <Combobox name="name" label="الموظف" allowFree options={employeeNames} required />
@@ -421,16 +442,14 @@ export default async function StaffPage({
                 <div><label className="label">السبب</label><input name="reason" className="input" /></div>
                 <div className="md:col-span-5"><button className="btn-primary" type="submit">تقديم الطلب</button></div>
               </form>
-            </AdminSection>
+            </div></details>
           ) : null}
 
           <AdminSection id="leaves-table" title="الإجازات الحالية والقادمة" description="فلترة حسب الحالة أو الموظف، مع إجراءات الموافقة للصلاحيات المناسبة." className="overflow-hidden">
-            <form action="/staff" className="grid gap-3 md:grid-cols-4">
-              <input type="hidden" name="tab" value="leaves" />
+            <FilterBar action="/staff" search={false} placeholder="فلترة الإجازات" activeCount={[sp.leaveStatus && sp.leaveStatus !== "all" ? 1 : null, sp.leaveName].filter(Boolean).length} clearHref="/staff?tab=leaves" hidden={<input type="hidden" name="tab" value="leaves" />}>
               <Combobox name="leaveStatus" label="الحالة" allowFree={false} defaultValue={sp.leaveStatus ?? "all"} options={[{ value: "all", label: "كل الحالات" }, ...Object.entries(LEAVE_STATUS).map(([value, item]) => ({ value, label: item.label }))]} />
               <Combobox name="leaveName" label="الموظف" allowFree={false} defaultValue={sp.leaveName ?? ""} placeholder="كل الموظفين" options={[{ value: "", label: "كل الموظفين" }, ...employeeNames.map((name) => ({ value: name, label: name }))]} />
-              <div className="flex items-end gap-2 md:col-span-2"><button className="btn-primary" type="submit">تصفية</button><Link href="/staff?tab=leaves" className="btn-ghost">مسح</Link></div>
-            </form>
+            </FilterBar>
             <div className="-mx-5 -mb-5 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr><th className="th">الموظف</th><th className="th">النوع</th><th className="th">من</th><th className="th">إلى</th><th className="th">الحالة</th><th className="th">إجراءات</th></tr></thead>
@@ -456,7 +475,7 @@ export default async function StaffPage({
       {activeTab === "tasks" && canTasks ? (
         <div className="space-y-5">
           {canTaskCreate ? (
-            <AdminSection id="task-create" title="إضافة مهمة" description="الإسناد لموظف أو دور، والحقول هي نفس نموذج المهام الحالي.">
+            <details className="card p-4"><summary className="cursor-pointer font-semibold text-gray-700">+ إضافة مهمة</summary><div className="mt-3">
               <form action={createTask} className="grid gap-3 md:grid-cols-3">
                 <input type="hidden" name="returnTo" value="staff" />
                 <div className="md:col-span-2"><label className="label">عنوان المهمة *</label><input name="title" className="input" required /></div>
@@ -464,21 +483,19 @@ export default async function StaffPage({
                 <div className="md:col-span-3"><label className="label">التفاصيل</label><textarea name="description" className="input" rows={2} /></div>
                 <Combobox name="assignedToId" label="إسناد لموظف" allowFree={false} placeholder="بدون" options={allUsers.map((user: any) => ({ value: user.id, label: user.fullName }))} />
                 <Combobox name="assignedRole" label="أو دور كامل" allowFree={false} placeholder="بدون" options={optionEntries(ROLE_LABELS as any)} />
-                <Combobox name="patientId" label="مراجع مرتبط" allowFree={false} placeholder="بدون" options={patients.map((patient: any) => ({ value: patient.id, label: `${patient.fullName}${patient.fileNumber ? ` #${patient.fileNumber}` : ""}` }))} />
+                <PatientSearchField name="patientId" label="مراجع مرتبط" placeholder="بدون" scope="record" />
                 <div><label className="label">موعد الاستحقاق</label><input name="dueDate" type="date" className="input" /></div>
                 <div className="flex items-end md:col-span-2"><button className="btn-primary" type="submit">إضافة المهمة</button></div>
               </form>
-            </AdminSection>
+            </div></details>
           ) : null}
 
           <AdminSection id="tasks-table" title="قائمة المهام" description="تظهر المهام المتأخرة بخلفية خفيفة وإشارة واضحة." className="overflow-hidden">
-            <form action="/staff" className="grid gap-3 md:grid-cols-5">
-              <input type="hidden" name="tab" value="tasks" />
+            <FilterBar action="/staff" search={false} placeholder="فلترة المهام" activeCount={[sp.taskStatus && sp.taskStatus !== "open" ? 1 : null, sp.priority && sp.priority !== "all" ? 1 : null, sp.assignee].filter(Boolean).length} clearHref="/staff?tab=tasks" hidden={<input type="hidden" name="tab" value="tasks" />}>
               <Combobox name="taskStatus" label="الحالة" allowFree={false} defaultValue={sp.taskStatus ?? "open"} options={[{ value: "open", label: "مفتوحة" }, { value: "overdue", label: "متأخرة" }, { value: "all", label: "كل الحالات" }, ...Object.entries(TASK_STATUS).map(([value, item]) => ({ value, label: item.label }))]} />
               <Combobox name="priority" label="الأولوية" allowFree={false} defaultValue={sp.priority ?? "all"} options={[{ value: "all", label: "كل الأولويات" }, ...Object.entries(TASK_PRIORITY).map(([value, item]) => ({ value, label: item.label }))]} />
               <Combobox name="assignee" label="المكلف" allowFree={false} defaultValue={sp.assignee ?? ""} options={taskAssigneeOptions} />
-              <div className="flex items-end gap-2 md:col-span-2"><button className="btn-primary" type="submit">تصفية</button><Link href="/staff?tab=tasks" className="btn-ghost">مسح</Link><Link href="/tasks" className="btn-ghost">فتح الصفحة القديمة</Link></div>
-            </form>
+            </FilterBar>
             <TaskRows rows={tasks} canComplete={canTaskComplete} canDelete={canTaskDelete} />
           </AdminSection>
         </div>
