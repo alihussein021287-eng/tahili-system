@@ -17,6 +17,7 @@ import { referralAccessScope } from "@/lib/referral-access";
 import { closeOpenHandoffsForPatient } from "@/lib/handoff-service";
 import { transitionCareStage, reassignCenterStage } from "@/lib/care-stage-service";
 import { assertPatientActionScope, assertBranchBoundRecordScope } from "@/lib/patient-guard";
+import { resolveRegistrationBranch, resolveUpdateBranch } from "@/lib/patient-branch";
 import { centerStationByName } from "@/lib/stations";
 import { resolvePrescriptionOriginDetailed, resolveCareExecutionBranch, verifyPrescriptionVisit } from "@/lib/pharmacy-scope";
 
@@ -34,6 +35,15 @@ const patientSchema = z.object({
 async function uid() {
   const s = await requireSession();
   return (s?.user as any)?.id as string | undefined;
+}
+async function branchActor(userId: string | undefined) {
+  const me = userId ? await prisma.user.findUnique({ where: { id: userId }, select: { role: true, branchId: true, branch: { select: { isActive: true } } } }) : null;
+  const perms = await currentPerms();
+  return {
+    canViewAllBranches: me?.role === "ADMIN" || (me?.role === "MANAGER" && perms.has("centers.central.view")),
+    userBranchId: me?.branchId ?? null,
+    userBranchActive: !!me?.branch?.isActive,
+  };
 }
 async function guard(key: string) {
   const s = await requireSession();
@@ -94,12 +104,15 @@ function duplicateMessage(dup: { fileNumber: number; fullName: string; phone: st
 export async function createPatient(_previousState: { error: string | null }, fd: FormData): Promise<{ error: string | null }> {
   const s = await guard("patients.create");
   const data = parsePatient(fd);
-  // A branch-bound staff member registers into their own active branch unless another one was chosen explicitly;
-  // a patient must not silently end up with no branch.
-  if ((data as any).branchId == null) {
-    const me = await prisma.user.findUnique({ where: { id: (s?.user as any)?.id }, select: { branchId: true, branch: { select: { isActive: true } } } });
-    if (me?.branchId != null && me.branch?.isActive) (data as any).branchId = me.branchId;
-  }
+  // Server-side branch invariant: a new patient always gets a valid, authorized, active branch (never NULL).
+  const requestedBranchId = (data as any).branchId as number | null;
+  const branchDecision = resolveRegistrationBranch(
+    await branchActor((s?.user as any)?.id),
+    requestedBranchId,
+    requestedBranchId != null ? await prisma.branch.findUnique({ where: { id: requestedBranchId }, select: { id: true, isActive: true } }) : null,
+  );
+  if (!branchDecision.ok) return { error: branchDecision.error ?? "الفرع غير صالح" };
+  (data as any).branchId = branchDecision.branchId;
   // مدخل البيانات = المستخدم الحالي حصراً (إجباري تلقائياً)
   (data as any).dataEntryBy = s?.user?.name || (s?.user as any)?.username || "غير معروف";
   const v = patientSchema.safeParse(data);
@@ -125,6 +138,15 @@ export async function updatePatient(id: string, stateOrForm: FormData | { error:
   const data = parsePatient(fd);
   // نحافظ على مُدخِل البيانات الأصلي
   (data as any).dataEntryBy = before?.dataEntryBy ?? (s?.user?.name || (s?.user as any)?.username || null);
+  const requestedUpdateBranch = (data as any).branchId as number | null;
+  const updateBranch = resolveUpdateBranch(
+    await branchActor((s?.user as any)?.id),
+    before?.branchId ?? null,
+    requestedUpdateBranch,
+    requestedUpdateBranch != null ? await prisma.branch.findUnique({ where: { id: requestedUpdateBranch }, select: { id: true, isActive: true } }) : null,
+  );
+  if (!updateBranch.ok) redirect(`/patients/${id}/edit?saved=${encodeURIComponent(updateBranch.error ?? "الفرع غير صالح")}`);
+  (data as any).branchId = updateBranch.branchId;
   const v = patientSchema.safeParse(data);
   if (!v.success) redirect(`/patients/${id}/edit?saved=${encodeURIComponent(v.error.issues[0]?.message || "بيانات غير صحيحة")}`);
   const dup = await findDuplicate(data, id);
@@ -397,10 +419,13 @@ export async function importPatients(fd: FormData) {
     createRows.push(row);
   }
 
-  // Same rule as single registration: a branch-bound importer registers into their own ACTIVE branch; otherwise the rows keep
-  // no branch (never guessed) and stay reachable only through their creator or a handoff.
-  const importer = await prisma.user.findUnique({ where: { id: (s?.user as any)?.id }, select: { branchId: true, branch: { select: { isActive: true } } } });
-  const importBranchId = importer?.branchId != null && importer.branch?.isActive ? importer.branchId : null;
+  // Same invariant as single registration: rows always land in the importer's own ACTIVE branch; an importer without one
+  // (ADMIN / central) must use the Data Center, where the branch is chosen explicitly. Never NULL, never guessed.
+  const importDecision = resolveRegistrationBranch(await branchActor((s?.user as any)?.id), null, null);
+  if (!importDecision.ok || importDecision.branchId == null) {
+    redirect(`/patients/import?err=${encodeURIComponent(`${importDecision.error ?? "الفرع غير صالح"} — للاستيراد بدون فرع شخصي استخدم مركز البيانات واختر الفرع.`)}`);
+  }
+  const importBranchId = importDecision.branchId as number;
 
   if (createRows.length > 0) {
     await prisma.patient.createMany({
