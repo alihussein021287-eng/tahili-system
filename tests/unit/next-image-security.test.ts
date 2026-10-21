@@ -1,7 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { getSharp, imageOptimizer } from "next/dist/server/image-optimizer";
+import { getSharp, imageOptimizer, ImageOptimizerCache } from "next/dist/server/image-optimizer";
 import { defaultConfig } from "next/dist/server/config-shared";
+import loadConfig from "next/dist/server/config";
+import { PHASE_PRODUCTION_SERVER } from "next/constants";
 
 const { gte } = require("semver");
 const images: Record<string, Buffer> = {};
@@ -14,6 +16,21 @@ beforeAll(async () => {
 });
 
 describe("Next image security patch compatibility", () => {
+  it("includes the image SSRF patch without enabling remote image sources", async () => {
+    expect(gte(require("next/package.json").version, "16.3.8")).toBe(true);
+    const config = await loadConfig(PHASE_PRODUCTION_SERVER, process.cwd());
+    expect(config.images.remotePatterns).toEqual([]);
+    expect(config.images.domains).toEqual([]);
+    // Parameter validation only: no DNS, outbound request or exploit payload.
+    const result = ImageOptimizerCache.validateParams(
+      { headers: {} } as any,
+      { url: "https://synthetic.invalid/image.png", w: "640", q: "75" },
+      config,
+      false,
+    );
+    expect(result).toHaveProperty("errorMessage", '"url" parameter is not allowed');
+  });
+
   it.each(["png", "jpeg", "avif"] as const)("preserves ordinary %s image optimization", async (kind) => {
     const result = await imageOptimizer(
       { buffer: images[kind], contentType: `image/${kind}`, cacheControl: "public, max-age=60", etag: "synthetic" },
