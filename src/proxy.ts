@@ -1,9 +1,11 @@
 import { getToken } from "next-auth/jwt";
-import { type NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   downstreamCookieHeaderForLocalSession,
   EnvironmentAccessConfigError,
+  InvalidCookieHeaderError,
   resolveEnvironmentAccess,
+  SECURE_SESSION_COOKIE,
 } from "@/lib/environment-access";
 import { logEvent, normalizeRoute } from "@/lib/observability";
 
@@ -60,15 +62,25 @@ export async function proxy(request: NextRequest) {
       const response = NextResponse.redirect(signInUrl); response.headers.set("X-Request-ID", id); return response;
     }
 
+    const headers = new Headers(request.headers);
+    if (!access.secure) {
+      headers.set("cookie", downstreamCookieHeaderForLocalSession(request.headers.get("cookie"), access.sessionCookieName));
+    }
+    // NextAuth's session path reads cookies, not getToken's Bearer fallback.
+    // Compare its effective token bytes with those already authenticated above.
+    const sessionHeaders = new Headers(headers);
+    sessionHeaders.delete("authorization");
+    const forwarded = new NextRequest(request.url, { headers: sessionHeaders });
+    const verifiedToken = await getToken({ req: request, cookieName: access.sessionCookieName, raw: true });
+    const forwardedToken = await getToken({ req: forwarded, cookieName: access.secure ? access.sessionCookieName : SECURE_SESSION_COOKIE, raw: true });
+    if (!verifiedToken || verifiedToken !== forwardedToken) throw new InvalidCookieHeaderError();
+
     if (access.secure) {
-      const headers = new Headers(request.headers);
       headers.delete("x-request-id"); headers.delete("x-tahili-request-id"); headers.delete("x-tahili-request-id-source");
       headers.set("x-tahili-request-id", id); headers.set("x-tahili-request-id-source", "proxy");
       const response = NextResponse.next({ request: { headers } }); response.headers.set("X-Request-ID", id); return response;
     }
 
-    const headers = new Headers(request.headers);
-    headers.set("cookie", downstreamCookieHeaderForLocalSession(request.headers.get("cookie"), access.sessionCookieName));
     headers.delete("x-request-id"); headers.delete("x-tahili-request-id"); headers.delete("x-tahili-request-id-source");
     headers.set("x-tahili-request-id", id); headers.set("x-tahili-request-id-source", "proxy");
     const response = NextResponse.next({ request: { headers } });
@@ -76,6 +88,11 @@ export async function proxy(request: NextRequest) {
     logEvent({ level: "info", route: normalizeRoute(request.nextUrl.pathname), method: request.method, status: 200, requestId: id });
     return response;
   } catch (error) {
+    if (error instanceof InvalidCookieHeaderError) {
+      const response = new NextResponse("Invalid authentication cookies", { status: 400 });
+      response.headers.set("X-Request-ID", id);
+      return response;
+    }
     if (error instanceof EnvironmentAccessConfigError) {
       logEvent({ level: "error", route: normalizeRoute(request.nextUrl.pathname), method: request.method, status: 500, requestId: id, errorCode: "ENV_ACCESS" });
       const response = new NextResponse("Invalid authentication environment", { status: 500 }); response.headers.set("X-Request-ID", id); return response;

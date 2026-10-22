@@ -193,24 +193,33 @@ function validCookieName(name: string) {
   return /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name);
 }
 
+export class InvalidCookieHeaderError extends TypeError {
+  constructor() { super("Invalid authentication cookies"); }
+}
+
 export function downstreamCookieHeaderForLocalSession(
   header: string | null,
   sessionCookieName: EnvironmentAccess["sessionCookieName"] = LOCAL_SESSION_COOKIE,
 ) {
   if (!header) return "";
-  if (/[\r\n\0]/.test(header)) throw new TypeError("Invalid cookie header");
+  if (/[\r\n\0]/.test(header)) throw new InvalidCookieHeaderError();
   const cookies = new Map<string, string>();
   for (const part of header.split(/; */)) {
     const separator = part.indexOf("=");
     if (separator < 0) continue;
     const name = part.slice(0, separator);
     const value = part.slice(separator + 1);
-    const content = value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
-    if (!validCookieName(name) || !/^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/.test(content)) continue;
+    if (!validCookieName(name)) continue;
     // Match NextRequest's last-valid-value selection, including malformed URI handling.
     // Validate decoding only: forward the original bytes to avoid double encoding.
     try { decodeURIComponent(value); } catch { continue; }
     cookies.set(name, value);
+  }
+  // Validate AFTER authoritative duplicate selection. Never retain an older value
+  // because the value actually selected by NextRequest is not representable.
+  for (const value of cookies.values()) {
+    const content = value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
+    if (!/^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/.test(content)) throw new InvalidCookieHeaderError();
   }
   return downstreamCookiesForLocalSession([...cookies].map(([name, value]) => ({ name, value })), sessionCookieName)
     .map(({ name, value }) => `${name}=${value}`).join("; ");

@@ -41,12 +41,15 @@ describe("cookie header boundary", () => {
     expect(() => downstreamCookieHeaderForLocalSession(raw, name)).toThrow(TypeError);
   });
   it("skips malformed URI values safely and keeps the last valid duplicate, matching NextRequest", () => {
-    const raw = "good=one; bad=%E0%A4%A; good=two; good=%ZZ; bad2=%; control=\u0001; tail=ok";
+    const raw = "good=one; bad=%E0%A4%A; good=two; good=%ZZ; bad2=%; tail=ok";
     const expected = request(raw).cookies.get("good")?.value;
     const forwarded = downstreamCookieHeaderForLocalSession(raw, name);
     expect(request(forwarded).cookies.get("good")?.value).toBe(expected);
     expect(forwarded).toBe("good=two; tail=ok");
     expect(downstreamCookieHeaderForLocalSession(null, name)).toBe("");
+  });
+  it("rejects unrepresentable selected values instead of silently dropping them", () => {
+    expect(() => downstreamCookieHeaderForLocalSession("control=\u0001; tail=ok", name)).toThrow(TypeError);
   });
   it("removes forged canonical aliases and aliases only this port's exact numeric session chunks", () => {
     const raw = `${SECURE_SESSION_COOKIE}=forged; ${SECURE_SESSION_COOKIE}.0=forged; next-auth.session-token-3809-local=other; ${name}-extra=other; ${name}.bad=other; ${name}.0=one%2E; ${name}.1=two`;
