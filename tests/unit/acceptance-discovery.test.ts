@@ -9,10 +9,13 @@ const configs = ["playwright.config.ts", "playwright.critical.config.ts"];
 // Intentionally nonexistent synthetic target: --list must not execute setup, fixtures or tests.
 const id = "123456abcdef";
 const password = "a".repeat(48);
-const inherited = Object.fromEntries(
-  ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE"]
-    .filter((key) => process.env[key]).map((key) => [key, process.env[key]]),
-);
+const inherited: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
+  ...Object.fromEntries(
+    ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE"]
+      .filter((key) => process.env[key]).map((key) => [key, process.env[key]]),
+  ),
+};
 const safe = {
   ...inherited,
   TAHILI_ENVIRONMENT: "acceptance", TAHILI_DISPOSABLE_TEST_DB: "1", ACCEPTANCE_RUN_ID: id,
