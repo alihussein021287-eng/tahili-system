@@ -1,10 +1,9 @@
 import { getToken } from "next-auth/jwt";
 import { type NextRequest, NextResponse } from "next/server";
 import {
-  downstreamCookiesForLocalSession,
+  downstreamCookieHeaderForLocalSession,
   EnvironmentAccessConfigError,
   resolveEnvironmentAccess,
-  serializedCookieHeader,
 } from "@/lib/environment-access";
 import { logEvent, normalizeRoute } from "@/lib/observability";
 
@@ -69,7 +68,7 @@ export async function proxy(request: NextRequest) {
     }
 
     const headers = new Headers(request.headers);
-    headers.set("cookie", serializedCookieHeader(downstreamCookiesForLocalSession(request.cookies.getAll(), access.sessionCookieName)));
+    headers.set("cookie", downstreamCookieHeaderForLocalSession(request.headers.get("cookie"), access.sessionCookieName));
     headers.delete("x-request-id"); headers.delete("x-tahili-request-id"); headers.delete("x-tahili-request-id-source");
     headers.set("x-tahili-request-id", id); headers.set("x-tahili-request-id-source", "proxy");
     const response = NextResponse.next({ request: { headers } });
