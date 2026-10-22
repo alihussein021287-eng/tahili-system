@@ -23,9 +23,8 @@ describe("acceptance suite completeness guard", () => {
     const dockerignore = readFileSync(".dockerignore", "utf8");
 
     // Rehearsal-only: a single allowed origin, an isolated database guard, no default credential file, output outside test-results.
-    expect(helpers).toContain('REHEARSAL_ORIGIN = "http://localhost:3101"');
-    expect(helpers).toContain("url.origin !== REHEARSAL_ORIGIN");
-    expect(helpers).toContain("@127.0.0.1:55432/");
+    expect(helpers).toContain("assertIsolatedTarget()");
+    expect(helpers).not.toContain("3101");
     expect(helpers).toContain('QA_CREDENTIALS_PATH || ""');
     expect(helpers).toContain("(metadata.mode & 0o077) !== 0");
     expect(helpers).not.toContain("192.168.17.20");

@@ -1,0 +1,11 @@
+# Public Linux base: no preserved QA/rehearsal image or data is required.
+FROM public.ecr.aws/docker/library/node:20-alpine
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN apk add --no-cache chromium font-noto font-noto-arabic
+WORKDIR /acceptance
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps --ignore-scripts --include=dev --no-audit --no-fund
+COPY . .
+RUN ./node_modules/.bin/prisma generate
+RUN ./node_modules/.bin/next build --webpack
+ENTRYPOINT ["node", "scripts/acceptance/inside.cjs"]

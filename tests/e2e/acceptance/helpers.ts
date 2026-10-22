@@ -7,26 +7,15 @@ export const ROOT = path.resolve(process.env.ACCEPTANCE_OUTPUT_DIR || "release-e
 export const STATES = path.join(ROOT, "storage-states");
 export const EVIDENCE = path.join(ROOT, "screenshots");
 export const RUN_ID = process.env.ACCEPTANCE_RUN_ID || `RUN-${Date.now()}`;
-// The only authorized target is the isolated rehearsal runtime.
-export const REHEARSAL_ORIGIN = "http://localhost:3101";
-export const BASE_URL = process.env.E2E_BASE_URL || REHEARSAL_ORIGIN;
+const { assertIsolatedTarget } = require("../../../scripts/acceptance/guard.cjs");
+const isolated = assertIsolatedTarget();
+export const BASE_URL = isolated.origin;
+// Compatibility for existing UI probes: always the validated disposable origin.
+export const REHEARSAL_ORIGIN = isolated.origin;
 export const CREDENTIALS_PATH = process.env.QA_CREDENTIALS_PATH || "";
 
 export const BATCH_TAG = process.env.ACCEPTANCE_BATCH || "QA-ROLE-20260724";
 export type Credential = { role: string; username: string; password: string; fullName: string };
-
-function assertDevelopmentTarget() {
-  const url = new URL(BASE_URL);
-  if (url.origin !== REHEARSAL_ORIGIN || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error(`Acceptance tests may run only against the isolated rehearsal runtime ${REHEARSAL_ORIGIN}`);
-  }
-  const db = process.env.DATABASE_URL ?? "";
-  if (!db.includes("@127.0.0.1:55432/")) {
-    throw new Error("DATABASE_URL must point to the isolated rehearsal database (127.0.0.1:55432)");
-  }
-}
-
-assertDevelopmentTarget();
 
 export function credentials(): Credential[] {
   if (!path.isAbsolute(CREDENTIALS_PATH)) throw new Error("QA_CREDENTIALS_PATH must be absolute");
@@ -67,7 +56,7 @@ export function settleAfterNavigation(page: Page) {
   const original = page.goto.bind(page);
   page.goto = (async (...args: Parameters<Page["goto"]>) => {
     const response = await original(...args);
-    await page.waitForFunction(() => !document.querySelector("template[id^=\"B:\"], div[hidden][id^=\"S:\"]"), undefined, { timeout: 10_000 }).catch(() => undefined);
+    await page.waitForFunction(() => !document.querySelector("template[id^=\"B:\"], div[hidden][id^=\"S:\"]"), undefined, { timeout: 10_000 });
     return response;
   }) as Page["goto"];
 }
@@ -156,6 +145,6 @@ export async function closeChecked(context: BrowserContext, errors: string[]) {
   await context.close();
   // A next-auth session poll that is still in flight when the context closes surfaces as a client fetch error; it is a
   // teardown artifact of the test, not an application failure (real session/5xx failures are recorded by the other handlers).
-  const teardownNoise = (error: string) => /CLIENT_FETCH_ERROR/.test(error) && //api/auth/session/.test(error) && /Failed to fetch/.test(error);
+  const teardownNoise = (error: string) => /CLIENT_FETCH_ERROR/.test(error) && /\/api\/auth\/session/.test(error) && /Failed to fetch/.test(error);
   expect(errors.filter((error) => !error.includes("403") && !teardownNoise(error)), "unexpected browser/HTTP errors").toEqual([]);
 }

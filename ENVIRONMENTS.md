@@ -73,3 +73,7 @@ NEXTAUTH_SECRET=change-me-tahili-dev-secret-at-least-32-characters
 - أي تنظيف يبدأ بجرد read-only للمسارات والأحجام وDocker usage، ثم قائمة حذف صريحة.
 - لا تنظف VM أخرى بالاستنتاج أو بنفس الجلسة. الإنتاج يحتاج موافقة صريحة وbaseline جديداً عبر IP الإنتاج فقط.
 - احمِ دائماً volumes وDB وMinIO وuploads وbackups وcredentials وQA data والصورة العاملة. لا تستخدم `docker system prune -a` بصورة عمياء.
+
+## Disposable acceptance only
+
+The critical acceptance harness uses a generated loopback endpoint on ports 32000-49000 and a private temporary database. This is a synthetic-only exception to deployed-environment LAN checks; it never targets QA port 3101 or either deployed environment. See [acceptance isolation](docs/ACCEPTANCE_ISOLATION.md).

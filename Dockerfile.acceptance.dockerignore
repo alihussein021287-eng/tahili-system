@@ -1,0 +1,63 @@
+# Dependencies / build output
+node_modules
+.next
+out
+dist
+build
+coverage
+*.tsbuildinfo
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+test-results
+**/credentials.*
+**/*credentials*
+**/*secrets*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Runtime data and backups
+backups
+uploads
+_images
+releases
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.sql
+*.sql.gz
+*.backup
+*.dump
+*.bak
+*.bak_*
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor / VCS
+.git
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+release-evidence/acceptance-run
+release-evidence/playwright-output
+release-package
+
+# Future real-data import inputs/outputs (never baked into an image)
+import-input
+import-output
+
+release-evidence
