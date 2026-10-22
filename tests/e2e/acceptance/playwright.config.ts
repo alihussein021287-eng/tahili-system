@@ -5,7 +5,8 @@ import { BASE_URL, ROOT } from "./helpers";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "critical-registration.spec.ts",
+  // Preserve the original legacy discovery path; helpers still require disposable identity.
+  testMatch: /(acceptance-.*|resilient-probes)\.spec\.ts/,
   globalSetup: "./auth.setup.ts",
   workers: 1,
   retries: 0,

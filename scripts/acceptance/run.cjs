@@ -13,7 +13,7 @@ const harnessFiles = [
   'Dockerfile.acceptance', 'Dockerfile.acceptance.dockerignore', 'docker-compose.acceptance.yml',
   'scripts/acceptance/run.cjs', 'scripts/acceptance/inside.cjs', 'scripts/acceptance/guard.cjs', 'scripts/acceptance/guard.test.cjs',
   'tests/e2e/acceptance/helpers.ts', 'tests/e2e/acceptance/auth.setup.ts',
-  'tests/e2e/acceptance/playwright.config.ts', 'tests/e2e/acceptance/critical-registration.spec.ts',
+  'tests/e2e/acceptance/playwright.config.ts', 'tests/e2e/acceptance/playwright.critical.config.ts', 'tests/e2e/acceptance/critical-registration.spec.ts',
   'tests/unit/acceptance-no-skips.test.ts', 'docs/ACCEPTANCE_ISOLATION.md', 'ENVIRONMENTS.md',
 ];
 const env = Object.fromEntries(['PATH', 'Path', 'SystemRoot', 'SYSTEMROOT', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'DOCKER_CONFIG', 'ProgramFiles', 'ProgramData', 'ProgramW6432', 'ALLUSERSPROFILE', 'HOMEDRIVE', 'HOMEPATH'].filter(key => process.env[key]).map(key => [key, process.env[key]]));

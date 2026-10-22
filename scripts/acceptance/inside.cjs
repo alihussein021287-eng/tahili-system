@@ -58,7 +58,7 @@ async function main() {
     }
     assert.ok(ready, 'Disposable app readiness timeout');
     fs.writeFileSync('/evidence/runtime.json', JSON.stringify({ node: process.version, platform: process.platform, next: require('next/package.json').version, prisma: require('@prisma/client/package.json').version, origin: target.origin }, null, 2));
-    run('node_modules/@playwright/test/cli.js', ['test', '-c', 'tests/e2e/acceptance/playwright.config.ts', 'critical-registration.spec.ts']);
+    run('node_modules/@playwright/test/cli.js', ['test', '-c', 'tests/e2e/acceptance/playwright.critical.config.ts', 'critical-registration.spec.ts']);
   } finally {
     if (app.exitCode === null) { const exit = once(app, 'exit'); app.kill('SIGTERM'); await exit; }
     fs.closeSync(fd);

@@ -12,6 +12,12 @@ node scripts/acceptance/run.cjs
 
 For guards alone, without Docker or database access: `node scripts/acceptance/run.cjs --guard-only`.
 
+### Critical versus legacy discovery
+
+The disposable runner uses `tests/e2e/acceptance/playwright.critical.config.ts` and selects only the nine `critical-registration.spec.ts` cases. The original `tests/e2e/acceptance/playwright.config.ts` preserves discovery of `acceptance-*.spec.ts` and `resilient-probes.spec.ts`; it does not include the critical suite. Both configurations import the same fail-closed disposable-target guard, with no QA/production default and no dotenv loading in configuration.
+
+For discovery only, use `node node_modules/@playwright/test/cli.js test -c tests/e2e/acceptance/playwright.config.ts --list` (or the critical config). Even listing requires a complete valid disposable identity; the focused discovery regression test supplies synthetic identity without opening a browser or database. Never supply QA credentials or port 3101. Legacy execution additionally needs its own synthetic role/fixture preparation inside a validated isolated environment; the nine-case runner does not prepare or execute those suites. Discovery is not a legacy execution pass.
+
 The controller snapshots tracked working files plus its explicit harness file list. Ignored/untracked local application data is not copied. It records source hashes and any tracked working changes, builds a public-base harness image with lockfile dependencies, generates Prisma, and compiles Next in production mode. No previous node_modules, build output or tool image is reused as an input. Ordinary Docker layer caching is permitted. The production Dockerfile and application source are unchanged.
 
 ## Isolation and configuration
