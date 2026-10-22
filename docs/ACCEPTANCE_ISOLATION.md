@@ -24,7 +24,7 @@ The guard rejects missing identity, protected/QA/production origins, ports outsi
 
 ## Nine cases and synchronization
 
-Six real-login/Server Action registration cases cover own-branch defaults, cross-branch refusal, unassigned staff, admin missing/explicit branch and inactive branch. Three legacy CSV cases cover assigned, unassigned and inactive-branch admins, with database assertions. No business assertion is replaced or weakened. An explicit `toHaveCount(1)` waits for the single fullName field after React streaming; persistent duplication still fails. Playwright retries are fixed at zero. The final report must contain exactly nine passing cases, zero skipped/unexpected/flaky results.
+Six real-login/Server Action registration cases cover own-branch defaults, cross-branch refusal, unassigned staff, admin missing/explicit branch and inactive branch. Three legacy CSV cases cover assigned, unassigned and inactive-branch admins, with database assertions. No business assertion is replaced or weakened. Navigation first waits for React streaming boundary templates and hidden streamed containers to disappear, then `toHaveCount(1)` requires one fullName field. This avoids a transient count of one before a streamed copy arrives. Persistent streaming/duplication fails; timeouts are not swallowed. Playwright retries are fixed at zero. The final report must contain exactly nine passing cases, zero skipped/unexpected/flaky results.
 
 This is not the complete role/workflow suite, a ClamAV/MinIO/backup test or full operational readiness/deployment approval. No clinical or permission code is changed.
 

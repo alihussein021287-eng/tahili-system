@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { prisma } from "@/lib/db";
-import { credentials, BASE_URL, pickCombobox, statePath } from "./helpers";
+import { credentials, BASE_URL, pickCombobox, statePath, settleAfterNavigation } from "./helpers";
 
 // Real login + Server Action + PostgreSQL. Form tampering deliberately tests the server boundary.
 for (const scenario of ["own-default", "cross-branch", "unassigned", "admin-missing", "admin-explicit", "inactive-branch"] as const) {
@@ -9,6 +9,7 @@ for (const scenario of ["own-default", "cross-branch", "unassigned", "admin-miss
     const user = credentials().find(row => row.username === username)!;
     const context = await browser.newContext({ baseURL: BASE_URL, storageState: statePath(user) });
     const page = await context.newPage();
+    settleAfterNavigation(page);
     try {
       await page.goto("/patients/new");
       // React streaming may temporarily retain a hidden copy of the form.
@@ -48,6 +49,7 @@ for (const username of ["acc-admin-branch", "acc-admin", "acc-admin-inactive"]) 
     const user = credentials().find(row => row.username === username)!;
     const context = await browser.newContext({ baseURL: BASE_URL, storageState: statePath(user) });
     const page = await context.newPage();
+    settleAfterNavigation(page);
     try {
       await page.goto("/patients/import");
       await expect(page).toHaveURL(/\/patients\/import$/);

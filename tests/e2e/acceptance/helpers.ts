@@ -56,7 +56,7 @@ export function settleAfterNavigation(page: Page) {
   const original = page.goto.bind(page);
   page.goto = (async (...args: Parameters<Page["goto"]>) => {
     const response = await original(...args);
-    await page.waitForFunction(() => !document.querySelector("template[id^=\"B:\"], div[hidden][id^=\"S:\"]"), undefined, { timeout: 10_000 }).catch(() => undefined);
+    await page.waitForFunction(() => !document.querySelector("template[id^=\"B:\"], div[hidden][id^=\"S:\"]"), undefined, { timeout: 10_000 });
     return response;
   }) as Page["goto"];
 }
