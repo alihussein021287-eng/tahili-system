@@ -4,7 +4,7 @@ import { BASE_URL, credentials, expectedIdentityText, statePath, STATES } from "
 
 export default async function globalSetup() {
   fs.mkdirSync(STATES, { recursive: true, mode: 0o700 });
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   for (const user of credentials()) {
     const context = await browser.newContext({ baseURL: BASE_URL });
     const page = await context.newPage();
