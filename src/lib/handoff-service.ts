@@ -239,6 +239,12 @@ export async function sendHandoff(actor: HandoffActor, input: SendHandoffInput, 
     const previous = await tx.patientHandoff.findFirst({
       where: { patientId: patient.id, status: "ACCEPTED", acceptedById: user.id }, orderBy: [{ acceptedAt: "desc" }, { id: "desc" }],
     });
+    if (previous) {
+      await activeTransitionActor(actor, tx, "handoff.receive");
+      if (!(await tx.patientHandoff.findFirst({
+        where: { id: previous.id, status: "ACCEPTED", acceptedById: user.id, AND: [await recipientWhere(user, tx)] },
+      }))) throw denied();
+    }
     const open = await tx.patientHandoff.findMany({
       where: { patientId: patient.id, status: { in: ["SENT", "ACCEPTED"] } }, orderBy: [{ sentAt: "desc" }, { id: "desc" }],
     });
