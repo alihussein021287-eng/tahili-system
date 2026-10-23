@@ -1,3 +1,4 @@
+import { handoffRecipientScope } from '@/lib/handoff-recipient-scope';
 import type { CenterMembershipRole, PatientHandoff, Prisma, UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -206,23 +207,15 @@ export async function listTargets(actor: HandoffActor, centerId: number, toRole:
 }
 
 async function recipientWhere(user: HandoffUser, db: HandoffTransaction): Promise<Prisma.PatientHandoffWhereInput> {
-  const members = await db.centerMembership.findMany({
-    where: { userId: user.id, ...activeMembershipWhere() }, include: { user: { select: userSelect } },
-  });
-  const alternatives: Prisma.PatientHandoffWhereInput[] = [{ toUserId: user.id }];
-  for (const [toRole, membershipRole] of Object.entries(CENTER_ROLE_FOR_TARGET)) {
-    const centers = members.filter((member) => member.role === membershipRole).map((member) => member.centerId);
-    if (centers.length) {
-      const senderRule: Prisma.PatientHandoffWhereInput = user.branchId == null
-        ? {}
-        : { OR: [{ fromUser: { branchId: null } }, { fromUser: { branchId: user.branchId } }, { fromRole: { in: ["ADMIN", "MANAGER"] } }] };
-      alternatives.push({ toUserId: null, toRole: toRole as UserRole, toCenterId: { in: centers }, ...senderRule });
-    }
-  }
-  if (isBranchRole(user.role) && user.branchId != null) {
-    alternatives.push({ toUserId: null, toRole: user.role, patient: { branchId: user.branchId } });
-  }
-  return { OR: alternatives };
+  const membershipRole = centerRole(user.role);
+  const members = membershipRole ? await db.centerMembership.findMany({
+    where: { userId: user.id, ...activeMembershipWhere(membershipRole), center: { active: true } }, include: { user: { select: userSelect } },
+  }) : [];
+  const scope = handoffRecipientScope(user, members.map(member => member.centerId));
+  // Preserve the existing branch-origin restriction for center pools; names no longer bypass current membership.
+  return user.branchId == null || isBranchRole(user.role) ? scope : { AND: [scope, { OR: [
+    { toUserId: user.id }, { fromUser: { branchId: null } }, { fromUser: { branchId: user.branchId } }, { fromRole: { in: ["ADMIN", "MANAGER"] } },
+  ] }] };
 }
 
 // Serializable retries also prevent duplicate queue entries when different handoffs
@@ -358,7 +351,7 @@ export async function returnHandoff(actor: HandoffActor, id: string, reason: str
     const result = await tx.patientHandoff.updateMany({
       where: { id, OR: [
         { status: "SENT", AND: [eligible] },
-        { status: "ACCEPTED", acceptedById: user.id },
+        { status: "ACCEPTED", acceptedById: user.id, AND: [eligible] },
       ] }, data: { status: "RETURNED", returnReason: parsed.data },
     });
     if (!result.count) throw conflict();
@@ -386,7 +379,7 @@ export async function finishHandoff(actor: HandoffActor, id: string, db: Handoff
     const user = await activeTransitionActor(actor, tx, "handoff.receive");
     const now = new Date();
     const result = await tx.patientHandoff.updateMany({
-      where: { id, status: "ACCEPTED", acceptedById: user.id }, data: { status: "DONE", doneAt: now },
+      where: { id, status: "ACCEPTED", acceptedById: user.id, AND: [await recipientWhere(user, tx)] }, data: { status: "DONE", doneAt: now },
     });
     if (!result.count) throw conflict();
     const handoff = await tx.patientHandoff.findFirst({ where: { id } });
@@ -534,7 +527,7 @@ export async function listInbox(actor: HandoffActor, options: { centerId?: numbe
   const user = await activeActor(actor, "handoff.receive", db);
   const eligible = await recipientWhere(user, db);
   const items = await db.patientHandoff.findMany({ where: { toCenterId: parsed.centerId, OR: [
-    { status: "SENT", AND: [eligible] }, { status: "ACCEPTED", acceptedById: user.id },
+    { status: "SENT", AND: [eligible] }, { status: "ACCEPTED", acceptedById: user.id, AND: [eligible] },
   ] } });
   const sorted = sortInboxHandoffs(items, new Date());
   const start = (parsed.page - 1) * parsed.pageSize;

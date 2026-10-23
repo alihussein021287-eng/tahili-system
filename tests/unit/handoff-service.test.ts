@@ -115,7 +115,7 @@ function fake() {
       findMany: async ({ where }) => state.users.filter((row) => matches(row, where)),
     },
     centerMembership: { findMany: async ({ where }) => state.members.map((member) => ({
-      startDate: new Date("2026-01-01"), endDate: null, ...member, user: state.users.find((candidate) => candidate.id === member.userId)!,
+      startDate: new Date("2026-01-01"), endDate: null, ...member, center: { active: true }, user: state.users.find((candidate) => candidate.id === member.userId)!,
     })).filter((row) => matches(row, where)) },
     patient: { findUnique: async ({ where }) => state.patients.find((row) => matches(row, where)) ?? null },
     center: { findUnique: async ({ where }) => state.centers.find((row) => matches(row, where)) ?? null },
@@ -280,6 +280,30 @@ describe("sendHandoff", () => {
 });
 
 describe("acceptHandoff and queue enrollment", () => {
+  it.each(["expired", "revoked", "wrong-role", "wrong-center"])("rejects a named recipient with %s eligibility without side effects", async (reason) => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a" }));
+    const member = state.members.find(m => m.userId === "doctor-a")!;
+    if (reason === "expired") member.endDate = new Date(now.getTime() - 1);
+    if (reason === "revoked") member.status = "INACTIVE";
+    if (reason === "wrong-center") member.centerId = 999;
+    if (reason === "wrong-role") state.users.find(u => u.id === "doctor-a")!.role = "RESIDENT";
+    const before = structuredClone({ handoffs: state.handoffs, queues: state.queues, audits: state.audits, notifications: state.notifications });
+    await expect(acceptHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
+    expect({ handoffs: state.handoffs, queues: state.queues, audits: state.audits, notifications: state.notifications }).toEqual(before);
+    expect((await listInbox(actor("doctor-a"), { page: 1, pageSize: 20 }, db)).items).toEqual([]);
+  });
+
+  it("does not retain accepted ownership access or completion authority after membership revocation", async () => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a", status: "ACCEPTED", acceptedById: "doctor-a", acceptedAt: now }));
+    state.members.find(m => m.userId === "doctor-a")!.status = "INACTIVE";
+    expect((await listInbox(actor("doctor-a"), { page: 1, pageSize: 20 }, db)).items).toEqual([]);
+    await expect(finishHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
+    expect(state.handoffs[0].status).toBe("ACCEPTED");
+    expect(state.queues).toEqual([]);
+    expect(state.audits).toEqual([]);
+  });
   it("allows exactly one concurrent acceptance and removes the handoff from the loser's inbox", async () => {
     const { db, state } = fake();
     state.handoffs.push(handoff());
@@ -304,6 +328,8 @@ describe("acceptHandoff and queue enrollment", () => {
   });
   it.each(["SECRETARY", "RESIDENT", "DOCTOR", "HEAD_THERAPIST"] as const)("enrolls a %s center recipient once in today's waiting queue", async (toRole) => {
     const { db, state } = fake();
+    state.users.find(u => u.id === "doctor-a")!.role = toRole;
+    state.members.find(m => m.userId === "doctor-a")!.role = ({ SECRETARY: "SECRETARY", RESIDENT: "RESIDENT", DOCTOR: "SPECIALIST", HEAD_THERAPIST: "HEAD_THERAPIST" } as const)[toRole];
     state.handoffs.push(handoff({ toRole, toUserId: "doctor-a" }), handoff({ id: "handoff-2", toRole, toUserId: "doctor-a" }));
     await Promise.all([acceptHandoff(actor("doctor-a"), "handoff-1", db), acceptHandoff(actor("doctor-a"), "handoff-2", db)]);
     expect(state.queues).toHaveLength(1);
@@ -312,6 +338,8 @@ describe("acceptHandoff and queue enrollment", () => {
   });
   it("does not queue a THERAPIST handoff", async () => {
     const { db, state } = fake();
+    state.users.find(u => u.id === "doctor-a")!.role = "THERAPIST";
+    state.members.find(m => m.userId === "doctor-a")!.role = "THERAPIST";
     state.handoffs.push(handoff({ toRole: "THERAPIST", toUserId: "doctor-a" }));
     await acceptHandoff(actor("doctor-a"), "handoff-1", db);
     expect(state.queues).toEqual([]);
@@ -339,10 +367,18 @@ describe("acceptHandoff and queue enrollment", () => {
     await acceptHandoff(actor("doctor-a"), "handoff-1", db);
     expect(state.queues.map((entry) => entry.id)).toEqual(["queue-existing"]);
   });
-  it.each([{ toRole: "RECEPTION" as const }, { toCenterId: null }])("does not enroll a branch/no-center target: %j", async (overrides) => {
+  it("does not enroll a valid named branch target", async () => {
     const { db, state } = fake();
-    state.handoffs.push(handoff({ toUserId: "doctor-a", ...overrides }));
+    state.users.find(u => u.id === "doctor-a")!.role = "RECEPTION";
+    state.handoffs.push(handoff({ toUserId: "doctor-a", toRole: "RECEPTION", toCenterId: null }));
     await acceptHandoff(actor("doctor-a"), "handoff-1", db);
+    expect(state.queues).toEqual([]);
+  });
+  it("rejects a named center-role target without a destination center", async () => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a", toCenterId: null }));
+    await expect(acceptHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
+    expect(state.handoffs[0].status).toBe("SENT");
     expect(state.queues).toEqual([]);
   });
   it("rolls back acceptance if queue creation fails", async () => {
@@ -455,7 +491,7 @@ describe("handoff reads and auditing", () => {
     expect((await listInbox(actor("reception"), { page: 1, pageSize: 20 }, db)).items.map((row) => row.id)).toEqual(["branch-mine"]);
     await expect(acceptHandoff(actor("reception"), "branch-other", db)).rejects.toThrow();
     state.members.find((member) => member.userId === "doctor-a")!.status = "INACTIVE";
-    expect((await listInbox(actor("doctor-a"), { page: 1, pageSize: 20 }, db)).items.map((row) => row.id)).toEqual(["mine-accepted"]);
+    expect((await listInbox(actor("doctor-a"), { page: 1, pageSize: 20 }, db)).items.map((row) => row.id)).toEqual([]);
     await expect(acceptHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
   });
   it("rejects inbox reads without receive permission", async () => {
