@@ -1,3 +1,4 @@
+import { handoffRecipientScope } from '@/lib/handoff-recipient-scope';
 import type { Prisma, UserRole } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { activeMembershipWhere, centerRoleForUserRole } from "@/lib/center-membership";
@@ -34,9 +35,10 @@ export async function patientScopeWhere(db: Db, actor: PatientAccessActor): Prom
   // The staff member who registered the patient keeps access to that record (stored createdById).
   const or: Prisma.PatientWhereInput[] = [{ createdById: actor.userId }];
   if (user.branchId != null && user.branch?.isActive) or.push({ branchId: user.branchId });
-  const holders: Prisma.PatientHandoffWhereInput[] = [{ toUserId: actor.userId }, { acceptedById: actor.userId }];
-  if (centerIds.length) holders.push({ toCenterId: { in: centerIds }, toRole: actor.role });
-  or.push({ handoffs: { some: { status: { in: ["SENT", "ACCEPTED"] }, OR: holders } } });
+  if (actor.permissions.has("handoff.receive")) {
+    const eligible = handoffRecipientScope({ id: actor.userId, role: actor.role, branchId: user.branch?.isActive ? user.branchId : null }, centerIds);
+    or.push({ handoffs: { some: { status: { in: ["SENT", "ACCEPTED"] }, AND: [eligible] } } });
+  }
   if (actor.permissions.has("referrals.view")) {
     try {
       const referral = await referralAccessScope(db as typeof prisma, actor);

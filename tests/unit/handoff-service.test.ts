@@ -39,6 +39,8 @@ function matches(record: Row, where: unknown): boolean {
     const actual = record[key];
     if (expected !== null && typeof expected === "object" && !(expected instanceof Date)) {
       return Object.entries(expected as Row).every(([operator, operand]) => {
+        if (operator === "some") return Array.isArray(actual) && actual.some(row => matches(row as Row, operand));
+        if (operator === "not") return operand === null ? actual != null : actual !== operand;
         if (operator === "in") return (operand as unknown[]).includes(actual);
         if (operator === "gte") return Number(actual) >= Number(operand);
         if (operator === "lte") return Number(actual) <= Number(operand);
@@ -73,7 +75,7 @@ function fake() {
       { userId: "doctor-a", centerId: 2, role: "SPECIALIST", status: "ACTIVE", specialty: "تأهيل" },
       { userId: "doctor-b", centerId: 2, role: "SPECIALIST", status: "ACTIVE", specialty: null },
     ] as Member[],
-    patients: [{ id: "patient-1", fullName: "مراجع اختباري", branchId: 1 }, { id: "patient-2", fullName: "مراجع ثاني", branchId: 2 }] as { id: string; fullName: string; branchId: number | null }[],
+    patients: [{ id: "patient-1", fullName: "مراجع اختباري", branchId: 1 }, { id: "patient-2", fullName: "مراجع ثاني", branchId: 2 }] as { id: string; fullName: string; branchId: number | null; treatmentPlans?: Row[]; centerPrograms?: Row[]; visits?: Row[] }[],
     centers: [{ id: 1, name: "المركز الأول" }, { id: 2, name: "المركز الثاني" }],
     handoffs: [] as PatientHandoff[], queues: [] as Queue[],
     rolePermissions: [] as { role: UserRole; permKey: string; allowed: boolean }[],
@@ -85,8 +87,14 @@ function fake() {
   let sequence = 0;
   let inTransaction = false;
   let transactionTail = Promise.resolve();
-  const expanded = (row: PatientHandoff) => ({ ...row, patient: state.patients.find((patient) => patient.id === row.patientId), fromUser: state.users.find((candidate) => candidate.id === row.fromUserId) ?? null });
+  const expanded = (row: PatientHandoff) => ({ ...row, patient: state.patients.find((patient) => patient.id === row.patientId), previousHandoff: state.handoffs.find(h => h.id === row.previousHandoffId), fromUser: state.users.find((candidate) => candidate.id === row.fromUserId) ?? null });
   const db: HandoffRepository = {
+    $queryRaw: async (query, actorId) => {
+      expect(inTransaction).toBe(true);
+      expect(query.join("?")).toMatch(/SELECT id FROM (users|center_memberships).*FOR SHARE/);
+      expect(typeof actorId).toBe("string");
+      return [];
+    },
     rolePermission: { findMany: async ({ where }) => state.rolePermissions.filter((row) => matches(row, where)) },
     userPermission: { findMany: async ({ where }) => state.userPermissions.filter((row) => matches(row, where)) },
     auditLog: { create: async ({ data }) => {
@@ -115,7 +123,7 @@ function fake() {
       findMany: async ({ where }) => state.users.filter((row) => matches(row, where)),
     },
     centerMembership: { findMany: async ({ where }) => state.members.map((member) => ({
-      startDate: new Date("2026-01-01"), endDate: null, ...member, user: state.users.find((candidate) => candidate.id === member.userId)!,
+      startDate: new Date("2026-01-01"), endDate: null, ...member, center: { active: true }, user: state.users.find((candidate) => candidate.id === member.userId)!,
     })).filter((row) => matches(row, where)) },
     patient: { findUnique: async ({ where }) => state.patients.find((row) => matches(row, where)) ?? null },
     center: { findUnique: async ({ where }) => state.centers.find((row) => matches(row, where)) ?? null },
@@ -214,6 +222,45 @@ describe("handoff recipient resolution", () => {
 });
 
 describe("sendHandoff", () => {
+  it.each(["expired", "revoked", "wrong-center", "wrong-role"])("rejects %s responsibility before any implicit handoff transition", async (reason) => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a", status: "ACCEPTED", acceptedById: "doctor-a", acceptedAt: now }));
+    const member = state.members.find(m => m.userId === "doctor-a")!;
+    if (reason === "expired") member.endDate = new Date(now.getTime() - 1);
+    if (reason === "revoked") member.status = "INACTIVE";
+    if (reason === "wrong-center") member.centerId = 999;
+    if (reason === "wrong-role") state.users.find(u => u.id === "doctor-a")!.role = "RESIDENT";
+    // Own-branch patient access stays legitimate; it is not authority over the old task.
+    expect(state.users.find(u => u.id === "doctor-a")!.branchId).toBe(state.patients[0].branchId);
+    const before = structuredClone({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits });
+    await expect(sendHandoff(actor("doctor-a"), { patientId: "patient-1", toRole: "RESIDENT", toCenterId: 1 }, db)).rejects.toThrow();
+    expect({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits }).toEqual(before);
+  });
+
+  it("preserves forwarding by a currently eligible owner with independent branch access", async () => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a", status: "ACCEPTED", acceptedById: "doctor-a", acceptedAt: now }));
+    const next = await sendHandoff(actor("doctor-a"), { patientId: "patient-1", toRole: "RESIDENT", toCenterId: 1 }, db);
+    expect(state.handoffs[0].status).toBe("DONE");
+    expect(next).toMatchObject({ status: "SENT", fromCenterId: 2, previousHandoffId: "handoff-1" });
+  });
+  it("requires the same completion permission for direct and implicit completion", async () => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a", status: "ACCEPTED", acceptedById: "doctor-a" }));
+    const before = structuredClone({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits });
+    const sender = actor("doctor-a", ["handoff.send"]);
+    await expect(finishHandoff(sender, "handoff-1", db)).rejects.toThrow();
+    await expect(sendHandoff(sender, { patientId: "patient-1", toRole: "RESIDENT", toCenterId: 1 }, db)).rejects.toThrow();
+    expect({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits }).toEqual(before);
+  });
+  it.each(["MANAGER", "ADMIN"] as const)("does not let %s complete obsolete personal ownership through takeover", async (role) => {
+    const { db, state } = fake();
+    state.users[0].role = role;
+    state.handoffs.push(handoff({ status: "ACCEPTED", acceptedById: "sender" }));
+    const before = structuredClone({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits });
+    await expect(sendHandoff(actor("sender", ["handoff.send", "handoff.manage"]), send, db)).rejects.toThrow();
+    expect({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits }).toEqual(before);
+  });
   it("rejects an empty center with the Arabic label and makes no changes", async () => {
     const { db, state } = fake();
     await expect(sendHandoff(actor(), { ...send, toCenterId: 99 }, db)).rejects.toThrow(/^هذا المركز ما بيه طبيب اختصاص/);
@@ -222,7 +269,8 @@ describe("sendHandoff", () => {
   });
   it("completes the sender's accepted handoff and links the new handoff atomically", async () => {
     const { db, state } = fake();
-    state.handoffs.push(handoff({ status: "ACCEPTED", acceptedById: "sender", acceptedAt: now }));
+    state.members[0].centerId = 2;
+    state.handoffs.push(handoff({ toRole: "RESIDENT", status: "ACCEPTED", acceptedById: "sender", acceptedAt: now }));
     const created = await sendHandoff(actor(), { ...send, fromCenterId: 1 } as never, db);
     expect(state.handoffs[0]).toMatchObject({ status: "DONE", doneAt: now });
     expect(created).toMatchObject({ status: "SENT", previousHandoffId: "handoff-1", fromUserId: "sender", fromRole: "RESIDENT", fromCenterId: 2 });
@@ -241,7 +289,8 @@ describe("sendHandoff", () => {
   });
   it("rolls back the old DONE status when creating its successor fails", async () => {
     const { db, state } = fake();
-    state.handoffs.push(handoff({ status: "ACCEPTED", acceptedById: "sender", acceptedAt: now }));
+    state.members[0].centerId = 2;
+    state.handoffs.push(handoff({ toRole: "RESIDENT", status: "ACCEPTED", acceptedById: "sender", acceptedAt: now }));
     state.failHandoffCreate = true;
     await expect(sendHandoff(actor(), send, db)).rejects.toThrow("handoff insert failed");
     expect(state.handoffs).toHaveLength(1);
@@ -280,6 +329,86 @@ describe("sendHandoff", () => {
 });
 
 describe("acceptHandoff and queue enrollment", () => {
+  it.each(["direct", "implicit"])("preserves %s completion of the designated centerless physician follow-up", async (completion) => {
+    const { db, state } = fake();
+    state.members.find(m => m.userId === "doctor-a")!.status = "INACTIVE";
+    state.patients[0].treatmentPlans = [{ status: "COMPLETED", finalDecision: "END", closedAt: now, evaluatedAt: now, specialistDoctorId: "doctor-a" }];
+    state.handoffs.push(handoff({ toUserId: "doctor-a", toCenterId: null }));
+    await acceptHandoff(actor("doctor-a"), "handoff-1", db);
+    if (completion === "direct") await finishHandoff(actor("doctor-a"), "handoff-1", db);
+    else await sendHandoff(actor("doctor-a"), { patientId: "patient-1", toRole: "RESIDENT", toCenterId: 1 }, db);
+    expect(state.handoffs[0].status).toBe("DONE");
+    expect(state.queues).toEqual([]);
+  });
+  it.each(["reviewer", "creator"])("preserves the named center-program follow-up to its %s", async (source) => {
+    const { db, state } = fake();
+    state.patients[0].centerPrograms = [{ status: "COMPLETED", returnToConsultancy: true, closedAt: now,
+      referralRequest: { assignedReviewerId: source === "reviewer" ? "doctor-a" : null, createdById: source === "creator" ? "doctor-a" : "sender" } }];
+    state.handoffs.push(handoff({ toUserId: "doctor-a", toCenterId: null }));
+    await acceptHandoff(actor("doctor-a"), "handoff-1", db);
+    expect(state.handoffs[0].acceptedById).toBe("doctor-a");
+  });
+  it.each(["no-program", "wrong-doctor", "active-program", "linked-stage", "not-root", "pool"])("rejects a centerless physician task with %s instead of granting by name", async (invalid) => {
+    const { db, state } = fake();
+    state.patients[0].treatmentPlans = invalid === "no-program" ? [] : [{ status: invalid === "active-program" ? "ACTIVE" : "COMPLETED", finalDecision: "END", closedAt: now, evaluatedAt: now, specialistDoctorId: invalid === "wrong-doctor" ? "doctor-b" : "doctor-a" }];
+    state.handoffs.push(handoff({ toUserId: invalid === "pool" ? null : "doctor-a", toCenterId: null,
+      careStageId: invalid === "linked-stage" ? "stage-1" : null, previousHandoffId: invalid === "not-root" ? "old" : null }));
+    const before = structuredClone({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits });
+    await expect(acceptHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
+    expect({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits }).toEqual(before);
+  });
+  it.each(["valid", "not-returned", "wrong-sender", "unverified", "wrong-branch", "inactive-branch", "pool", "changed-role"])("checks %s receiving-branch return authority independently of registration branch", async (scenario) => {
+    const { db, state } = fake();
+    state.users.push(user("reception", scenario === "changed-role" ? "DATA_ENTRY" : "RECEPTION"));
+    state.patients[1].visits = [{ branchId: scenario === "wrong-branch" ? 9 : 1, branch: { isActive: scenario !== "inactive-branch" },
+      verifiedAt: scenario === "unverified" ? null : now, verificationMethod: "PHYSICAL_DOCUMENT_ATTESTED" }];
+    state.handoffs.push(handoff({ id: "returned", patientId: "patient-2", status: scenario === "not-returned" ? "DONE" : "RETURNED", fromUserId: scenario === "wrong-sender" ? "sender" : "reception", fromRole: "RECEPTION" }),
+      handoff({ id: "back", patientId: "patient-2", toRole: "RECEPTION", toUserId: scenario === "pool" ? null : "reception", toCenterId: null, previousHandoffId: "returned" }));
+    const before = structuredClone({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits });
+    if (scenario === "valid") {
+      await acceptHandoff(actor("reception"), "back", db);
+      await finishHandoff(actor("reception"), "back", db);
+      expect(state.handoffs[1].status).toBe("DONE");
+      expect(state.queues).toEqual([]);
+    } else {
+      await expect(acceptHandoff(actor("reception"), "back", db)).rejects.toThrow();
+      expect({ handoffs: state.handoffs, queues: state.queues, notifications: state.notifications, audits: state.audits }).toEqual(before);
+    }
+  });
+  it("fails closed before mutation when the transaction cannot coordinate authorization locks", async () => {
+    const { db, state } = fake();
+    delete db.$queryRaw;
+    state.handoffs.push(handoff({ toUserId: "doctor-a" }));
+    await expect(acceptHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
+    expect(state.handoffs[0].status).toBe("SENT");
+    expect(state.queues).toEqual([]);
+    expect(state.audits).toEqual([]);
+    expect(state.notifications).toEqual([]);
+  });
+  it.each(["expired", "revoked", "wrong-role", "wrong-center"])("rejects a named recipient with %s eligibility without side effects", async (reason) => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a" }));
+    const member = state.members.find(m => m.userId === "doctor-a")!;
+    if (reason === "expired") member.endDate = new Date(now.getTime() - 1);
+    if (reason === "revoked") member.status = "INACTIVE";
+    if (reason === "wrong-center") member.centerId = 999;
+    if (reason === "wrong-role") state.users.find(u => u.id === "doctor-a")!.role = "RESIDENT";
+    const before = structuredClone({ handoffs: state.handoffs, queues: state.queues, audits: state.audits, notifications: state.notifications });
+    await expect(acceptHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
+    expect({ handoffs: state.handoffs, queues: state.queues, audits: state.audits, notifications: state.notifications }).toEqual(before);
+    expect((await listInbox(actor("doctor-a"), { page: 1, pageSize: 20 }, db)).items).toEqual([]);
+  });
+
+  it("does not retain accepted ownership access or completion authority after membership revocation", async () => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a", status: "ACCEPTED", acceptedById: "doctor-a", acceptedAt: now }));
+    state.members.find(m => m.userId === "doctor-a")!.status = "INACTIVE";
+    expect((await listInbox(actor("doctor-a"), { page: 1, pageSize: 20 }, db)).items).toEqual([]);
+    await expect(finishHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
+    expect(state.handoffs[0].status).toBe("ACCEPTED");
+    expect(state.queues).toEqual([]);
+    expect(state.audits).toEqual([]);
+  });
   it("allows exactly one concurrent acceptance and removes the handoff from the loser's inbox", async () => {
     const { db, state } = fake();
     state.handoffs.push(handoff());
@@ -304,6 +433,8 @@ describe("acceptHandoff and queue enrollment", () => {
   });
   it.each(["SECRETARY", "RESIDENT", "DOCTOR", "HEAD_THERAPIST"] as const)("enrolls a %s center recipient once in today's waiting queue", async (toRole) => {
     const { db, state } = fake();
+    state.users.find(u => u.id === "doctor-a")!.role = toRole;
+    state.members.find(m => m.userId === "doctor-a")!.role = ({ SECRETARY: "SECRETARY", RESIDENT: "RESIDENT", DOCTOR: "SPECIALIST", HEAD_THERAPIST: "HEAD_THERAPIST" } as const)[toRole];
     state.handoffs.push(handoff({ toRole, toUserId: "doctor-a" }), handoff({ id: "handoff-2", toRole, toUserId: "doctor-a" }));
     await Promise.all([acceptHandoff(actor("doctor-a"), "handoff-1", db), acceptHandoff(actor("doctor-a"), "handoff-2", db)]);
     expect(state.queues).toHaveLength(1);
@@ -312,6 +443,8 @@ describe("acceptHandoff and queue enrollment", () => {
   });
   it("does not queue a THERAPIST handoff", async () => {
     const { db, state } = fake();
+    state.users.find(u => u.id === "doctor-a")!.role = "THERAPIST";
+    state.members.find(m => m.userId === "doctor-a")!.role = "THERAPIST";
     state.handoffs.push(handoff({ toRole: "THERAPIST", toUserId: "doctor-a" }));
     await acceptHandoff(actor("doctor-a"), "handoff-1", db);
     expect(state.queues).toEqual([]);
@@ -339,10 +472,18 @@ describe("acceptHandoff and queue enrollment", () => {
     await acceptHandoff(actor("doctor-a"), "handoff-1", db);
     expect(state.queues.map((entry) => entry.id)).toEqual(["queue-existing"]);
   });
-  it.each([{ toRole: "RECEPTION" as const }, { toCenterId: null }])("does not enroll a branch/no-center target: %j", async (overrides) => {
+  it("does not enroll a valid named branch target", async () => {
     const { db, state } = fake();
-    state.handoffs.push(handoff({ toUserId: "doctor-a", ...overrides }));
+    state.users.find(u => u.id === "doctor-a")!.role = "RECEPTION";
+    state.handoffs.push(handoff({ toUserId: "doctor-a", toRole: "RECEPTION", toCenterId: null }));
     await acceptHandoff(actor("doctor-a"), "handoff-1", db);
+    expect(state.queues).toEqual([]);
+  });
+  it("rejects a named center-role target without a destination center", async () => {
+    const { db, state } = fake();
+    state.handoffs.push(handoff({ toUserId: "doctor-a", toCenterId: null }));
+    await expect(acceptHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
+    expect(state.handoffs[0].status).toBe("SENT");
     expect(state.queues).toEqual([]);
   });
   it("rolls back acceptance if queue creation fails", async () => {
@@ -455,7 +596,7 @@ describe("handoff reads and auditing", () => {
     expect((await listInbox(actor("reception"), { page: 1, pageSize: 20 }, db)).items.map((row) => row.id)).toEqual(["branch-mine"]);
     await expect(acceptHandoff(actor("reception"), "branch-other", db)).rejects.toThrow();
     state.members.find((member) => member.userId === "doctor-a")!.status = "INACTIVE";
-    expect((await listInbox(actor("doctor-a"), { page: 1, pageSize: 20 }, db)).items.map((row) => row.id)).toEqual(["mine-accepted"]);
+    expect((await listInbox(actor("doctor-a"), { page: 1, pageSize: 20 }, db)).items.map((row) => row.id)).toEqual([]);
     await expect(acceptHandoff(actor("doctor-a"), "handoff-1", db)).rejects.toThrow();
   });
   it("rejects inbox reads without receive permission", async () => {
@@ -542,7 +683,8 @@ describe("send ownership, provenance and atomic side effects", () => {
 
   it("an accepted holder cannot bypass a second open handoff", async () => {
     const { db, state } = fake();
-    state.handoffs.push(handoff({ status: "ACCEPTED", acceptedById: "sender" }), handoff({ id: "other-open" }));
+    state.members[0].centerId = 2;
+    state.handoffs.push(handoff({ toRole: "RESIDENT", status: "ACCEPTED", acceptedById: "sender" }), handoff({ id: "other-open" }));
     await expect(sendHandoff(actor(), send, db)).rejects.toThrow(/^المريض حالياً عند/);
     expect(state.handoffs.map((row) => row.status)).toEqual(["ACCEPTED", "SENT"]);
   });
@@ -550,19 +692,22 @@ describe("send ownership, provenance and atomic side effects", () => {
   it.each(["permission", "MANAGER", "ADMIN"] as const)("permits takeover with %s and audits every cancellation", async (grant) => {
     const { db, state } = fake();
     if (grant !== "permission") state.users[0].role = grant;
+    else state.members[0].centerId = 2;
+    // Management takeover cancels others' tasks; it does not complete stale personal ownership.
+    const ownsEligibleTask = grant === "permission";
     state.handoffs.push(
       handoff({ id: "sent-other" }),
       handoff({ id: "accepted-other", status: "ACCEPTED", acceptedById: "doctor-a" }),
-      handoff({ id: "mine", status: "ACCEPTED", acceptedById: "sender" }),
+      handoff({ id: "third", toRole: ownsEligibleTask ? "RESIDENT" : "DOCTOR", status: "ACCEPTED", acceptedById: ownsEligibleTask ? "sender" : "doctor-b" }),
       handoff({ id: "closed", status: "DONE" }),
       handoff({ id: "other-patient", patientId: "patient-2" }),
     );
     const sender = actor("sender", ["handoff.send", ...(grant === "permission" ? ["handoff.manage"] : [])]);
     const sent = await sendHandoff(sender, send, db);
-    expect(state.handoffs.map((row) => row.status)).toEqual(["CANCELLED", "CANCELLED", "DONE", "DONE", "SENT", "SENT"]);
+    expect(state.handoffs.map((row) => row.status)).toEqual(["CANCELLED", "CANCELLED", ownsEligibleTask ? "DONE" : "CANCELLED", "DONE", "SENT", "SENT"]);
     expect(state.audits).toEqual([expect.objectContaining({ recordId: sent.id, userId: "sender", newValue: {
-      toUserId: null, toRole: "DOCTOR", toCenterId: 2, fromCenterId: 2,
-      previousHandoffId: "mine", cancelledHandoffIds: ["sent-other", "accepted-other"],
+      toUserId: null, toRole: "DOCTOR", toCenterId: 2, fromCenterId: ownsEligibleTask ? 2 : 1,
+      ...(ownsEligibleTask ? { previousHandoffId: "third" } : {}), cancelledHandoffIds: ownsEligibleTask ? ["sent-other", "accepted-other"] : ["third", "sent-other", "accepted-other"],
     } })]);
     expect(state.notifications).toHaveLength(2);
   });
@@ -599,7 +744,8 @@ describe("send ownership, provenance and atomic side effects", () => {
 
   it("preserves a null source on the accepted handoff instead of falling back to membership", async () => {
     const { db, state } = fake();
-    state.handoffs.push(handoff({ status: "ACCEPTED", acceptedById: "sender", toCenterId: null }));
+    state.users[0].role = "RECEPTION";
+    state.handoffs.push(handoff({ toRole: "RECEPTION", status: "ACCEPTED", acceptedById: "sender", toCenterId: null }));
     expect((await sendHandoff(actor(), send, db)).fromCenterId).toBeNull();
   });
 
@@ -636,7 +782,8 @@ describe("send ownership, provenance and atomic side effects", () => {
 
   it.each(["handoff", "audit", "notification"])("rolls back cancellation, completion, creation and side effects on %s failure", async (failure) => {
     const { db, state } = fake();
-    state.handoffs.push(handoff({ id: "mine", status: "ACCEPTED", acceptedById: "sender" }), handoff({ id: "other" }));
+    state.members[0].centerId = 2;
+    state.handoffs.push(handoff({ id: "mine", toRole: "RESIDENT", status: "ACCEPTED", acceptedById: "sender" }), handoff({ id: "other" }));
     const before = structuredClone(state.handoffs);
     state.failHandoffCreate = failure === "handoff";
     state.failAuditCreate = failure === "audit";

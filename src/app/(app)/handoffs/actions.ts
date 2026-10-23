@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { assertPerm, currentPerms, getSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
+import { canAccessPatientRecord } from "@/lib/patient-access";
 import { activeMembershipWhere } from "@/lib/center-membership";
 import { acceptHandoff, cancelHandoff, finishHandoff, listTargets, redirectHandoff, returnHandoff, sendHandoff } from "@/lib/handoff-service";
 import type { RedirectHandoffInput, SendHandoffInput } from "@/lib/handoff-service";
@@ -66,13 +67,13 @@ export async function sendHandoffAction(input: SendHandoffInput): Promise<Action
     await assertPerm("patients.view");
     const patient = await prisma.patient.findUnique({ where: { id: data.patientId }, select: { id: true, branchId: true } });
     if (!patient) return { ok: false, error: "ملف المراجع غير متاح" };
-    const senderRecord = await prisma.user.findUnique({ where: { id: sender.userId }, select: { branchId: true } });
+    const senderRecord = await prisma.user.findUnique({ where: { id: sender.userId }, select: { branchId: true, branch: { select: { isActive: true } } } });
     // A visit recorded today at the sender's own branch (including a verified cross-branch check-in) is a valid basis.
     const todayStart = new Date(new Date().toDateString());
-    const visitedHere = senderRecord?.branchId != null && !!(await prisma.visit.findFirst({
+    const visitedHere = senderRecord?.branch?.isActive === true && senderRecord.branchId != null && !!(await prisma.visit.findFirst({
       where: { patientId: patient.id, branchId: senderRecord.branchId, visitDate: { gte: todayStart } }, select: { id: true },
     }));
-    if (!senderRecord || (senderRecord.branchId != null && patient.branchId !== senderRecord.branchId && !visitedHere && !sender.permissions.has("centers.central.view"))) {
+    if (!senderRecord || (!(await canAccessPatientRecord(prisma, sender, patient.id)) && !visitedHere)) {
       return { ok: false, error: "ملف المراجع غير متاح" };
     }
 
