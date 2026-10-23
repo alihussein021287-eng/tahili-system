@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  assertPerm: vi.fn(), currentPerms: vi.fn(), getSession: vi.fn(),
+  assertPerm: vi.fn(), currentPerms: vi.fn(), getSession: vi.fn(), patientAccess: vi.fn(), visit: vi.fn(),
   send: vi.fn(), accept: vi.fn(), returned: vi.fn(), finish: vi.fn(), cancel: vi.fn(), redirect: vi.fn(), targets: vi.fn(),
   patient: vi.fn(), center: vi.fn(), centers: vi.fn(), membership: vi.fn(), user: vi.fn(), actorUser: vi.fn(), revalidate: vi.fn(),
 }));
 vi.mock("@/lib/access", () => ({ assertPerm: mocks.assertPerm, currentPerms: mocks.currentPerms, getSession: mocks.getSession }));
+vi.mock("@/lib/patient-access", () => ({ canAccessPatientRecord: mocks.patientAccess }));
 vi.mock("@/lib/db", () => ({ prisma: {
   patient: { findUnique: mocks.patient }, center: { findFirst: mocks.center, findMany: mocks.centers },
   centerMembership: { findFirst: mocks.membership }, user: { findFirst: mocks.user, findUnique: mocks.actorUser },
   patientHandoff: { findFirst: vi.fn().mockResolvedValue({ id: "handoff-1", patientId: "patient-1", toCenterId: 2, status: "SENT" }) },
-  visit: { findFirst: vi.fn().mockResolvedValue(null) },
+  visit: { findFirst: mocks.visit },
 } }));
 vi.mock("@/lib/handoff-service", () => ({
   sendHandoff: mocks.send, acceptHandoff: mocks.accept, returnHandoff: mocks.returned, listTargets: mocks.targets,
@@ -23,10 +24,12 @@ import { acceptHandoffAction, cancelHandoffAction, finishHandoffAction, listActi
 const input = { patientId: "patient-1", toCenterId: 2, toRole: "DOCTOR" as const, toUserId: "doctor-1" };
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.patientAccess.mockResolvedValue(true);
+  mocks.visit.mockResolvedValue(null);
   mocks.currentPerms.mockResolvedValue(new Set(["handoff.send", "handoff.receive", "patients.view"]));
   mocks.getSession.mockResolvedValue({ user: { id: "sender-1", role: "RESIDENT" } });
   mocks.patient.mockResolvedValue({ id: "patient-1", branchId: 1 });
-  mocks.actorUser.mockResolvedValue({ branchId: 1 });
+  mocks.actorUser.mockResolvedValue({ branchId: 1, branch: { isActive: true } });
   mocks.center.mockResolvedValue({ id: 2 });
   mocks.membership.mockResolvedValue({ userId: "doctor-1" });
   mocks.send.mockResolvedValue({ id: "handoff-1", patientId: "patient-1" });
@@ -38,6 +41,22 @@ beforeEach(() => {
 });
 
 describe("finish, cancel and redirect actions", () => {
+  it.each([null, 9])("rejects an out-of-scope sender with branch %s despite central-view permission", async (branchId) => {
+    mocks.actorUser.mockResolvedValue({ branchId });
+    mocks.patientAccess.mockResolvedValue(false);
+    mocks.currentPerms.mockResolvedValue(new Set(["handoff.send", "patients.view", "centers.central.view"]));
+    expect((await sendHandoffAction(input)).ok).toBe(false);
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it("preserves a receiving-branch check-in as an authorized forwarding basis", async () => {
+    mocks.actorUser.mockResolvedValue({ branchId: 9, branch: { isActive: true } });
+    mocks.patientAccess.mockResolvedValue(false);
+    mocks.visit.mockResolvedValue({ id: "verified-visit" });
+    expect((await sendHandoffAction(input)).ok).toBe(true);
+    expect(mocks.visit.mock.calls[0][0].where.branchId).toBe(9);
+    expect(mocks.send).toHaveBeenCalledOnce();
+  });
   it("rejects a missing session token for every transition", async () => {
     for (const invoke of [
       () => finishHandoffAction("handoff-1"),
@@ -143,6 +162,7 @@ describe("handoff action authorization", () => {
   });
 
   it("checks patient access before disclosing a missing branch", async () => {
+    mocks.patientAccess.mockResolvedValue(false);
     mocks.patient.mockResolvedValue({ id: "patient-1", branchId: null });
     expect(await sendHandoffAction({ patientId: "patient-1", toRole: "RECEPTION" })).toEqual({ ok: false, error: "ملف المراجع غير متاح" });
     expect(mocks.send).not.toHaveBeenCalled();
@@ -163,6 +183,7 @@ describe("handoff action authorization", () => {
   });
 
   it("does not send another branch's patient without central access", async () => {
+    mocks.patientAccess.mockResolvedValue(false);
     mocks.patient.mockResolvedValueOnce({ id: "patient-2", branchId: 2 });
     expect(await sendHandoffAction({ ...input, patientId: "patient-2" })).toEqual({ ok: false, error: "ملف المراجع غير متاح" });
     expect(mocks.send).not.toHaveBeenCalled();
