@@ -17,6 +17,8 @@ type Membership = { userId: string; centerId: number; role: CenterMembershipRole
 
 /** Narrow repository boundary; both Prisma and an in-memory test client implement it. */
 export interface HandoffTransaction extends NotificationClient {
+  /** Prisma transactions provide this; mutating handoff transactions fail closed without it. */
+  $queryRaw?(query: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
   /** Present on Prisma transactions; only used when a handoff references a stage. */
   careStage?: StageAssignmentTx["careStage"];
   rolePermission: { findMany(args: Prisma.RolePermissionFindManyArgs): Promise<PermissionOverride[]> };
@@ -220,9 +222,17 @@ async function recipientWhere(user: HandoffUser, db: HandoffTransaction): Promis
 
 // Serializable retries also prevent duplicate queue entries when different handoffs
 // for the same patient/center are accepted simultaneously (there is no unique day key).
-async function transaction<T>(db: HandoffRepository, work: (tx: HandoffTransaction) => Promise<T>): Promise<T> {
+async function transaction<T>(db: HandoffRepository, actorId: string, work: (tx: HandoffTransaction) => Promise<T>): Promise<T> {
+  if (!idSchema.safeParse(actorId).success) throw denied();
   for (let attempt = 0; ; attempt++) {
-    try { return await db.$transaction(work, { isolationLevel: "Serializable" }); }
+    try { return await db.$transaction(async (tx) => {
+      if (!tx.$queryRaw) throw denied();
+      // A revocation must wait for the authorized transition, or win before a fresh authorization read.
+      // FOR SHARE conflicts with non-key membership updates; FOR KEY SHARE would not suffice.
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${actorId} FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM center_memberships WHERE "userId" = ${actorId} ORDER BY id FOR SHARE`;
+      return work(tx);
+    }, { isolationLevel: "Serializable" }); }
     catch (error) {
       if (attempt >= 3 || !error || typeof error !== "object" || !("code" in error) || error.code !== "P2034") throw error;
     }
@@ -232,7 +242,7 @@ async function transaction<T>(db: HandoffRepository, work: (tx: HandoffTransacti
 /** Internal service: the authenticated caller must also authorize input.patientId. */
 export async function sendHandoff(actor: HandoffActor, input: SendHandoffInput, db: HandoffRepository = prisma) {
   const data = sendSchema.parse(input);
-  return transaction(db, async (tx) => {
+  return transaction(db, actor.userId, async (tx) => {
     const user = await activeActor(actor, "handoff.send", tx);
     const patient = await tx.patient.findUnique({ where: { id: data.patientId }, select: { id: true, fullName: true, branchId: true, archivedAt: true } });
     if (!patient || patient.archivedAt) throw new Error("ملف المراجع غير متاح");
@@ -311,7 +321,7 @@ export async function sendHandoff(actor: HandoffActor, input: SendHandoffInput, 
 
 export async function acceptHandoff(actor: HandoffActor, id: string, db: HandoffRepository = prisma) {
   idSchema.parse(id);
-  const accepted = await transaction(db, async (tx) => {
+  const accepted = await transaction(db, actor.userId, async (tx) => {
     const user = await activeActor(actor, "handoff.receive", tx);
     const eligible = await recipientWhere(user, tx);
     const now = new Date();
@@ -351,7 +361,7 @@ export async function returnHandoff(actor: HandoffActor, id: string, reason: str
   idSchema.parse(id);
   const parsed = z.string().trim().min(1).max(4000).safeParse(reason);
   if (!parsed.success) throw new Error("سبب الإرجاع مطلوب");
-  const returned = await transaction(db, async (tx) => {
+  const returned = await transaction(db, actor.userId, async (tx) => {
     const user = await activeActor(actor, "handoff.send", tx);
     const eligible = await recipientWhere(user, tx);
     const result = await tx.patientHandoff.updateMany({
@@ -381,7 +391,7 @@ export async function returnHandoff(actor: HandoffActor, id: string, reason: str
 
 export async function finishHandoff(actor: HandoffActor, id: string, db: HandoffRepository = prisma) {
   idSchema.parse(id);
-  return transaction(db, async (tx) => {
+  return transaction(db, actor.userId, async (tx) => {
     const user = await activeTransitionActor(actor, tx, "handoff.receive");
     const now = new Date();
     const result = await tx.patientHandoff.updateMany({
@@ -398,7 +408,7 @@ export async function finishHandoff(actor: HandoffActor, id: string, db: Handoff
 
 export async function cancelHandoff(actor: HandoffActor, id: string, db: HandoffRepository = prisma) {
   idSchema.parse(id);
-  return transaction(db, async (tx) => {
+  return transaction(db, actor.userId, async (tx) => {
     const user = await activeTransitionActor(actor, tx, "handoff.send");
     const manager = canManage(actor, user);
     const result = await tx.patientHandoff.updateMany({
@@ -416,7 +426,7 @@ export async function cancelHandoff(actor: HandoffActor, id: string, db: Handoff
 export async function redirectHandoff(actor: HandoffActor, id: string, input: RedirectHandoffInput, db: HandoffRepository = prisma) {
   idSchema.parse(id);
   const data = redirectSchema.parse(input);
-  return transaction(db, async (tx) => {
+  return transaction(db, actor.userId, async (tx) => {
     const user = await activeTransitionActor(actor, tx, "handoff.send");
     const manager = canManage(actor, user);
     if (!manager && user.role !== "SECRETARY") throw denied();
