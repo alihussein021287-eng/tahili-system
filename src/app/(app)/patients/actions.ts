@@ -312,10 +312,14 @@ export async function addTreatmentPlan(patientId: string, fd: FormData) {
 }
 export async function setTreatmentPlanStatus(patientId: string, id: string, status: any) {
   const s = await guardPatient("clinical.plan", patientId, "record");
-  const before = await prisma.treatmentPlan.findUniqueOrThrow({ where: { id } });
-  if (before.closedAt || before.evaluatedAt) await assertPerm("therapy.admin.override");
-  await prisma.treatmentPlan.update({ where: { id }, data: { status } });
-  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "TreatmentPlan", recordId: id, oldValue: { status: before.status }, newValue: { status, administrativeOverride: Boolean(before.closedAt || before.evaluatedAt) } });
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "TreatmentPlan" WHERE id = ${id} FOR UPDATE`;
+    const before = await tx.treatmentPlan.findUniqueOrThrow({ where: { id } });
+    if (before.patientId !== patientId) throw new Error("الخطة لا تتبع المراجع");
+    if (before.closedAt || before.evaluatedAt) await assertPerm("therapy.admin.override");
+    await tx.treatmentPlan.update({ where: { id }, data: { status } });
+    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "UPDATE", tableName: "TreatmentPlan", recordId: id, oldValue: { status: before.status }, newValue: { status, administrativeOverride: Boolean(before.closedAt || before.evaluatedAt) } } });
+  });
   revalidatePath(`/patients/${patientId}`);
 }
 export async function deleteTreatmentPlan(patientId: string, id: string) {

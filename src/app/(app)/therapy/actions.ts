@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { boundedSessionDates, expectedTreatmentEnd, positiveInt, recoveryPercent } from "@/lib/therapy-plan-rules";
 import { handOverInTransaction } from "@/lib/handoff-service";
+import { activeMembershipWhere } from "@/lib/center-membership";
 
 const DAY_MS = 86400000;
 
@@ -34,7 +35,7 @@ async function actor(permission: string) {
 
 async function assertCenterManager(tx: any, who: { id: string; role: string }, centerId: number) {
   if (who.role === "ADMIN") return;
-  const membership = await tx.centerMembership.findFirst({ where: { centerId, userId: who.id, role: "HEAD_THERAPIST", status: "ACTIVE" } });
+  const membership = await tx.centerMembership.findFirst({ where: { centerId, userId: who.id, role: "HEAD_THERAPIST", status: "ACTIVE", ...activeMembershipWhere("HEAD_THERAPIST"), center: { active: true } } });
   if (!membership) throw new Error("لا يمكنك إدارة خطط مركز آخر");
 }
 
@@ -104,9 +105,11 @@ export async function createPhysicalTherapyPlan(patientId: string, fd: FormData)
 export async function updatePhysicalTherapyPlan(planId: string, fd: FormData) {
   const who = await actor("therapy.plan.manage");
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "TreatmentPlan" WHERE id = ${planId} FOR UPDATE`;
     const plan = await tx.treatmentPlan.findUniqueOrThrow({ where: { id: planId }, include: { sessions: { include: { appointments: true } } } });
     if (!plan.centerId) throw new Error("الخطة القديمة غير مرتبطة بمركز");
     await assertCenterManager(tx, who, plan.centerId);
+    if (plan.closedAt || plan.evaluatedAt) await assertPerm("therapy.admin.override");
     const specialistDoctorId = fd.get("specialistDoctorId")?.toString() || "";
     const doctor = await tx.user.findFirst({ where: { id: specialistDoctorId, role: "DOCTOR", isActive: true } });
     if (!doctor) throw new Error("اختر طبيب اختصاص فعالاً");
@@ -126,9 +129,11 @@ export async function addPeriodicTherapyEvaluation(planId: string, fd: FormData)
   const who = await actor("therapy.plan.manage");
   const percent = recoveryPercent(fd.get("recoveryPercent"));
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "TreatmentPlan" WHERE id = ${planId} FOR UPDATE`;
     const plan = await tx.treatmentPlan.findUniqueOrThrow({ where: { id: planId } });
     if (!plan.centerId) throw new Error("الخطة غير مرتبطة بمركز");
     await assertCenterManager(tx, who, plan.centerId);
+    if (plan.evaluatedAt && plan.finalDecision === "END") await assertPerm("therapy.admin.override");
     await tx.therapyPeriodicEvaluation.create({ data: { treatmentPlanId: planId, currentCondition: fd.get("currentCondition")?.toString().trim() || "", achievedProgress: fd.get("achievedProgress")?.toString().trim() || "", obstacles: fd.get("obstacles")?.toString().trim() || null, recommendations: fd.get("recommendations")?.toString().trim() || null, decision: fd.get("decision")?.toString() || "CONTINUE", recoveryPercent: percent, evaluatedAt: fd.get("evaluatedAt") ? new Date(fd.get("evaluatedAt")!.toString()) : new Date(), evaluatedById: who.id } });
     await tx.auditLog.create({ data: { userId: who.id, action: "CREATE", tableName: "therapy_periodic_evaluations", recordId: planId, newValue: { recoveryPercent: percent } } });
   });
@@ -176,10 +181,15 @@ export async function finalizeTherapyPlan(planId: string, fd: FormData) {
   const who = await actor("therapy.plan.finalize");
   const finalRecoveryPercent = recoveryPercent(fd.get("finalRecoveryPercent"));
   const decision = fd.get("finalDecision")?.toString() as "EXTEND" | "END";
+  if (decision !== "END" && decision !== "EXTEND") throw new Error("قرار التقييم النهائي غير صالح");
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "TreatmentPlan" WHERE id = ${planId} FOR UPDATE`;
     const plan = await tx.treatmentPlan.findUniqueOrThrow({ where: { id: planId }, include: { patient: true, therapist: true, hall: true, sessions: true } });
     if (plan.centerId) await assertCenterManager(tx, who, plan.centerId);
     if (plan.status !== "COMPLETED") throw new Error("يُفتح التقييم النهائي بعد اكتمال البرنامج");
+    // Session completion also sets closedAt. First evaluation and a completed extension
+    // remain valid; only an already ended final evaluation needs the existing override.
+    if (plan.evaluatedAt && plan.finalDecision !== "EXTEND") await assertPerm("therapy.admin.override");
     const program = plan.sessions[0];
     if (!program) throw new Error("الخطة غير مرتبطة ببرنامج جلسات");
     if (program.actualSessions! < program.totalSessions! && decision === "END") throw new Error("لا يمكن إنهاء البرنامج قبل إكمال الجلسات المخططة");
