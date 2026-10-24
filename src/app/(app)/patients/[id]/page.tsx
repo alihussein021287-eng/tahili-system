@@ -228,6 +228,7 @@ export default async function PatientDetail({ params, searchParams }: { params: 
 
       <PatientHandoffJourney
         step={currentHandoffStep(visibleHandoffs)} handoffId={openHandoff?.id ?? null}
+        historyAvailable={isSecretary || perms.has("journey.view")}
         patientId={id} patientName={patient.fullName} fileNumber={String(patient.fileNumber)} autoOpen={query.handoff === "1"}
         canSend={perms.has("handoff.send")} canAccept={canAcceptHandoff} canFinish={canFinishHandoff} canCancel={canCancelHandoff}
         path={isSecretary ? [] : path.stages} next={isSecretary ? null : path.next} showPath={!isSecretary}

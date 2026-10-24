@@ -20,6 +20,7 @@ import { assertPatientActionScope, assertBranchBoundRecordScope } from "@/lib/pa
 import { resolveRegistrationBranch, resolveUpdateBranch } from "@/lib/patient-branch";
 import { centerStationByName } from "@/lib/stations";
 import { resolvePrescriptionOriginDetailed, resolveCareExecutionBranch, verifyPrescriptionVisit } from "@/lib/pharmacy-scope";
+import { currentTherapyActor, lockTherapySession, assertSessionPlanEditable } from "@/lib/therapy-session-lock";
 
 const patientSchema = z.object({
   fullName: z.string().trim().min(3, "الاسم الرباعي مطلوب (3 أحرف على الأقل)"),
@@ -312,10 +313,14 @@ export async function addTreatmentPlan(patientId: string, fd: FormData) {
 }
 export async function setTreatmentPlanStatus(patientId: string, id: string, status: any) {
   const s = await guardPatient("clinical.plan", patientId, "record");
-  const before = await prisma.treatmentPlan.findUniqueOrThrow({ where: { id } });
-  if (before.closedAt || before.evaluatedAt) await assertPerm("therapy.admin.override");
-  await prisma.treatmentPlan.update({ where: { id }, data: { status } });
-  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "TreatmentPlan", recordId: id, oldValue: { status: before.status }, newValue: { status, administrativeOverride: Boolean(before.closedAt || before.evaluatedAt) } });
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "TreatmentPlan" WHERE id = ${id} FOR UPDATE`;
+    const before = await tx.treatmentPlan.findUniqueOrThrow({ where: { id } });
+    if (before.patientId !== patientId) throw new Error("الخطة لا تتبع المراجع");
+    if (before.closedAt || before.evaluatedAt) await assertPerm("therapy.admin.override");
+    await tx.treatmentPlan.update({ where: { id }, data: { status } });
+    await tx.auditLog.create({ data: { userId: (s?.user as any)?.id, action: "UPDATE", tableName: "TreatmentPlan", recordId: id, oldValue: { status: before.status }, newValue: { status, administrativeOverride: Boolean(before.closedAt || before.evaluatedAt) } } });
+  });
   revalidatePath(`/patients/${patientId}`);
 }
 export async function deleteTreatmentPlan(patientId: string, id: string) {
@@ -643,7 +648,18 @@ export async function deleteDiagnosis(patientId: string, id: string) {
 export async function deleteReport(patientId: string, id: string) {
   await assertAdminDelete(); const s = await guardPatient("clinical.report", patientId, "record"); const report = await prisma.medicalReport.findUniqueOrThrow({ where: { id } }); if (report.status === "PRINTED_APPROVED") throw new Error("لا يمكن حذف تقرير مطبوع ومعتمد"); await prisma.medicalReport.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "medical_reports", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteSession(patientId: string, id: string) {
-  await assertAdminDelete(); const s = await guardPatient("clinical.session", patientId, "record"); await prisma.therapySession.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "therapy_sessions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
+  await assertAdminDelete();
+  const s = await guardPatient("clinical.session", patientId, "record");
+  await prisma.$transaction(async (tx) => {
+    const { session } = await lockTherapySession(tx, id, patientId);
+    const who = await currentTherapyActor(tx, s.user as { id: string; role: string; authVersion: number }, "clinical.session", patientId);
+    if (who.role !== "ADMIN") throw new Error("الحذف صلاحية حصرية لمدير النظام");
+    assertSessionPlanEditable(session.plan, who.permissions);
+    await tx.therapySession.delete({ where: { id } });
+    await tx.auditLog.create({ data: { userId: who.id, action: "DELETE", tableName: "therapy_sessions", recordId: id } });
+  }, { isolationLevel: "ReadCommitted" });
+  revalidatePath(`/patients/${patientId}`);
+}
 export async function deletePrescription(patientId: string, id: string) {
   await assertAdminDelete(); const s = await guardPatient("clinical.prescription", patientId, "record"); const rx = await prisma.prescription.findUniqueOrThrow({ where: { id } }); if (rx.isDispensed || rx.status === "DISPENSED") throw new Error("لا يمكن حذف وصفة بعد الصرف"); await prisma.prescription.delete({ where: { id } }); await logAudit({ userId: (s?.user as any)?.id, action: "DELETE", tableName: "prescriptions", recordId: id }); revalidatePath(`/patients/${patientId}`); }
 export async function deleteAdmission(patientId: string, id: string) {
@@ -893,39 +909,53 @@ export async function updateDiagnosis(patientId: string, id: string, fd: FormDat
 
 export async function updateSessionRecord(patientId: string, id: string, fd: FormData) {
   const s = await guardPatient("clinical.session", patientId, "record");
-  const before = await prisma.therapySession.findUniqueOrThrow({ where: { id }, include: { plan: true } });
-  if (before.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
-  await prisma.therapySession.update({ where: { id }, data: {
+  await prisma.$transaction(async (tx) => {
+    const { session: before, readVersion } = await lockTherapySession(tx, id, patientId);
+    const who = await currentTherapyActor(tx, s.user as { id: string; role: string; authVersion: number }, "clinical.session", patientId);
+    assertSessionPlanEditable(before.plan, who.permissions);
+    if (before.updatedAt.getTime() !== readVersion.getTime()) throw new Error("تغير سجل الجلسة؛ حدّث الصفحة قبل التعديل");
+    await tx.therapySession.update({ where: { id }, data: {
     treatmentPlan: fd.get("treatmentPlan")?.toString() || null,
     totalSessions: fd.get("totalSessions") ? Number(fd.get("totalSessions")) : null,
     actualSessions: fd.get("actualSessions") ? Number(fd.get("actualSessions")) : 0,
     therapist: fd.get("therapist")?.toString() || null,
     hall: fd.get("hall")?.toString() || null,
     notes: fd.get("notes")?.toString() || null,
-  }});
-  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "therapy_sessions", recordId: id, newValue: { administrativeOverride: before.plan?.status === "COMPLETED" } });
+    }});
+    await tx.auditLog.create({ data: { userId: who.id, actorUsername: who.username, actorName: who.fullName, action: "UPDATE", tableName: "therapy_sessions", recordId: id, newValue: { administrativeOverride: before.plan?.status === "COMPLETED" || Boolean(before.plan?.evaluatedAt && before.plan.finalDecision === "END") } } });
+  }, { isolationLevel: "ReadCommitted" });
   revalidatePath(`/patients/${patientId}`);
 }
 
 export async function addTherapySessionLog(patientId: string, fd: FormData) {
   const s = await guardPatient("clinical.session", patientId, "record");
-  const linkedSessionId = fd.get("sessionId")?.toString() || null;
-  if (linkedSessionId) {
-    const linked = await prisma.therapySession.findUnique({ where: { id: linkedSessionId }, include: { plan: true } });
-    if (linked?.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
-  }
+  const requestedSessionId = fd.get("sessionId")?.toString() || null;
+  const appointmentId = fd.get("appointmentId")?.toString() || null;
   const n = (key: string) => {
     const raw = fd.get(key)?.toString().trim();
     if (!raw) return null;
     const value = Number(raw);
     return Number.isFinite(value) ? Math.max(0, Math.min(10, Math.round(value))) : null;
   };
-  const rec = await prisma.therapySessionLog.create({
+  await prisma.$transaction(async (tx) => {
+    const appointment = appointmentId ? await tx.appointment.findUniqueOrThrow({ where: { id: appointmentId }, select: { patientId: true, sessionId: true } }) : null;
+    if (appointment && (appointment.patientId !== patientId || (requestedSessionId && appointment.sessionId !== requestedSessionId))) throw new Error("ارتباط الموعد والجلسة غير متطابق");
+    // An appointment-only form cannot conceal its authoritative session / plan.
+    const linkedSessionId = requestedSessionId || appointment?.sessionId || null;
+    const locked = linkedSessionId ? await lockTherapySession(tx, linkedSessionId, patientId) : null;
+    if (appointmentId) {
+      await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${appointmentId} FOR UPDATE`;
+      const current = await tx.appointment.findUniqueOrThrow({ where: { id: appointmentId }, select: { patientId: true, sessionId: true } });
+      if (current.patientId !== patientId || current.sessionId !== appointment?.sessionId) throw new Error("تغير ارتباط الموعد؛ حدّث الصفحة");
+    }
+    const who = await currentTherapyActor(tx, s.user as { id: string; role: string; authVersion: number }, "clinical.session", patientId);
+    assertSessionPlanEditable(locked?.session.plan || null, who.permissions);
+    const rec = await tx.therapySessionLog.create({
     data: {
       patientId,
       sessionId: linkedSessionId,
-      appointmentId: fd.get("appointmentId")?.toString() || null,
-      therapist: fd.get("therapist")?.toString().trim() || s?.user?.name || null,
+      appointmentId,
+      therapist: fd.get("therapist")?.toString().trim() || who.fullName || null,
       performedAt: fd.get("performedAt")?.toString() ? new Date(fd.get("performedAt")!.toString()) : new Date(),
       exercises: fd.get("exercises")?.toString().trim() || null,
       response: fd.get("response")?.toString().trim() || null,
@@ -933,10 +963,11 @@ export async function addTherapySessionLog(patientId: string, fd: FormData) {
       painAfter: n("painAfter"),
       notes: fd.get("notes")?.toString().trim() || null,
       nextRecommendation: fd.get("nextRecommendation")?.toString().trim() || null,
-      createdById: (s?.user as any)?.id,
+      createdById: who.id,
     },
-  });
-  await logAudit({ userId: (s?.user as any)?.id, action: "CREATE", tableName: "therapy_session_logs", recordId: rec.id });
+    });
+    await tx.auditLog.create({ data: { userId: who.id, action: "CREATE", tableName: "therapy_session_logs", recordId: rec.id } });
+  }, { isolationLevel: "ReadCommitted" });
   revalidatePath(`/patients/${patientId}`);
   revalidatePath("/workload");
 }

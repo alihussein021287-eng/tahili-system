@@ -8,7 +8,7 @@ import type { PathStage } from "@/lib/patient-path";
 
 type Step = { holderText: string; centerName: string | null; sinceText: string; status: "SENT" | "ACCEPTED" } | null;
 
-export function PatientHandoffJourney({ step, handoffId, patientId, patientName, fileNumber, autoOpen, canSend, canAccept, canFinish, canCancel, path, next, showPath = true }: {
+export function PatientHandoffJourney({ step, handoffId, patientId, patientName, fileNumber, autoOpen, canSend, canAccept, canFinish, canCancel, path, next, showPath = true, historyAvailable = true }: {
   step: Step;
   handoffId: string | null;
   patientId: string;
@@ -23,6 +23,8 @@ export function PatientHandoffJourney({ step, handoffId, patientId, patientName,
   path: PathStage[];
   next: PathStage | null;
   showPath?: boolean;
+  /** Withheld history must not be presented as proof that no handoff exists. */
+  historyAvailable?: boolean;
 }) {
   const router = useRouter();
   // The buttons submit a form so Next applies the server's refreshed page itself. If the screen
@@ -47,7 +49,7 @@ export function PatientHandoffJourney({ step, handoffId, patientId, patientName,
     return () => window.clearTimeout(timer);
   }, [waitingFor, screenKey]);
 
-  const nextText = !showPath ? null : step
+  const nextText = !showPath || !historyAvailable ? null : step
     ? `${step.status === "SENT" ? "بانتظار استلام" : "قيد متابعة"} ${step.holderText}${next ? ` · بعدها: ${next.label}` : ""}`
     : next ? `المرحلة التالية: ${next.label}` : "اكتمل المسار";
 
@@ -56,7 +58,7 @@ export function PatientHandoffJourney({ step, handoffId, patientId, patientName,
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <p role="status" className="break-words text-base font-semibold text-gray-900 dark:text-slate-100">
-          {step ? <>هسه عند: <span className="text-brand-700 dark:text-brand-300"><bdi>{step.holderText}</bdi>{step.centerName ? <>{" – "}<bdi>{step.centerName}</bdi></> : null}</span></> : "لا توجد تحويلة مفتوحة"}
+          {step ? <>هسه عند: <span className="text-brand-700 dark:text-brand-300"><bdi>{step.holderText}</bdi>{step.centerName ? <>{" – "}<bdi>{step.centerName}</bdi></> : null}</span></> : historyAvailable ? "لا توجد تحويلة مفتوحة" : <>حالة التسليم غير معروضة هنا؛ راجع <a href="/my-work" className="underline focus-visible:outline focus-visible:outline-2">عملي</a> للتسليمات المصرح بها لحسابك.</>}
           {step ? <span className="mr-2 text-sm font-normal text-gray-500 dark:text-slate-400">· {step.sinceText}</span> : null}
         </p>
         {nextText ? <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">{nextText}</p> : null}
@@ -72,7 +74,7 @@ export function PatientHandoffJourney({ step, handoffId, patientId, patientName,
     </div>
     {pending ? <p role="status" className="text-sm text-gray-600 dark:text-slate-300">جارٍ حفظ الإجراء...</p> : null}
     {error ? <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p> : null}
-    {showPath ? <ol className="grid grid-cols-4 gap-x-1 gap-y-3 sm:grid-cols-8" aria-label="مراحل مسار المراجع">
+    {showPath && historyAvailable ? <ol className="grid grid-cols-4 gap-x-1 gap-y-3 sm:grid-cols-8" aria-label="مراحل مسار المراجع">
       {path.map((stage) => {
         const bar = stage.status === "complete" ? "bg-emerald-500" : stage.status === "current" ? "bg-brand-600" : "bg-gray-200 dark:bg-slate-700";
         const text = stage.status === "complete" ? "text-emerald-700 dark:text-emerald-300" : stage.status === "current" ? "font-semibold text-brand-700 dark:text-brand-300" : "text-gray-400 dark:text-slate-500";
