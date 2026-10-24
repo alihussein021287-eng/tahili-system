@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { logAudit } from "@/lib/audit";
 import { notifyRole } from "@/lib/notify";
+import { replaceDeviceInScope } from "@/lib/device-replacement";
 
 function withSaved(path: string, message: string) {
   const sep = path.includes("?") ? "&" : "?";
@@ -52,8 +53,7 @@ export async function recordMaintenance(id: string, fd: FormData) {
 export async function markReplaced(id: string) {
   const s = await guard("devices.maintain");
   await assertOptionalPatientScope((await prisma.device.findUnique({ where: { id }, select: { patientId: true } }))?.patientId);
-  await prisma.device.update({ where: { id }, data: { status: "REPLACED", nextMaintenanceAt: null } });
-  await logAudit({ userId: (s?.user as any)?.id, action: "UPDATE", tableName: "devices", recordId: id });
+  await replaceDeviceInScope(s.user, id);
   revalidatePath("/devices"); revalidatePath("/");
 }
 
