@@ -117,6 +117,8 @@ export async function placeUserInCenter(userId: string, fd: FormData) {
   const { centerId, role, specialty } = membershipFields(fd, account ? centerRoleForUserRole(account.role) : null);
   const now = new Date();
   await prisma.$transaction(async (tx) => {
+    // Match device replacement: account before membership rows (including implicit FK locks on inserts).
+    await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
     const [user, center] = await Promise.all([
       tx.user.findFirst({ where: { id: userId, isActive: true }, select: { id: true } }),
       tx.center.findFirst({ where: { id: centerId, active: true }, select: { id: true, name: true } }),
@@ -145,6 +147,8 @@ export async function updateUserCenterMembership(userId: string, membershipId: s
   const { centerId, role, specialty } = membershipFields(fd, account ? centerRoleForUserRole(account.role) : null);
   const now = new Date();
   await prisma.$transaction(async (tx) => {
+    // Never hold the old membership while waiting for its account during the new membership insert.
+    await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
     const membership = await tx.centerMembership.findFirst({ where: { id: membershipId, userId } });
     if (!membership) throw new Error("عضوية المركز غير موجودة");
     if (membership.centerId === centerId && membership.role === role) {
