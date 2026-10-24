@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import { boundedSessionDates, expectedTreatmentEnd, positiveInt, recoveryPercent } from "@/lib/therapy-plan-rules";
 import { handOverInTransaction } from "@/lib/handoff-service";
 import { activeMembershipWhere } from "@/lib/center-membership";
+import { currentTherapyActor, lockTherapyAppointment, assertSessionPlanEditable, withTherapySerializableRetry } from "@/lib/therapy-session-lock";
 
 const DAY_MS = 86400000;
 
@@ -30,7 +31,7 @@ function sessionDates(start: Date, weekdays: number[], count: number, time: stri
 async function actor(permission: string) {
   const session = await requireSession();
   await assertPerm(permission);
-  return { id: (session.user as any).id as string, role: (session.user as any).role as string, name: session.user?.name || "" };
+  return { id: (session.user as any).id as string, role: (session.user as any).role as string, authVersion: (session.user as any).authVersion as number, name: session.user?.name || "" };
 }
 
 async function assertCenterManager(tx: any, who: { id: string; role: string }, centerId: number) {
@@ -143,8 +144,10 @@ export async function addPeriodicTherapyEvaluation(planId: string, fd: FormData)
 export async function recordTherapyAppointment(appointmentId: string, fd: FormData) {
   const who = await actor("therapy.session.record");
   const completed = fd.get("status")?.toString() === "COMPLETED";
-  const result = await withSerializableRetry(() => prisma.$transaction(async (tx) => {
-    const appointment = await tx.appointment.findUnique({ where: { id: appointmentId }, include: { session: { include: { plan: true } } } });
+  const result = await withTherapySerializableRetry(() => prisma.$transaction(async (tx) => {
+    const appointment = await lockTherapyAppointment(tx, appointmentId);
+    const current = await currentTherapyActor(tx, who, "therapy.session.record", appointment.patientId);
+    assertSessionPlanEditable(appointment.session?.plan || null, current.permissions);
     if (!appointment?.session || appointment.assignedToId !== who.id) throw new Error("المعالج المسند فقط يستطيع تسجيل الجلسة");
     if (appointment.session.centerId && who.role !== "ADMIN") {
       const member = await tx.centerMembership.findFirst({ where: { centerId: appointment.session.centerId, userId: who.id, role: "THERAPIST", status: "ACTIVE" } });
@@ -184,12 +187,13 @@ export async function finalizeTherapyPlan(planId: string, fd: FormData) {
   if (decision !== "END" && decision !== "EXTEND") throw new Error("قرار التقييم النهائي غير صالح");
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "TreatmentPlan" WHERE id = ${planId} FOR UPDATE`;
+    const current = await currentTherapyActor(tx, who, "therapy.plan.finalize");
     const plan = await tx.treatmentPlan.findUniqueOrThrow({ where: { id: planId }, include: { patient: true, therapist: true, hall: true, sessions: true } });
     if (plan.centerId) await assertCenterManager(tx, who, plan.centerId);
     if (plan.status !== "COMPLETED") throw new Error("يُفتح التقييم النهائي بعد اكتمال البرنامج");
     // Session completion also sets closedAt. First evaluation and a completed extension
     // remain valid; only an already ended final evaluation needs the existing override.
-    if (plan.evaluatedAt && plan.finalDecision !== "EXTEND") await assertPerm("therapy.admin.override");
+    if (plan.evaluatedAt && plan.finalDecision !== "EXTEND" && !current.permissions.has("therapy.admin.override")) throw new Error("غير مصرح: الخطة مغلقة وتتطلب صلاحية التجاوز");
     const program = plan.sessions[0];
     if (!program) throw new Error("الخطة غير مرتبطة ببرنامج جلسات");
     if (program.actualSessions! < program.totalSessions! && decision === "END") throw new Error("لا يمكن إنهاء البرنامج قبل إكمال الجلسات المخططة");
@@ -237,17 +241,19 @@ export async function finalizeTherapyPlan(planId: string, fd: FormData) {
  */
 export async function rescheduleTherapyAppointment(appointmentId: string, fd: FormData) {
   const session = await requireSession();
-  const who = { id: (session.user as any).id as string, role: (session.user as any).role as string, name: session.user?.name || "" };
+  const who = { id: (session.user as any).id as string, role: (session.user as any).role as string, authVersion: (session.user as any).authVersion as number, name: session.user?.name || "" };
   const when = new Date(fd.get("scheduledAt")?.toString() || "");
   if (Number.isNaN(when.getTime())) throw new Error("حدد اليوم والوقت الجديد");
   if (when.getTime() < Date.now() - 60_000) throw new Error("الموعد الجديد لازم يكون بالمستقبل");
   const reason = fd.get("reason")?.toString().trim() || null;
-  const result = await withSerializableRetry(() => prisma.$transaction(async (tx) => {
-    const appointment = await tx.appointment.findUnique({ where: { id: appointmentId }, include: { session: { include: { plan: true } } } });
+  const result = await withTherapySerializableRetry(() => prisma.$transaction(async (tx) => {
+    const appointment = await lockTherapyAppointment(tx, appointmentId);
     if (!appointment?.session) throw new Error("الموعد غير مرتبط ببرنامج علاج");
     if (!["SCHEDULED", "NOSHOW"].includes(appointment.status)) throw new Error("يُنقل الموعد المجدول أو الغياب فقط");
     if (appointment.session.plan?.status === "COMPLETED") throw new Error("الخطة مغلقة");
     const ownTherapist = appointment.assignedToId === who.id;
+    const current = await currentTherapyActor(tx, who, ownTherapist ? "therapy.session.record" : "therapy.schedule.reschedule", appointment.patientId);
+    assertSessionPlanEditable(appointment.session?.plan || null, current.permissions);
     if (ownTherapist) await assertPerm("therapy.session.record");
     else {
       await assertPerm("therapy.schedule.reschedule");
