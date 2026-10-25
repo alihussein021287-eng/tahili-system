@@ -120,12 +120,12 @@ describe("nested referral plan confidentiality", () => {
     const out = patientClientPayload({ id: "synthetic-patient", referralRequests: [referral] }, roleDefaultSet(role));
     expect(JSON.stringify(out).includes(sentinel)).toBe(false);
     for (const row of out.referralRequests) {
-      expect(row.treatmentPlan).toEqual({ id: plan.id });
+      expect(row).not.toHaveProperty("treatmentPlan");
       expect(row.requestedService).toBe(referral.requestedService);
     }
   });
 
-  it("selects only the operational plan reference at the query boundary", () => {
+  it("selects only an existence reference for server-side derivation at the query boundary", () => {
     expect(buildPatientDetailInclude(roleDefaultSet("SECRETARY")).referralRequests.include.treatmentPlan).toEqual({ select: { id: true } });
   });
 
@@ -139,7 +139,7 @@ describe("nested referral plan confidentiality", () => {
     for (const perms of [new Set(["referrals.view"]), new Set(["referrals.view", "clinical.view"])]) {
       const out = patientClientPayload({ treatmentPlans: [plan], referralRequests: [referral] }, perms);
       expect(JSON.stringify(out).includes(sentinel)).toBe(false);
-      expect(out.referralRequests[0].treatmentPlan).toEqual({ id: plan.id });
+      expect(out.referralRequests[0]).not.toHaveProperty("treatmentPlan");
     }
     const combined = patientClientPayload({ treatmentPlans: [plan], referralRequests: [referral] }, new Set(["referrals.view", "therapy.view"]));
     expect(combined.treatmentPlans[0].goals).toBe(sentinel);
@@ -152,8 +152,8 @@ describe("nested referral plan confidentiality", () => {
     };
     const original = JSON.stringify(input);
     const out = patientClientPayload(input, new Set(["referrals.view"]));
-    expect(out.referralRequests[0].treatmentPlan).toEqual({ id: plan.id });
-    expect(out.referralRequests[1].treatmentPlan).toBeNull();
+    expect(out.referralRequests[0]).not.toHaveProperty("treatmentPlan");
+    expect(out.referralRequests[1]).not.toHaveProperty("treatmentPlan");
     expect(out.referralRequests[2]).not.toHaveProperty("treatmentPlan");
     expect(JSON.stringify(input)).toBe(original);
   });

@@ -55,12 +55,16 @@ export function patientClientPayload<T extends Record<string, any>>(patient: T, 
   }
   if (!hasAny(perms, CENTER_PROGRAM_PERMISSIONS)) out.centerPrograms = [];
   if (!hasAny(perms, REFERRAL_DATA_PERMISSIONS)) out.referralRequests = [];
-  // Referral visibility is not therapy authorization. The program picker needs only
-  // an existence reference; full plans stay in the separately authorized collection.
+  // Referral visibility is not therapy authorization, including the nested plan's
+  // identity/relationship. Only therapy-authorized clients need the picker reference.
   // Explicitly project it here too, so a richer ORM include cannot reopen the leak.
   if (Array.isArray(out.referralRequests)) {
     for (const referral of out.referralRequests) {
       if (referral && typeof referral === "object" && "treatmentPlan" in referral) {
+        if (!hasAny(perms, THERAPY_DATA_PERMISSIONS)) {
+          delete referral.treatmentPlan;
+          continue;
+        }
         const id = referral.treatmentPlan?.id;
         referral.treatmentPlan = typeof id === "string" ? { id } : null;
       }
