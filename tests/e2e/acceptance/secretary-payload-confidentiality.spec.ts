@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, existsSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
@@ -9,6 +9,7 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 createRequire(join(process.cwd(), "package.json"))("./scripts/acceptance/guard.cjs").assertIsolatedTarget();
 const fixture = JSON.parse(readFileSync(process.env.PAYLOAD_FIXTURE_FILE!, "utf8")) as {
   patientId: string; foreignPatientId: string; referralId: string;
+  restrictedPlanIds?: string[];
   patientName: string; sentinel: string;
   accounts: Record<string, { username: string; id: string; role: string }>;
   runtimeImage?: string; runtimeDbId?: string; runtimeDbName?: string;
@@ -40,10 +41,18 @@ async function authenticated(browser: Browser, key: string) {
 }
 
 async function responseBody(page: Page, route: string, rsc = false) {
-  const response = await page.request.get(`${process.env.E2E_BASE_URL}${route}`, {
-    headers: rsc ? { RSC: "1" } : {}, maxRedirects: 0,
-  });
-  return { status: response.status(), body: await response.text() };
+  const result = await page.evaluate(async ({ route, rsc }) => {
+    // Next validates the RSC cache-busting signature and redirects to its canonical
+    // query. Follow that normal protocol, but never accept a different route.
+    const response = await fetch(route, { headers: rsc ? { RSC: "1" } : {}, redirect: rsc ? "follow" : "manual" });
+    return { status: response.status, body: await response.text(), pathname: new URL(response.url).pathname,
+      contentType: response.headers.get("content-type") };
+  }, { route, rsc });
+  if (rsc) {
+    expect(result.pathname).toBe(new URL(route, process.env.E2E_BASE_URL).pathname);
+    expect(result.contentType).toContain("text/x-component");
+  }
+  return result;
 }
 
 async function tabAction(page: Page, patientId: string, tab: string) {
@@ -55,11 +64,25 @@ async function tabAction(page: Page, patientId: string, tab: string) {
   const entries = Object.entries(JSON.parse(readFileSync(file, "utf8")).node) as Array<[string, { exportedName?: string }]>;
   const id = entries.find(([, value]) => value.exportedName === "getPatientTabData")?.[0];
   if (!id) throw new Error("Known read-only action unavailable");
-  const response = await page.request.post(`${process.env.E2E_BASE_URL}/patients/${patientId}`, {
-    headers: { "Next-Action": id, Origin: process.env.E2E_BASE_URL!, "Content-Type": "text/plain;charset=UTF-8" },
-    data: JSON.stringify([patientId, tab]), maxRedirects: 0,
-  });
-  return { status: response.status(), body: await response.text() };
+  return page.evaluate(async ({ patientId, tab, id }) => {
+    const response = await fetch(`/patients/${patientId}`, { method: "POST", redirect: "manual",
+      headers: { "Next-Action": id, "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify([patientId, tab]) });
+    return { status: response.status, body: await response.text() };
+  }, { patientId, tab, id });
+}
+
+function saveControlEvidence(controls: Record<string, unknown>) {
+  const file = process.env.PAYLOAD_CONTROL_EVIDENCE_FILE || join(dirname(process.env.PAYLOAD_FIXTURE_FILE!), "AUTHENTICATED_CONTROLS.json");
+  writeFileSync(file, JSON.stringify(controls, null, 2));
+}
+
+function expectNoRestrictedPlan(body: string) {
+  expect(body.includes(fixture.sentinel)).toBe(false);
+  for (const id of fixture.restrictedPlanIds || []) expect(body.includes(id)).toBe(false);
+  for (const key of ["treatmentPlan", "goals", "beforeCondition", "afterCondition", "finalRecommendation"]) {
+    expect(body.includes(`"${key}":`) || body.includes(`\\"${key}\\":`)).toBe(false);
+  }
 }
 
 test.describe("isolated secretary clinical payload boundary", () => {
@@ -70,13 +93,38 @@ test.describe("isolated secretary clinical payload boundary", () => {
   const docker = (args: string[], env = process.env) => execFileSync("docker", args, {
     encoding: "utf8", windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"],
   }).trim();
-  test.beforeAll(async () => {
+  test.beforeAll(async ({ browser }) => {
     const db = new PrismaClient();
     try {
       if (!(await db.orgSetting.findUnique({ where: { id: 1 } }))) {
         await db.orgSetting.create({ data: { id: 1, autoBackup: false } });
       }
+      fixture.restrictedPlanIds = (await db.treatmentPlan.findMany({
+        where: { patientId: { in: [fixture.patientId, fixture.foreignPatientId] } }, select: { id: true },
+      })).map(plan => plan.id);
+      expect(fixture.restrictedPlanIds.length).toBe(2);
     } finally { await db.$disconnect(); }
+    if (process.env.PAYLOAD_EXTERNAL_RUNTIME === "1") {
+      // The isolated runner owns the process and records its logs. Keep one exact
+      // origin throughout login, CSRF, callbacks and business requests.
+      expect((await fetch(`${process.env.E2E_BASE_URL}/api/auth/providers`)).status).toBe(200);
+      const controls: Record<string, unknown> = {};
+      for (const key of ["doctor", "secretary"]) {
+        const { context, page } = await authenticated(browser, key);
+        try {
+          const response = await responseBody(page, `/patients/${fixture.patientId}`, true);
+          const clinicalPresent = response.body.includes(fixture.sentinel);
+          controls[key] = { authenticatedIdentityVerified: true, role: fixture.accounts[key].role,
+            realRsc: true, status: response.status, clinicalPresent,
+            operationalPatientPresent: response.body.includes(fixture.patientName) };
+          saveControlEvidence(controls);
+          expect(response.status).toBe(200);
+          expect(clinicalPresent).toBe(key === "doctor");
+          expect(response.body.includes(fixture.patientName)).toBe(true);
+        } finally { await context.close(); }
+      }
+      return;
+    }
     // Own a fresh request-runtime process; do not share a developer's Next.js server.
     const port = Number(process.env.ACCEPTANCE_APP_PORT) + 1;
     const origin = `http://127.0.0.1:${port}`;
@@ -128,7 +176,7 @@ test.describe("isolated secretary clinical payload boundary", () => {
     try {
       const response = await page.goto(`${process.env.E2E_BASE_URL}/patients/${fixture.patientId}`);
       expect(response?.status()).toBe(200);
-      expect((await response!.text()).includes(fixture.sentinel)).toBe(false);
+      expectNoRestrictedPlan(await response!.text());
       await expect(page.getByText(fixture.patientName, { exact: false }).first()).toBeVisible();
       await page.goto(`${process.env.E2E_BASE_URL}/my-work`);
       expect((await page.locator("body").innerText()).includes(fixture.patientName)).toBe(true);
@@ -141,7 +189,7 @@ test.describe("isolated secretary clinical payload boundary", () => {
       for (const tab of ["overview", "therapyProgram", "referrals"]) {
         const response = await responseBody(page, `/patients/${fixture.patientId}?tab=${tab}`, true);
         expect(response.status).toBe(200);
-        expect(response.body.includes(fixture.sentinel)).toBe(false);
+        expectNoRestrictedPlan(response.body);
       }
     } finally { await context.close(); }
   });
@@ -160,7 +208,8 @@ test.describe("isolated secretary clinical payload boundary", () => {
     const { context, page } = await authenticated(browser, "reception");
     try {
       const response = await page.goto(`${process.env.E2E_BASE_URL}/patients/${fixture.patientId}`);
-      expect((await response!.text()).includes(fixture.sentinel)).toBe(false);
+      expect(response?.status()).toBe(200);
+      expectNoRestrictedPlan(await response!.text());
       await expect(page.getByText("حالة التسليم غير معروضة هنا", { exact: false })).toBeVisible();
       await page.goto(`${process.env.E2E_BASE_URL}/my-work`);
       expect((await page.locator("body").innerText()).includes(fixture.patientName)).toBe(true);
@@ -185,7 +234,8 @@ test.describe("isolated secretary clinical payload boundary", () => {
       for (const [patientId, tab] of [[fixture.patientId, "plan"], [fixture.foreignPatientId, "referrals"]]) {
         const response = await tabAction(page, patientId, tab);
         expect(response.status).toBe(500);
-        expect(response.body.includes(fixture.sentinel)).toBe(false);
+        expectNoRestrictedPlan(response.body);
+        expect(response.body).toMatch(/\d+:E\{/);
       }
     } finally { await context.close(); }
   });
@@ -195,7 +245,7 @@ test.describe("isolated secretary clinical payload boundary", () => {
     try {
       for (const response of [await tabAction(page, fixture.patientId, "referrals"), await responseBody(page, `/referrals/${fixture.referralId}`)]) {
         expect(response.status).toBe(200);
-        expect(response.body.includes(fixture.sentinel)).toBe(false);
+        expectNoRestrictedPlan(response.body);
       }
     } finally { await context.close(); }
   });
