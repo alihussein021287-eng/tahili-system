@@ -20,6 +20,8 @@ const { chromium } = local('playwright');
 const { buildSync } = local('esbuild');
 const { encodeReply } = local('next/dist/compiled/react-server-dom-webpack/client.node');
 const dir = path.resolve(process.argv[2] || path.join(root, 'release-evidence/mission-41-c1-20261025'));
+const localBuild = process.env.C2_LOCAL_BUILD === '1';
+const buildMount = localBuild ? ['--mount', `type=bind,source=${path.join(root, '.next')},target=/app/.next,readonly`] : [];
 assert.ok(dir.includes('release-evidence') && !/TahiliPrivate|recovery/i.test(dir));
 fs.mkdirSync(dir, { recursive: true });
 const hash = x => crypto.createHash('sha256').update(x).digest('hex');
@@ -27,10 +29,10 @@ const save = (name, value) => fs.writeFileSync(path.join(dir, name), JSON.string
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const q = value => "'" + String(value).replaceAll("'", "''") + "'";
 const specs = [
-  { id: 'DEVICE_REVOCATION_FIRST', kind: 'revoke', replacementFirst: false },
-  { id: 'DEVICE_REPLACEMENT_FIRST', kind: 'revoke', replacementFirst: true },
   { id: 'DEVICE_TRANSFER_FIRST', kind: 'transfer', replacementFirst: false },
   { id: 'DEVICE_REPLACEMENT_BEFORE_TRANSFER', kind: 'transfer', replacementFirst: true },
+  { id: 'DEVICE_REVOCATION_FIRST', kind: 'revoke', replacementFirst: false },
+  { id: 'DEVICE_REPLACEMENT_FIRST', kind: 'revoke', replacementFirst: true },
 ];
 const matrixFile = path.join(dir, 'FOUR_CASE_MATRIX.json');
 const matrix = fs.existsSync(matrixFile) ? JSON.parse(fs.readFileSync(matrixFile, 'utf8')) : [];
@@ -38,7 +40,7 @@ const pending = specs.filter(s => !matrix.some(x => x.id === s.id && x.result ==
 assert.ok(pending.length, 'No unexecuted/bounded-retry scenario remains');
 const id = crypto.randomBytes(6).toString('hex');
 const prefix = `tahili-acceptance-${id}`;
-const label = `41-c1-${id}`;
+const label = `${localBuild ? '41-c2' : '41-c1'}-${id}`;
 const dbPassword = crypto.randomBytes(24).toString('hex');
 const testPassword = crypto.randomBytes(24).toString('hex');
 const authSecret = crypto.randomBytes(32).toString('hex');
@@ -65,7 +67,7 @@ let browser, observer, fixture, actions, permits = new Map();
 const pages = {};
 let writesBlocked = 0, externalBlocked = 0;
 let stage = 'SOURCE_PREFLIGHT';
-const checkpoint = next => { stage = next; save('RESUME_CHECKPOINT.json', { baseline, id, stage, resources, pending: specs.filter(s => !matrix.some(x => x.id === s.id && x.result === 'PASS')).map(s => s.id), matrix: 'FOUR_CASE_MATRIX.json', qaAccessed: false, productionAccessed: false, secretsSaved: false, atUtc: new Date().toISOString() }); };
+const checkpoint = next => { const file = path.join(dir, 'RESUME_CHECKPOINT.json'), prior = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}; stage = next; save('RESUME_CHECKPOINT.json', { ...prior, mission: localBuild ? '41-C2' : '41-C1', baseline, id, stage, resources, pending: specs.filter(s => !matrix.some(x => x.id === s.id && x.result === 'PASS')).map(s => s.id), matrix: 'FOUR_CASE_MATRIX.json', qaAccessed: false, productionAccessed: false, secretsSaved: false, atUtc: new Date().toISOString() }); };
 
 function run(exe, args, options = {}) {
   const r = cp.spawnSync(exe, args, { cwd: root, env, windowsHide: true, encoding: 'utf8', timeout: 90000, maxBuffer: 16 * 1024 * 1024, ...options });
@@ -79,7 +81,11 @@ function owned(container, purpose) {
   assert.equal(x.Config.Labels['tahili.mission'], label);
   assert.equal(x.Config.Labels['com.docker.compose.project'], prefix);
   assert.equal(x.Name, `/${prefix}-${purpose}`);
-  assert.ok(!x.Mounts.some(m => m.Type === 'volume' || m.Type === 'bind'));
+  assert.ok(!x.Mounts.some(m => m.Type === 'volume'));
+  for (const m of x.Mounts.filter(m => m.Type === 'bind')) {
+    assert.ok(localBuild && purpose === 'app' && m.Destination === '/app/.next' && m.RW === false);
+    assert.ok(m.Source.replaceAll('\\', '/').toLowerCase().endsWith('/tahili-m41-c2-audit/.next'));
+  }
   assert.deepEqual(Object.keys(x.NetworkSettings.Networks), [resources.network]);
   for (const bindings of Object.values(x.HostConfig.PortBindings || {})) for (const p of bindings || []) {
     assert.equal(p.HostIp, '127.0.0.1'); assert.notEqual(p.HostPort, '3101');
@@ -124,10 +130,17 @@ class PgSession {
 async function setup() {
   assert.equal(run('git', ['rev-parse', `${baseline}^{tree}`]), 'dc81472f2481212e3b5d598795804b0e52296e95');
   const sourceFiles = ['src/lib/device-replacement.ts', 'src/app/(app)/devices/actions.ts', 'src/app/(app)/users/actions.ts', 'src/lib/patient-access.ts', 'src/lib/permission-store.ts', 'src/lib/perms.ts', 'prisma/schema.prisma'];
-  const hashes = Object.fromEntries(sourceFiles.map(file => { const normalize = s => s.toString('utf8').replace(/\r\n/g, '\n'); const current = hash(normalize(fs.readFileSync(path.join(root, file)))); const base = hash(normalize(cp.execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root, windowsHide: true }))); assert.equal(current, base); return [file, current]; }));
+  const buildProof = localBuild ? JSON.parse(fs.readFileSync(path.join(dir, 'LOCAL_BUILD_PROOF.json'), 'utf8')) : null;
+  if (localBuild) {
+    assert.equal(buildProof.exit, 0); assert.equal(fs.readFileSync(path.join(root, '.next/BUILD_ID'), 'utf8').trim(), buildProof.buildId);
+    assert.equal(hash(fs.readFileSync(path.join(root, '.next/server/server-reference-manifest.json'))), buildProof.actionManifestSha256);
+    assert.equal(run('git', ['diff', '--name-only', baseline, '--', 'src', 'prisma', 'package.json', 'package-lock.json']), 'src/app/(app)/users/actions.ts');
+    runtimeEnv.GIT_REVISION = 'c2-local-' + buildProof.sourceUsersSha256.slice(0, 12);
+  }
+  const hashes = Object.fromEntries(sourceFiles.map(file => { const normalize = s => s.toString('utf8').replace(/\r\n/g, '\n'); const current = hash(normalize(fs.readFileSync(path.join(root, file)))); const base = hash(normalize(cp.execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root, windowsHide: true }))); assert.equal(current, localBuild && file === 'src/app/(app)/users/actions.ts' ? buildProof.sourceUsersSha256 : base); return [file, current]; }));
   const img = JSON.parse(docker(['image', 'inspect', image]))[0]; assert.equal(img.Config.Labels['org.opencontainers.image.revision'], baseline);
   assert.equal(docker(['info', '--format', '{{.OSType}}']), 'linux');
-  save('SOURCE_BASELINE.json', { baseline, image, hashes, applicationSourceUnchanged: true, sourceTree: 'dc81472f2481212e3b5d598795804b0e52296e95', noBuild: true });
+  save('SOURCE_BASELINE.json', { baseline, image, hashes, applicationSourceUnchanged: !localBuild, localBuildProof: buildProof, sourceTree: 'dc81472f2481212e3b5d598795804b0e52296e95', noDockerBuild: true });
   save('SCENARIO_PLAN.json', specs.map(s => ({ ...s, participants: ['Authenticated ADMIN membership action', 'Authenticated PROSTHETICS markReplaced', 'Independent new-row lock barrier', 'Independent read-only PostgreSQL observer'], expected: s.replacementFirst ? 'replacement commits and is audited before membership revocation/transfer proceeds' : 'membership change commits before replacement authorization proceeds; replacement denied without device/audit mutation' })));
   await freePort(port); await freePort(55432);
   resources.network = `${prefix}-network`;
@@ -149,10 +162,10 @@ async function setup() {
   assert.equal(fixture.permissionOverrides, 0); assert.ok(fixture.accounts.PROSTHETICS.permissions.includes('devices.maintain'));
   save('SYNTHETIC_FIXTURES.json', { ...fixture, accounts: Object.fromEntries(Object.entries(fixture.accounts).map(([k, a]) => [k, { id: a.id, role: a.role, authVersion: a.authVersion, permissions: a.permissions }])), entirelyNewSyntheticDatabase: true, qaCredentialsUsed: false });
   const actionProbe = "const fs=require('fs'),m=JSON.parse(fs.readFileSync('.next/server/server-reference-manifest.json'));console.log(JSON.stringify(Object.entries(m.node).filter(([id,e])=>['checkUsername','markReplaced','endUserCenterMembership','updateUserCenterMembership'].includes(e.exportedName)).map(([id,e])=>({id,name:e.exportedName,workers:Object.keys(e.workers)}))));";
-  actions = Object.fromEntries(JSON.parse(docker(['run', '--rm', '--pull=never', '--read-only', '--network=none', '--entrypoint', 'node', image, '-e', actionProbe])).map(x => [x.name, x]));
+  actions = Object.fromEntries(JSON.parse(docker(['run', '--rm', '--pull=never', '--read-only', '--network=none', ...buildMount, '--entrypoint', 'node', image, '-e', actionProbe])).map(x => [x.name, x]));
   for (const name of ['checkUsername', 'markReplaced', 'endUserCenterMembership', 'updateUserCenterMembership']) assert.ok(actions[name]);
-  const appKeys = ['DATABASE_URL', 'NEXTAUTH_URL', 'NEXTAUTH_URL_INTERNAL', 'NEXTAUTH_SECRET', 'TAHILI_LOCAL_ACCESS', 'TAHILI_LOCAL_PORT', 'NEXTAUTH_ALLOW_HTTP_LOGIN', 'AUTH_TRUST_HOST', 'NEXT_TELEMETRY_DISABLED'];
-  resources.app = docker(['run', '-d', '--rm', '--pull=never', '--name', `${prefix}-app`, '--label', `tahili.mission=${label}`, '--label', `com.docker.compose.project=${prefix}`, '--network', resources.network, '--read-only', '--tmpfs', '/tmp:rw,size=64m', '--tmpfs', '/app/.next/cache:rw,size=64m,mode=1777', '--tmpfs', '/app/uploads:rw,size=64m,mode=1777', '-p', `127.0.0.1:${port}:3000`, ...appKeys.flatMap(k => ['-e', k]), image], { env: runtimeEnv });
+  const appKeys = ['DATABASE_URL', 'NEXTAUTH_URL', 'NEXTAUTH_URL_INTERNAL', 'NEXTAUTH_SECRET', 'TAHILI_LOCAL_ACCESS', 'TAHILI_LOCAL_PORT', 'NEXTAUTH_ALLOW_HTTP_LOGIN', 'AUTH_TRUST_HOST', 'NEXT_TELEMETRY_DISABLED', ...(localBuild ? ['GIT_REVISION'] : [])];
+  resources.app = docker(['run', '-d', '--rm', '--pull=never', '--name', `${prefix}-app`, '--label', `tahili.mission=${label}`, '--label', `com.docker.compose.project=${prefix}`, '--network', resources.network, '--read-only', ...buildMount, '--tmpfs', '/tmp:rw,size=64m', '--tmpfs', '/app/.next/cache:rw,size=64m,mode=1777', '--tmpfs', '/app/uploads:rw,size=64m,mode=1777', '-p', `127.0.0.1:${port}:3000`, ...appKeys.flatMap(k => ['-e', k]), image], { env: runtimeEnv });
   owned(resources.app, 'app'); checkpoint('ISOLATED_APPLICATION_STARTING');
   let up = false; for (let n = 0; n < 30; n++) { try { const r = await fetch(origin + '/login', { signal: AbortSignal.timeout(1000) }); await r.arrayBuffer(); if (r.status === 200) { up = true; break; } } catch {} await sleep(200); } assert.ok(up, 'Owned application login availability');
   browser = await chromium.launch({ headless: true });
@@ -195,9 +208,10 @@ async function login(role) {
 }
 
 // All session RPCs, form encoding and metadata lookups complete BEFORE holding a barrier.
-async function prepare(role, name, args, route) {
+async function prepare(role, name, args, route, deniedActorProbe = false) {
   assert.ok((await who(role)).matches); assert.ok(['markReplaced', 'endUserCenterMembership', 'updateUserCenterMembership'].includes(name));
-  assert.equal(role, name === 'markReplaced' ? 'PROSTHETICS' : 'ADMIN');
+  if (deniedActorProbe) assert.ok(localBuild && role === 'PROSTHETICS' && name === 'updateUserCenterMembership');
+  else assert.equal(role, name === 'markReplaced' ? 'PROSTHETICS' : 'ADMIN');
   const encoded = await encodeReply(args.map(a => { if (!a?.__form) return a; const fd = new FormData(); for (const [k, v] of Object.entries(a.__form)) fd.append(k, String(v)); return fd; }));
   const wire = typeof encoded === 'string' ? { text: encoded } : { fields: [...encoded.entries()] };
   const nonce = crypto.randomBytes(20).toString('hex'), permit = { role, id: actions[name].id, path: route, used: false };
@@ -216,7 +230,7 @@ async function prepare(role, name, args, route) {
 
 async function graph() {
   await observer.raw('SELECT pg_stat_clear_snapshot();');
-  return observer.json(`SELECT coalesce(json_agg(json_build_object('pid',pid,'xid',backend_xid::text,'waitType',wait_event_type,'waitEvent',wait_event,'blockers',pg_blocking_pids(pid),'queryClass',CASE WHEN query~*'UPDATE.*center_memberships' THEN 'membership-update' WHEN query~*'SELECT.*FROM users.*FOR UPDATE' THEN 'account-lock' WHEN query~*'FROM.*Device.*FOR UPDATE' THEN 'device-lock' WHEN query~*'FROM center_memberships.*FOR SHARE' THEN 'membership-share' ELSE 'other' END)),'[]'::json) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock';`);
+  return observer.json(`SELECT coalesce(json_agg(json_build_object('pid',pid,'xid',backend_xid::text,'waitType',wait_event_type,'waitEvent',wait_event,'blockers',pg_blocking_pids(pid),'queryClass',CASE WHEN query~*'INSERT.*audit_logs' THEN 'audit-insert' WHEN query~*'UPDATE.*center_memberships' THEN 'membership-update' WHEN query~*'SELECT.*FROM users.*FOR UPDATE' THEN 'account-lock' WHEN query~*'FROM.*Device.*FOR UPDATE' THEN 'device-lock' WHEN query~*'FROM center_memberships.*FOR SHARE' THEN 'membership-share' ELSE 'other' END)),'[]'::json) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock';`);
 }
 async function until(predicate) {
   const limit = performance.now() + 3500; let last = [];
@@ -229,7 +243,7 @@ async function snapshots() {
   return observer.json(`SELECT json_object_agg(name,json_build_object('count',n,'hash',fp)) FROM (${union}) s;`);
 }
 async function state(f) {
-  return observer.json(`SELECT json_build_object('device',(SELECT to_jsonb(d) FROM "Device" d WHERE id=${q(f.deviceId)}),'memberships',(SELECT coalesce(json_agg(to_jsonb(m) ORDER BY id),'[]'::json) FROM center_memberships m WHERE "userId"=${q(fixture.accounts.PROSTHETICS.id)} AND "centerId" IN (${f.centerA},${f.centerB})),'audit',(SELECT coalesce(json_agg(json_build_object('id',id,'userId',"userId",'recordId',"recordId",'tableName',"tableName",'action',action,'newValue',"newValue") ORDER BY "createdAt",id),'[]'::json) FROM audit_logs WHERE "recordId" IN (${q(f.deviceId)},${q(f.membershipId)}) OR ("tableName"='center_memberships' AND "newValue"->>'centerId'=${q(f.centerB)})));`);
+  return observer.json(`SELECT json_build_object('device',(SELECT to_jsonb(d) FROM "Device" d WHERE id=${q(f.deviceId)}),'memberships',(SELECT coalesce(json_agg(to_jsonb(m) ORDER BY id),'[]'::json) FROM center_memberships m WHERE "userId"=${q(fixture.accounts.PROSTHETICS.id)} AND "centerId" IN (${f.centerA},${f.centerB})),'audit',(SELECT coalesce(json_agg(json_build_object('id',id,'userId',"userId",'recordId',"recordId",'tableName',"tableName",'action',action,'newValue',"newValue",'createdAtEpoch',extract(epoch FROM "createdAt" AT TIME ZONE 'UTC')) ORDER BY "createdAt",id),'[]'::json) FROM audit_logs WHERE "recordId" IN (${q(f.deviceId)},${q(f.membershipId)}) OR ("tableName"='center_memberships' AND "newValue"->>'centerId'=${q(f.centerB)})));`);
 }
 function logSummary(since) {
   const r = cp.spawnSync('docker', ['logs', '--since', since, resources.app], { windowsHide: true, encoding: 'utf8', timeout: 10000, maxBuffer: 4 * 1024 * 1024 });
@@ -255,11 +269,12 @@ async function observerDiagnosis() {
 
 async function scenario(f) {
   const started = new Date().toISOString(); checkpoint('PREPARING_' + f.id);
+  const databaseTimeBefore = Number(await observer.raw('SELECT extract(epoch FROM clock_timestamp());'));
   const before = await state(f), beforeHashes = await snapshots();
   const replacement = await prepare('PROSTHETICS', 'markReplaced', [f.deviceId], '/devices');
   const mutation = f.kind === 'revoke'
     ? await prepare('ADMIN', 'endUserCenterMembership', [fixture.accounts.PROSTHETICS.id, f.membershipId], '/users')
-    : await prepare('ADMIN', 'updateUserCenterMembership', [fixture.accounts.PROSTHETICS.id, f.membershipId, { __form: { centerId: f.centerB, role: 'DEVICE_OPERATOR', specialty: 'SYNTHETIC C1 transfer' } }], '/users');
+    : await prepare('ADMIN', 'updateUserCenterMembership', [fixture.accounts.PROSTHETICS.id, f.membershipId, { __form: { centerId: f.centerB, role: 'DEVICE_OPERATOR', specialty: 'SYNTHETIC C1 transfer', ...(localBuild ? { actorId: fixture.accounts.PROSTHETICS.id } : {}) } }], '/users');
   const barrier = await new PgSession('m41-c1-barrier-' + f.id).init();
   let first, second, wait1, wait2, locks, observationError = null;
   let releaseAt;
@@ -276,6 +291,8 @@ async function scenario(f) {
   finally { releaseAt = new Date().toISOString(); await barrier.raw('COMMIT;'); await barrier.close(); }
   const responses = await Promise.all([first, second].filter(Boolean));
   const after = await state(f), afterHashes = await snapshots(), errors = logSummary(started);
+  const databaseTimeAfter = Number(await observer.raw('SELECT extract(epoch FROM clock_timestamp());'));
+  const auditTimesCorrect = after.audit.every(a => Number(a.createdAtEpoch) >= databaseTimeBefore && Number(a.createdAtEpoch) <= databaseTimeAfter);
   const firstPid = wait1?.find(x => x.blockers.includes(barrier.pid))?.pid;
   const secondNode = wait2?.find(x => x.pid !== firstPid && (x.blockers.includes(firstPid) || x.blockers.includes(barrier.pid)));
   const interleaving = !observationError && firstPid && secondNode && firstPid !== secondNode.pid && barrier.pid !== secondNode.pid;
@@ -292,14 +309,48 @@ async function scenario(f) {
   const memberCorrect = member?.status === 'INACTIVE' && auditCriterion.pass && membershipResponse?.status === 200 && !membershipResponse.errorFrame && (f.kind !== 'transfer' || after.memberships.some(m => m.centerId === f.centerB && m.status === 'ACTIVE'));
   const unrelatedChanged = Object.keys(beforeHashes).filter(t => !['Device', 'center_memberships', 'audit_logs'].includes(t) && JSON.stringify(beforeHashes[t]) !== JSON.stringify(afterHashes[t]));
   const unexpectedEscalation = (locks || []).filter(l => l.lockType === 'relation' && (['AccessExclusiveLock', 'ExclusiveLock', 'ShareRowExclusiveLock'].includes(l.mode) || l.mode === 'ShareLock' && !['RolePermission', 'UserPermission'].includes(l.relation)));
-  const pass = !!interleaving && deviceCorrect && memberCorrect && unrelatedChanged.length === 0 && errors.transactionFailures.length === 0 && unexpectedEscalation.length === 0;
+  const pass = !!interleaving && deviceCorrect && memberCorrect && auditTimesCorrect && unrelatedChanged.length === 0 && errors.transactionFailures.length === 0 && unexpectedEscalation.length === 0;
   const result = { id: f.id, runId: id, attempt: matrix.filter(x => x.id === f.id).length + 1, result: pass ? 'PASS' : observationError ? 'BLOCKED' : 'FAIL', kind: f.kind, replacementFirst: f.replacementFirst, authenticatedRoles: ['ADMIN', 'PROSTHETICS'], effectivePermissionOverrides: 0,
     before, after, responses, interleavingProven: !!interleaving, proof: { barrierPid: barrier.pid, firstPid, secondPid: secondNode?.pid || null, firstWait: wait1, secondWait: wait2, locks, releaseAt, requestDispatches: [replacement.permit, mutation.permit].map(p => ({ role: p.role, dispatched: p.used, dispatchedAtUtc: p.dispatchedAtUtc || null })), expectedSourcePermissionMetadataShareLocksPreserved: true },
-    checks: { deviceCorrect, memberCorrect, unrelatedChanged, unrelatedTablesUnchanged: unrelatedChanged.length === 0, unexpectedLockEscalation: unexpectedEscalation, noUnexpectedTransactionFailure: errors.transactionFailures.length === 0 },
+    checks: { deviceCorrect, memberCorrect, auditTimesCorrect, databaseTimeBefore, databaseTimeAfter, unrelatedChanged, unrelatedTablesUnchanged: unrelatedChanged.length === 0, unexpectedLockEscalation: unexpectedEscalation, noUnexpectedTransactionFailure: errors.transactionFailures.length === 0 },
     auditAttribution: { replacementActorMatches: deviceAudits.length ? deviceAudits[0].userId === fixture.accounts.PROSTHETICS.id : null, ...auditCriterion },
     errors, observationError, tableHashesBefore: beforeHashes, tableHashesAfter: afterHashes, rawResponsesOrSecretsSaved: false };
   matrix.push(result); save('FOUR_CASE_MATRIX.json', matrix); save(f.id + '_ATTEMPT_' + result.attempt + '.json', result); checkpoint('SAVED_' + f.id);
   console.log(JSON.stringify({ event: 'SCENARIO', id: f.id, result: result.result, interleaving: !!interleaving, firstPid, secondPid: secondNode?.pid || null }));
+}
+
+async function auditFailureChecks() {
+  const f = fixture.cases.find(x => x.id === 'DEVICE_TRANSFER_FIRST');
+  const existing = await state(f), active = existing.memberships.find(m => m.centerId === f.centerB && m.status === 'ACTIVE');
+  assert.ok(active, 'Successful transfer fixture needed for negative and rollback checks');
+  const args = [fixture.accounts.PROSTHETICS.id, active.id, { __form: { centerId: f.centerA, role: 'DEVICE_OPERATOR', specialty: 'SYNTHETIC C2 denied/rollback', actorId: fixture.accounts.ADMIN.id } }];
+  const sameHashes = (a, b) => Object.keys(a).every(t => a[t].count === b[t].count && a[t].hash === b[t].hash);
+  checkpoint('DENIED_TRANSFER_WITH_SPOOFED_ACTOR');
+  const denied = await prepare('PROSTHETICS', 'updateUserCenterMembership', args, '/users', true);
+  const beforeDenied = await snapshots(), denial = await denied.send(), afterDenied = await snapshots();
+  assert.ok(denial.status >= 400 && denial.errorFrame && sameHashes(beforeDenied, afterDenied), 'Rejected transfer must leave every table and audit unchanged');
+  save('DENIED_TRANSFER.json', { status: 'PASS', actualAuthenticatedRole: 'PROSTHETICS', untrustedActorClaim: 'ADMIN fixture ID', request: denial, allTableHashesBefore: beforeDenied, allTableHashesAfter: afterDenied, allRowsAndAuditsUnchanged: true });
+  checkpoint('AUDIT_FAILURE_ROLLBACK_CHECK');
+  const rollback = await prepare('ADMIN', 'updateUserCenterMembership', args, '/users');
+  const beforeRollback = await snapshots(), beforeState = await state(f);
+  const barrier = await new PgSession('m41-c2-audit-fk-barrier').init();
+  let response, wait, cancellation;
+  try {
+    // Only this fresh ADMIN fixture row is locked. The new trusted audit FK must wait here
+    // after membership writes; cancelling that exact audit INSERT proves real DB rollback.
+    await barrier.raw(`BEGIN; SET LOCAL idle_in_transaction_session_timeout='10000ms'; SELECT id FROM users WHERE id=${q(fixture.accounts.ADMIN.id)} FOR UPDATE;`);
+    const pending = rollback.send();
+    wait = await until(g => g.some(x => x.queryClass === 'audit-insert' && x.blockers.includes(barrier.pid)));
+    const target = wait.find(x => x.queryClass === 'audit-insert' && x.blockers.includes(barrier.pid));
+    assert.ok(target.pid !== barrier.pid && target.pid !== observer.pid);
+    cancellation = await observer.json(`SELECT json_build_object('cancelled',pg_cancel_backend(pid),'pid',pid) FROM pg_stat_activity WHERE pid=${target.pid} AND datname=current_database() AND wait_event_type='Lock' AND query~*'INSERT.*audit_logs' AND ${barrier.pid}=ANY(pg_blocking_pids(pid));`);
+    assert.ok(cancellation.cancelled); response = await pending;
+  } finally { await barrier.raw('COMMIT;'); await barrier.close(); }
+  const afterRollback = await snapshots(), afterState = await state(f);
+  assert.ok(response.status >= 400 && response.errorFrame && sameHashes(beforeRollback, afterRollback), 'Required audit failure must roll back membership writes and leave no success audit');
+  save('AUDIT_ROLLBACK.json', { status: 'PASS', actualAuthenticatedRole: 'ADMIN', failurePoint: 'Actual audit INSERT FK check waiting on fresh ADMIN fixture row; exact owned backend query cancelled', wait, barrierPid: barrier.pid, cancellation, response, before: beforeState, after: afterState, allTableHashesBefore: beforeRollback, allTableHashesAfter: afterRollback, allRowsAndAuditsUnchanged: true, sourceOrSchemaInstrumentation: false, noMigrationOrReset: true, expectedQueryCancellation: true });
+  checkpoint('DENIAL_AND_REAL_AUDIT_ROLLBACK_PASS');
+  console.log(JSON.stringify({ event: 'AUDIT_FAILURE_CHECKS', denied: 'PASS', rollback: 'PASS', realAuditInsertObserved: true }));
 }
 
 async function cleanup() {
@@ -315,6 +366,7 @@ async function cleanup() {
     checkpoint('SOURCE_PREFLIGHT'); await setup(); await observerDiagnosis();
     const deadlocksBefore = Number(await observer.raw('SELECT deadlocks FROM pg_stat_database WHERE datname=current_database();'));
     for (const f of fixture.cases) await scenario(f);
+    if (localBuild && specs.every(s => matrix.some(x => x.id === s.id && x.result === 'PASS'))) await auditFailureChecks();
     const deadlocksAfter = Number(await observer.raw('SELECT deadlocks FROM pg_stat_database WHERE datname=current_database();'));
     const residual = await observer.json("SELECT json_build_object('idleTransactions',count(*) FILTER(WHERE state='idle in transaction'),'lockWaiters',count(*) FILTER(WHERE wait_event_type='Lock')) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid();");
     save('DATABASE_INTEGRITY.json', { deadlocksBefore, deadlocksAfter, noDeadlocks: deadlocksBefore === deadlocksAfter, residual, noResidualBarrierTransactions: Number(residual.idleTransactions) === 0, noResidualLockWaiters: Number(residual.lockWaiters) === 0, authenticatedSourceActions: true, originalQaDataAccessed: false, writesBlocked, externalBlocked });
