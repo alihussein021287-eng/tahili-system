@@ -36,8 +36,9 @@ const specs = [
 ];
 const matrixFile = path.join(dir, 'FOUR_CASE_MATRIX.json');
 const matrix = fs.existsSync(matrixFile) ? JSON.parse(fs.readFileSync(matrixFile, 'utf8')) : [];
-const pending = specs.filter(s => !matrix.some(x => x.id === s.id && x.result === 'PASS') && matrix.filter(x => x.id === s.id).length < 2);
-assert.ok(pending.length, 'No unexecuted/bounded-retry scenario remains');
+const entryPointMode = require.main !== module;
+const pending = entryPointMode ? [] : specs.filter(s => !matrix.some(x => x.id === s.id && x.result === 'PASS') && matrix.filter(x => x.id === s.id).length < 2);
+assert.ok(entryPointMode || pending.length, 'No unexecuted/bounded-retry scenario remains');
 const id = crypto.randomBytes(6).toString('hex');
 const prefix = `tahili-acceptance-${id}`;
 const label = `${localBuild ? '41-c2' : '41-c1'}-${id}`;
@@ -67,7 +68,7 @@ let browser, observer, fixture, actions, permits = new Map();
 const pages = {};
 let writesBlocked = 0, externalBlocked = 0;
 let stage = 'SOURCE_PREFLIGHT';
-const checkpoint = next => { const file = path.join(dir, 'RESUME_CHECKPOINT.json'), prior = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}; stage = next; save('RESUME_CHECKPOINT.json', { ...prior, mission: localBuild ? '41-C2' : '41-C1', baseline, id, stage, resources, pending: specs.filter(s => !matrix.some(x => x.id === s.id && x.result === 'PASS')).map(s => s.id), matrix: 'FOUR_CASE_MATRIX.json', qaAccessed: false, productionAccessed: false, secretsSaved: false, atUtc: new Date().toISOString() }); };
+const checkpoint = next => { const file = path.join(dir, 'RESUME_CHECKPOINT.json'), prior = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}; stage = next; save('RESUME_CHECKPOINT.json', { ...prior, mission: entryPointMode ? '41-C2R' : localBuild ? '41-C2' : '41-C1', baseline, id, stage, resources, pending: entryPointMode ? [] : specs.filter(s => !matrix.some(x => x.id === s.id && x.result === 'PASS')).map(s => s.id), matrix: entryPointMode ? 'ENTRY_POINT_CASES.json' : 'FOUR_CASE_MATRIX.json', qaAccessed: false, productionAccessed: false, secretsSaved: false, atUtc: new Date().toISOString() }); };
 
 function run(exe, args, options = {}) {
   const r = cp.spawnSync(exe, args, { cwd: root, env, windowsHide: true, encoding: 'utf8', timeout: 90000, maxBuffer: 16 * 1024 * 1024, ...options });
@@ -141,14 +142,15 @@ async function setup() {
   const img = JSON.parse(docker(['image', 'inspect', image]))[0]; assert.equal(img.Config.Labels['org.opencontainers.image.revision'], baseline);
   assert.equal(docker(['info', '--format', '{{.OSType}}']), 'linux');
   save('SOURCE_BASELINE.json', { baseline, image, hashes, applicationSourceUnchanged: !localBuild, localBuildProof: buildProof, sourceTree: 'dc81472f2481212e3b5d598795804b0e52296e95', noDockerBuild: true });
-  save('SCENARIO_PLAN.json', specs.map(s => ({ ...s, participants: ['Authenticated ADMIN membership action', 'Authenticated PROSTHETICS markReplaced', 'Independent new-row lock barrier', 'Independent read-only PostgreSQL observer'], expected: s.replacementFirst ? 'replacement commits and is audited before membership revocation/transfer proceeds' : 'membership change commits before replacement authorization proceeds; replacement denied without device/audit mutation' })));
+  save('SCENARIO_PLAN.json', (entryPointMode ? [] : specs).map(s => ({ ...s, participants: ['Authenticated ADMIN membership action', 'Authenticated PROSTHETICS markReplaced', 'Independent new-row lock barrier', 'Independent read-only PostgreSQL observer'], expected: s.replacementFirst ? 'replacement commits and is audited before membership revocation/transfer proceeds' : 'membership change commits before replacement authorization proceeds; replacement denied without device/audit mutation' })));
   await freePort(port); await freePort(55432);
   resources.network = `${prefix}-network`;
   docker(['network', 'create', '--label', `tahili.mission=${label}`, resources.network]); checkpoint('EMPTY_DISPOSABLE_DATABASE_STARTING');
   resources.pg = docker(['run', '-d', '--rm', '--pull=never', '--name', `${prefix}-db`, '--label', `tahili.mission=${label}`, '--label', `com.docker.compose.project=${prefix}`, '--network', resources.network, '--network-alias', 'c1-db', '--memory', '768m', '--tmpfs', '/var/lib/postgresql/data:rw,size=512m', '-p', '127.0.0.1:55432:5432', '-e', 'POSTGRES_USER=acceptance', '-e', 'POSTGRES_PASSWORD', '-e', `POSTGRES_DB=acceptance_${id}`, pgImage]);
   owned(resources.pg, 'db'); checkpoint('DISPOSABLE_DATABASE_CREATED');
   let ready = false;
-  for (let n = 0; n < 30; n++) { if (cp.spawnSync('docker', ['exec', resources.pg, 'pg_isready', '-U', 'acceptance'], { windowsHide: true, stdio: 'ignore' }).status === 0) { ready = true; break; } await sleep(200); }
+  // The image's temporary initialization server listens on Unix sockets; require the final TCP server.
+  for (let n = 0; n < 30; n++) { if (cp.spawnSync('docker', ['exec', resources.pg, 'pg_isready', '-h', '127.0.0.1', '-U', 'acceptance'], { windowsHide: true, stdio: 'ignore' }).status === 0) { ready = true; break; } await sleep(200); }
   assert.ok(ready, 'Owned PostgreSQL readiness');
   observer = await new PgSession('m41-c1-observer').init();
   assert.equal(Number(await observer.raw("SELECT count(*) FROM pg_tables WHERE schemaname='public';")), 0);
@@ -161,7 +163,7 @@ async function setup() {
   fixture = JSON.parse(docker(['run', '-i', '--rm', '--pull=never', '--read-only', '--network', resources.network, '--entrypoint', 'node', '-e', 'DATABASE_URL', '-e', 'C1_TEST_PASSWORD', image], { env: runtimeEnv, input: compiled }));
   assert.equal(fixture.permissionOverrides, 0); assert.ok(fixture.accounts.PROSTHETICS.permissions.includes('devices.maintain'));
   save('SYNTHETIC_FIXTURES.json', { ...fixture, accounts: Object.fromEntries(Object.entries(fixture.accounts).map(([k, a]) => [k, { id: a.id, role: a.role, authVersion: a.authVersion, permissions: a.permissions }])), entirelyNewSyntheticDatabase: true, qaCredentialsUsed: false });
-  const actionProbe = "const fs=require('fs'),m=JSON.parse(fs.readFileSync('.next/server/server-reference-manifest.json'));console.log(JSON.stringify(Object.entries(m.node).filter(([id,e])=>['checkUsername','markReplaced','endUserCenterMembership','updateUserCenterMembership'].includes(e.exportedName)).map(([id,e])=>({id,name:e.exportedName,workers:Object.keys(e.workers)}))));";
+  const actionProbe = "const fs=require('fs'),m=JSON.parse(fs.readFileSync('.next/server/server-reference-manifest.json'));console.log(JSON.stringify(Object.entries(m.node).filter(([id,e])=>['checkUsername','markReplaced','endUserCenterMembership','updateUserCenterMembership','placeUserInCenter'].includes(e.exportedName)).map(([id,e])=>({id,name:e.exportedName,workers:Object.keys(e.workers)}))));";
   actions = Object.fromEntries(JSON.parse(docker(['run', '--rm', '--pull=never', '--read-only', '--network=none', ...buildMount, '--entrypoint', 'node', image, '-e', actionProbe])).map(x => [x.name, x]));
   for (const name of ['checkUsername', 'markReplaced', 'endUserCenterMembership', 'updateUserCenterMembership']) assert.ok(actions[name]);
   const appKeys = ['DATABASE_URL', 'NEXTAUTH_URL', 'NEXTAUTH_URL_INTERNAL', 'NEXTAUTH_SECRET', 'TAHILI_LOCAL_ACCESS', 'TAHILI_LOCAL_PORT', 'NEXTAUTH_ALLOW_HTTP_LOGIN', 'AUTH_TRUST_HOST', 'NEXT_TELEMETRY_DISABLED', ...(localBuild ? ['GIT_REVISION'] : [])];
@@ -209,8 +211,8 @@ async function login(role) {
 
 // All session RPCs, form encoding and metadata lookups complete BEFORE holding a barrier.
 async function prepare(role, name, args, route, deniedActorProbe = false) {
-  assert.ok((await who(role)).matches); assert.ok(['markReplaced', 'endUserCenterMembership', 'updateUserCenterMembership'].includes(name));
-  if (deniedActorProbe) assert.ok(localBuild && role === 'PROSTHETICS' && name === 'updateUserCenterMembership');
+  assert.ok((await who(role)).matches); assert.ok(['markReplaced', 'endUserCenterMembership', 'updateUserCenterMembership', 'placeUserInCenter'].includes(name));
+  if (deniedActorProbe) assert.ok(localBuild && role === 'PROSTHETICS' && ['updateUserCenterMembership', 'placeUserInCenter'].includes(name));
   else assert.equal(role, name === 'markReplaced' ? 'PROSTHETICS' : 'ADMIN');
   const encoded = await encodeReply(args.map(a => { if (!a?.__form) return a; const fd = new FormData(); for (const [k, v] of Object.entries(a.__form)) fd.append(k, String(v)); return fd; }));
   const wire = typeof encoded === 'string' ? { text: encoded } : { fields: [...encoded.entries()] };
@@ -361,7 +363,11 @@ async function cleanup() {
   save('RESOURCE_CLEANUP.json', { id, resources, ownedResourcesStoppedAndRemoved: true, persistentVolumesCreated: 0, qaTargeted: false, productionTargeted: false, imagesDeleted: false });
 }
 
-(async () => {
+// Reuse the isolated runtime, real login and read-only observer for adjacent entry-point regressions.
+module.exports = { setup, prepare, snapshots, cleanup, PgSession, graph, until, save, checkpoint,
+  current: () => ({ fixture, observer, resources }) };
+
+if (require.main === module) (async () => {
   try {
     checkpoint('SOURCE_PREFLIGHT'); await setup(); await observerDiagnosis();
     const deadlocksBefore = Number(await observer.raw('SELECT deadlocks FROM pg_stat_database WHERE datname=current_database();'));

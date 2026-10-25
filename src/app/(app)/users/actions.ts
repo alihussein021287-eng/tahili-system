@@ -114,7 +114,7 @@ function refreshMembershipViews(userId: string) {
 // This is the only write path for staff centre placement. For one-centre roles,
 // a placement in a new centre closes the prior effective placement first.
 export async function placeUserInCenter(userId: string, fd: FormData) {
-  await requireAdmin();
+  const actorId = await requireAdmin();
   const account = await prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { role: true } });
   const { centerId, role, specialty } = membershipFields(fd, account ? centerRoleForUserRole(account.role) : null);
   const now = new Date();
@@ -138,7 +138,7 @@ export async function placeUserInCenter(userId: string, fd: FormData) {
       update: { specialty, status: CenterMembershipStatus.ACTIVE, startDate: now, endDate: null },
       create: { centerId, userId, role, specialty, status: CenterMembershipStatus.ACTIVE, startDate: now },
     });
-    await tx.auditLog.create({ data: { action: "UPDATE", tableName: "center_memberships", recordId: row.id, newValue: { userId, centerId, role, placement: "active" } } });
+    await tx.auditLog.create({ data: { userId: actorId, action: "UPDATE", tableName: "center_memberships", recordId: row.id, newValue: { userId, centerId, role, placement: "active" } } });
   }, { isolationLevel: "Serializable" });
   refreshMembershipViews(userId);
 }
