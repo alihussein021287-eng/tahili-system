@@ -2,8 +2,9 @@ import { createRequire } from "node:module";
 import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type UserRole } from "@prisma/client";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { expectPatientPageDenialStatus, verifyPatientDenial } from "./patient-denial-evidence";
 
 // These fixtures and accounts exist only in an identified, fresh disposable PostgreSQL.
 createRequire(join(process.cwd(), "package.json"))("./scripts/acceptance/guard.cjs").assertIsolatedTarget();
@@ -11,14 +12,24 @@ const fixture = JSON.parse(readFileSync(process.env.PAYLOAD_FIXTURE_FILE!, "utf8
   patientId: string; foreignPatientId: string; referralId: string;
   restrictedPlanIds?: string[];
   patientName: string; sentinel: string;
-  accounts: Record<string, { username: string; id: string; role: string }>;
+  accounts: Record<string, { username: string; id: string; role: UserRole }>;
   runtimeImage?: string; runtimeDbId?: string; runtimeDbName?: string;
 };
 
 async function authenticated(browser: Browser, key: string) {
   const context = await browser.newContext({ serviceWorkers: "block" });
-  await context.route("**/*", (route) => new URL(route.request().url()).origin === process.env.E2E_BASE_URL
-    ? route.continue() : route.abort());
+  await context.route("**/*", (route) => {
+    const request = route.request(), url = new URL(request.url());
+    if (url.origin !== process.env.E2E_BASE_URL) return route.abort();
+    if (process.env.PAYLOAD_DENIAL_ONLY === "1" && !["GET", "HEAD", "OPTIONS"].includes(request.method())) {
+      const manifest = JSON.parse(readFileSync(join(process.cwd(), ".next/server/server-reference-manifest.json"), "utf8"));
+      const usernameAction = Object.entries(manifest.node as Record<string, { exportedName?: string }>)
+        .some(([id, action]) => action.exportedName === "checkUsername" && request.headers()["next-action"] === id);
+      const allowed = request.method() === "POST" && ((url.pathname === "/login" && usernameAction) || url.pathname === "/api/auth/callback/credentials");
+      if (!allowed) return route.abort();
+    }
+    return route.continue();
+  });
   const page = await context.newPage();
   try {
     await page.goto(`${process.env.E2E_BASE_URL}/login`);
@@ -85,18 +96,6 @@ function expectNoRestrictedPlan(body: string) {
   }
 }
 
-function recordScopeResponse(key: string, response: { status: number; body: string }) {
-  const file = join(dirname(process.env.PAYLOAD_FIXTURE_FILE!), "SCOPE_RESPONSE_DIAGNOSIS.json");
-  const observations = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-  observations[key] = { wireStatus: response.status,
-    notFoundDigestPresent: response.body.includes("NEXT_HTTP_ERROR_FALLBACK;404"),
-    clinicalSentinelPresent: response.body.includes(fixture.sentinel),
-    patientNamePresent: response.body.includes(fixture.patientName),
-    restrictedPlanIdPresent: fixture.restrictedPlanIds?.some(id => response.body.includes(id)) ?? null,
-    rawBodySaved: false };
-  writeFileSync(file, JSON.stringify(observations, null, 2));
-}
-
 test.describe("isolated secretary clinical payload boundary", () => {
   test.setTimeout(120_000);
   let localApp: ChildProcess | undefined;
@@ -120,6 +119,7 @@ test.describe("isolated secretary clinical payload boundary", () => {
       // The isolated runner owns the process and records its logs. Keep one exact
       // origin throughout login, CSRF, callbacks and business requests.
       expect((await fetch(`${process.env.E2E_BASE_URL}/api/auth/providers`)).status).toBe(200);
+      if (process.env.PAYLOAD_DENIAL_ONLY === "1") return;
       const controls: Record<string, unknown> = {};
       for (const key of ["doctor", "secretary"]) {
         const { context, page } = await authenticated(browser, key);
@@ -208,15 +208,12 @@ test.describe("isolated secretary clinical payload boundary", () => {
 
   test("unrelated SECRETARY cannot retrieve patient or clinical responses", async ({ browser }) => {
     const { context, page } = await authenticated(browser, "outsider");
+    const db = new PrismaClient();
     try {
-      const response = await responseBody(page, `/patients/${fixture.patientId}`);
-      recordScopeResponse("unrelatedSecretary", response);
-      expectNoRestrictedPlan(response.body);
-      expect(response.body.includes(fixture.patientName)).toBe(false);
-      expect(response.status).toBe(404);
-      expect(response.body.includes(fixture.patientName)).toBe(false);
-      expect(response.body.includes(fixture.sentinel)).toBe(false);
-    } finally { await context.close(); }
+      const evidence = await verifyPatientDenial(page, db, { caseId: "03", actorId: fixture.accounts.outsider.id,
+        role: fixture.accounts.outsider.role, patientId: fixture.patientId });
+      expectPatientPageDenialStatus(evidence);
+    } finally { await db.$disconnect(); await context.close(); }
   });
 
   test("RECEPTION limited visibility and My Work remain intact", async ({ browser }) => {
@@ -267,15 +264,16 @@ test.describe("isolated secretary clinical payload boundary", () => {
 
   test("multiple organizational roles never replace actual effective patient scope", async ({ browser }) => {
     const { context, page } = await authenticated(browser, "combined");
+    const db = new PrismaClient();
     try {
-      const own = await responseBody(page, `/patients/${fixture.patientId}`);
-      expect(own.status).toBe(200);
-      expect(own.body.includes(fixture.sentinel)).toBe(true);
-      const foreign = await responseBody(page, `/patients/${fixture.foreignPatientId}`);
-      recordScopeResponse("multipleMembershipsForeignPatient", foreign);
-      expectNoRestrictedPlan(foreign.body);
-      expect(foreign.status).toBe(404);
-      expect(foreign.body.includes(fixture.sentinel)).toBe(false);
-    } finally { await context.close(); }
+      if (process.env.PAYLOAD_DENIAL_ONLY !== "1") {
+        const own = await responseBody(page, `/patients/${fixture.patientId}`);
+        expect(own.status).toBe(200);
+        expect(own.body.includes(fixture.sentinel)).toBe(true);
+      }
+      const evidence = await verifyPatientDenial(page, db, { caseId: "08", actorId: fixture.accounts.combined.id,
+        role: fixture.accounts.combined.role, patientId: fixture.foreignPatientId });
+      expectPatientPageDenialStatus(evidence);
+    } finally { await db.$disconnect(); await context.close(); }
   });
 });
