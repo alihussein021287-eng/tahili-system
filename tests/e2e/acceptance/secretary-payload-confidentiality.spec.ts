@@ -85,6 +85,18 @@ function expectNoRestrictedPlan(body: string) {
   }
 }
 
+function recordScopeResponse(key: string, response: { status: number; body: string }) {
+  const file = join(dirname(process.env.PAYLOAD_FIXTURE_FILE!), "SCOPE_RESPONSE_DIAGNOSIS.json");
+  const observations = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  observations[key] = { wireStatus: response.status,
+    notFoundDigestPresent: response.body.includes("NEXT_HTTP_ERROR_FALLBACK;404"),
+    clinicalSentinelPresent: response.body.includes(fixture.sentinel),
+    patientNamePresent: response.body.includes(fixture.patientName),
+    restrictedPlanIdPresent: fixture.restrictedPlanIds?.some(id => response.body.includes(id)) ?? null,
+    rawBodySaved: false };
+  writeFileSync(file, JSON.stringify(observations, null, 2));
+}
+
 test.describe("isolated secretary clinical payload boundary", () => {
   test.setTimeout(120_000);
   let localApp: ChildProcess | undefined;
@@ -198,6 +210,9 @@ test.describe("isolated secretary clinical payload boundary", () => {
     const { context, page } = await authenticated(browser, "outsider");
     try {
       const response = await responseBody(page, `/patients/${fixture.patientId}`);
+      recordScopeResponse("unrelatedSecretary", response);
+      expectNoRestrictedPlan(response.body);
+      expect(response.body.includes(fixture.patientName)).toBe(false);
       expect(response.status).toBe(404);
       expect(response.body.includes(fixture.patientName)).toBe(false);
       expect(response.body.includes(fixture.sentinel)).toBe(false);
@@ -257,6 +272,8 @@ test.describe("isolated secretary clinical payload boundary", () => {
       expect(own.status).toBe(200);
       expect(own.body.includes(fixture.sentinel)).toBe(true);
       const foreign = await responseBody(page, `/patients/${fixture.foreignPatientId}`);
+      recordScopeResponse("multipleMembershipsForeignPatient", foreign);
+      expectNoRestrictedPlan(foreign.body);
       expect(foreign.status).toBe(404);
       expect(foreign.body.includes(fixture.sentinel)).toBe(false);
     } finally { await context.close(); }
