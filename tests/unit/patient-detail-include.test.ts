@@ -103,3 +103,58 @@ describe("patientClientPayload", () => {
     expect(out.treatmentPlans).toEqual([{ id: "t" }]);
   });
 });
+
+describe("nested referral plan confidentiality", () => {
+  const sentinel = "SYNTHETIC_M41R1_RESTRICTED_PLAN";
+  const plan = {
+    id: "synthetic-plan", goals: sentinel, beforeCondition: sentinel,
+    afterCondition: sentinel, notes: sentinel, finalRecommendation: sentinel,
+    sessions: [{ notes: sentinel }], futureClinicalRelation: { value: sentinel },
+  };
+  const referral = {
+    id: "synthetic-referral", requestedService: "Synthetic operational routing",
+    destinationCenterId: 1, status: "ACCEPTED", treatmentPlan: plan,
+  };
+
+  it.each(["SECRETARY", "RECEPTION", "DATA_ENTRY"] as const)("never serializes nested plan fields for %s", (role) => {
+    const out = patientClientPayload({ id: "synthetic-patient", referralRequests: [referral] }, roleDefaultSet(role));
+    expect(JSON.stringify(out).includes(sentinel)).toBe(false);
+    for (const row of out.referralRequests) {
+      expect(row.treatmentPlan).toEqual({ id: plan.id });
+      expect(row.requestedService).toBe(referral.requestedService);
+    }
+  });
+
+  it("selects only the operational plan reference at the query boundary", () => {
+    expect(buildPatientDetailInclude(roleDefaultSet("SECRETARY")).referralRequests.include.treatmentPlan).toEqual({ select: { id: true } });
+  });
+
+  it.each(["DOCTOR", "HEAD_THERAPIST"] as const)("preserves authorized top-level treatment data for %s", (role) => {
+    const out = patientClientPayload({ treatmentPlans: [plan], referralRequests: [referral] }, roleDefaultSet(role));
+    expect(out.treatmentPlans[0].goals).toBe(sentinel);
+    expect(out.referralRequests[0].treatmentPlan).toEqual({ id: plan.id });
+  });
+
+  it("uses effective permissions rather than a role name or a broad clinical-view flag", () => {
+    for (const perms of [new Set(["referrals.view"]), new Set(["referrals.view", "clinical.view"])]) {
+      const out = patientClientPayload({ treatmentPlans: [plan], referralRequests: [referral] }, perms);
+      expect(JSON.stringify(out).includes(sentinel)).toBe(false);
+      expect(out.referralRequests[0].treatmentPlan).toEqual({ id: plan.id });
+    }
+    const combined = patientClientPayload({ treatmentPlans: [plan], referralRequests: [referral] }, new Set(["referrals.view", "therapy.view"]));
+    expect(combined.treatmentPlans[0].goals).toBe(sentinel);
+    expect(combined.referralRequests[0].treatmentPlan).toEqual({ id: plan.id });
+  });
+
+  it("preserves absent/null references and does not mutate the ORM input", () => {
+    const input: { referralRequests: Array<{ id: string; treatmentPlan?: typeof plan | null }> } = {
+      referralRequests: [referral, { id: "unplanned", treatmentPlan: null }, { id: "no-property" }],
+    };
+    const original = JSON.stringify(input);
+    const out = patientClientPayload(input, new Set(["referrals.view"]));
+    expect(out.referralRequests[0].treatmentPlan).toEqual({ id: plan.id });
+    expect(out.referralRequests[1].treatmentPlan).toBeNull();
+    expect(out.referralRequests[2]).not.toHaveProperty("treatmentPlan");
+    expect(JSON.stringify(input)).toBe(original);
+  });
+});

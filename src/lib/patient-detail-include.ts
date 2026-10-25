@@ -11,7 +11,7 @@ export function buildPatientDetailInclude(perms: ReadonlySet<string>, referralWh
     therapySessions: { include: { center: true }, orderBy: { createdAt: "desc" as const } },
     treatmentPlans: { include: { therapist: true, specialistDoctor: true, createdBy: true, center: true, hall: true, sessions: { include: { appointments: { orderBy: { scheduledAt: "asc" as const }, include: { therapySessionLogs: { orderBy: { createdAt: "desc" as const }, take: 1, select: { status: true, attended: true, response: true, progress: true } } } } } }, periodicEvaluations: { include: { evaluatedBy: true }, orderBy: { evaluatedAt: "asc" as const } } }, orderBy: { createdAt: "desc" as const } },
     centerPrograms: { include: { center: true, assignedTo: true }, orderBy: { createdAt: "desc" as const } },
-    referralRequests: { where: { status: "ACCEPTED" as const, destinationScope: "INTERNAL_CENTER" as const, AND: [referralWhere] }, include: { treatmentPlan: true, destinationCenter: true }, orderBy: { acceptedAt: "desc" as const }, take: 100 },
+    referralRequests: { where: { status: "ACCEPTED" as const, destinationScope: "INTERNAL_CENTER" as const, AND: [referralWhere] }, include: { treatmentPlan: { select: { id: true } }, destinationCenter: true }, orderBy: { acceptedAt: "desc" as const }, take: 100 },
     therapySessionLogs: { include: { session: true, appointment: true }, orderBy: { performedAt: "desc" as const }, take: 25 },
     ...(perms.has("clinical.prescription") || perms.has("pharmacy.view") ? { prescriptions: { include: { medication: true }, orderBy: { prescribedAt: "desc" as const } } } : {}),
     ...(perms.has("clinical.admission") || perms.has("beds.view") ? { admissions: { include: { center: true, room: true, bed: true }, orderBy: { admissionDate: "desc" as const } } } : {}),
@@ -55,5 +55,16 @@ export function patientClientPayload<T extends Record<string, any>>(patient: T, 
   }
   if (!hasAny(perms, CENTER_PROGRAM_PERMISSIONS)) out.centerPrograms = [];
   if (!hasAny(perms, REFERRAL_DATA_PERMISSIONS)) out.referralRequests = [];
+  // Referral visibility is not therapy authorization. The program picker needs only
+  // an existence reference; full plans stay in the separately authorized collection.
+  // Explicitly project it here too, so a richer ORM include cannot reopen the leak.
+  if (Array.isArray(out.referralRequests)) {
+    for (const referral of out.referralRequests) {
+      if (referral && typeof referral === "object" && "treatmentPlan" in referral) {
+        const id = referral.treatmentPlan?.id;
+        referral.treatmentPlan = typeof id === "string" ? { id } : null;
+      }
+    }
+  }
   return out as T;
 }
