@@ -5,6 +5,7 @@ import { notifyRoleInTransaction, notifyUserInTransaction } from "@/lib/notify";
 import { validateReferralPatch, validateReferralTransition } from "@/lib/referral-workflow";
 import { referralAccessScope } from "@/lib/referral-access";
 import { loadPermissionsFromStore } from "@/lib/permission-store";
+import { activeMembershipWhere } from "@/lib/center-membership";
 
 export type ReferralActorContext = {
   userId: string;
@@ -142,6 +143,16 @@ export async function transitionReferralRequest(id: string, toStatus: ReferralRe
     const access = await referralAccessScope(tx, actor);
     const current = await tx.referralRequest.findFirst({ where: { id, AND: [access.where] }, include: { patient: { select: { fileNumber: true } }, destinationCenter: { select: { name: true } } } });
     if (!current) throw new Error("غير مصرح");
+
+    // Do not route a new clinical CENTER stage into a completion path with no eligible named reviewer.
+    if (current.destinationScope === "INTERNAL_CENTER" && (toStatus === "READY" || toStatus === "ACCEPTED")) {
+      const reviewer = current.assignedReviewerId && current.destinationCenterId != null
+        ? await tx.user.findFirst({ where: { id: current.assignedReviewerId, isActive: true, needsActivation: false, role: "DOCTOR",
+            centerMemberships: { some: { centerId: current.destinationCenterId, ...activeMembershipWhere("SPECIALIST"), center: { active: true } } } }, select: { id: true } }) : null;
+      if (!reviewer) throw new Error("حدد طبيباً مراجعاً فعالاً ومخولاً في المركز قبل توجيه الإحالة");
+      const eligible = await currentTransactionActor(tx, { userId: reviewer.id, role: "DOCTOR", permissions: new Set() });
+      if (!eligible.permissions.has("journey.confirm") || !eligible.permissions.has("patients.view")) throw new Error("الطبيب المحدد لا يملك صلاحية التأكيد المطلوبة");
+    }
 
     // The destination center owns acceptance; a generic permission or a
     // different center membership does not establish destination eligibility.

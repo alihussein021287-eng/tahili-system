@@ -104,9 +104,27 @@ it("doctor cannot confirm before work or from visibility without the named revie
   await denied("unrelated-physician", f.stageId, () => confirm(f, stamp.operationalCompletionId, "otherDoctor"));
 });
 it("missing named reviewer remains a gate without creator or ADMIN fallback", async () => {
-  const f = await fixture(""); const stamp = await work(f);
+  const f = await fixture();
+  // A previously accepted legacy/revoked reviewer binding must not acquire a fallback authority.
+  await db.referralRequest.update({ where: { id: f.referralId }, data: { assignedReviewerId: null } });
+  const stamp = await work(f);
   await denied("no-reviewer-fallback", f.stageId, () => confirm(f, stamp.operationalCompletionId));
   expect((await listStagesAwaitingPhysicianReview(db, referralActor("doctor"))).some(x => x.id === f.stageId)).toBe(false);
+});
+it("new center routing rejects a missing or ineligible reviewer before creating an unfinishable stage", async () => {
+  const patient = await db.patient.create({ data: { fullName: `M44 SYNTHETIC routing ${++serial}`, branchId: branch } });
+  const ref = await createReferralRequest({ patientId: patient.id, type: "TREATMENT_CENTER", destinationScope: "INTERNAL_CENTER", destinationCenterId: center,
+    requestedService: "M44 synthetic", clinicalReason: "synthetic only" }, referralActor("doctor"));
+  const before = { row: await db.referralRequest.findUnique({ where: { id: ref.id } }), stages: await db.careStage.count({ where: { patientId: patient.id } }), audits: await db.auditLog.count({ where: { recordId: ref.id } }) };
+  await expect(transitionReferralRequest(ref.id, "READY", {}, referralActor("doctor"))).rejects.toThrow();
+  expect({ row: await db.referralRequest.findUnique({ where: { id: ref.id } }), stages: await db.careStage.count({ where: { patientId: patient.id } }), audits: await db.auditLog.count({ where: { recordId: ref.id } }) }).toEqual(before);
+  const invalid = await createReferralRequest({ patientId: patient.id, type: "TREATMENT_CENTER", destinationScope: "INTERNAL_CENTER", destinationCenterId: center,
+    assignedReviewerId: users.get("head")!.id, requestedService: "M44 synthetic", clinicalReason: "synthetic only" }, referralActor("doctor"));
+  const invalidBefore = await db.referralRequest.findUniqueOrThrow({ where: { id: invalid.id } });
+  await expect(transitionReferralRequest(invalid.id, "READY", {}, referralActor("doctor"))).rejects.toThrow();
+  expect(await db.referralRequest.findUniqueOrThrow({ where: { id: invalid.id } })).toEqual(invalidBefore);
+  expect(await db.careStage.count({ where: { patientId: patient.id } })).toBe(0);
+  save("routing-reviewer-required", { rejectedBeforeStageCreation: true, noMutation: true, refId: ref.id });
 });
 it("stage-linked handover invalidates completed work before another physician request", async () => {
   const f = await fixture(); const stamp = await work(f);
