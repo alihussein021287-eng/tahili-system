@@ -1,6 +1,7 @@
 import type { Prisma, StageStatus, UserRole } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { loadPermissionsFromStore } from "@/lib/permission-store";
-import { canAccessPatientRecord } from "@/lib/patient-access";
+import { canAccessPatientRecord, patientScopeWhere } from "@/lib/patient-access";
 import { notifyRoleInTransaction, notifyUserInTransaction } from "@/lib/notify";
 import { activeMembershipWhere, centerRoleForUserRole } from "@/lib/center-membership";
 
@@ -29,8 +30,9 @@ export type StageActor = { userId: string; role: UserRole; name?: string | null 
 export async function transitionCareStage(
   db: Prisma.TransactionClient,
   actor: StageActor,
-  input: { patientId: string; stageId: string; to: StageStatus },
+  input: { patientId: string; stageId: string; to: StageStatus; expectedOperationalCompletionId?: string },
 ): Promise<{ changed: boolean; status: StageStatus }> {
+  await db.$queryRaw`SELECT id FROM "CareStage" WHERE id = ${input.stageId} FOR UPDATE`;
   const permissions = await loadPermissionsFromStore(actor.userId, actor.role, {
     findRolePermissions: (role) => db.rolePermission.findMany({ where: { role } }),
     findUserPermissions: (userId) => db.userPermission.findMany({ where: { userId } }),
@@ -42,15 +44,37 @@ export async function transitionCareStage(
 
   const stage = await db.careStage.findFirst({
     where: { id: input.stageId, patientId: input.patientId },
-    select: { id: true, station: true, status: true, sequence: true, responsibleRole: true, responsibilityScope: true, responsibleCenterId: true, assignedUserId: true },
+    select: { id: true, station: true, status: true, sequence: true, responsibleRole: true, responsibilityScope: true, responsibleCenterId: true, assignedUserId: true, requiresPhysicianConfirmation: true, operationalCompletedById: true, operationalCompletedAt: true, operationalCompletionId: true },
   });
   if (!stage) throw new Error("غير مصرح");
+  const clinicalCenter = stage.responsibilityScope === "CENTER" && stage.requiresPhysicianConfirmation === true;
+  const physicianReview = clinicalCenter && input.to === "CONFIRMED";
+  if (input.to === "CONFIRMED" && stage.requiresPhysicianConfirmation === true && !clinicalCenter && stage.responsibilityScope !== "SPECIALIST_REVIEW") throw new Error("سلطة التأكيد الطبي لهذه المحطة غير محددة");
+  if (input.to === "CONFIRMED" && stage.responsibilityScope !== "SPECIALIST_REVIEW" && stage.requiresPhysicianConfirmation === null) {
+    throw new Error("تصنيف تأكيد المحطة غير موثق؛ لا يجوز افتراض اعتماد طبي للسجلات القديمة");
+  }
+  if (physicianReview) {
+    if (actor.role !== "DOCTOR") throw new Error("التأكيد الطبي يتطلب الطبيب المراجع المخوّل");
+    if (!stage.operationalCompletedAt || !stage.operationalCompletedById
+      || stage.operationalCompletedById === actor.userId
+      || !stage.operationalCompletionId || stage.operationalCompletionId !== input.expectedOperationalCompletionId) throw new Error("إكمال العمل غير موثق أو تغيّر؛ حدّث الصفحة");
+    // Reviewer identity is an explicit, existing referral field, never inferred from visibility or work ownership.
+    await db.$queryRaw`SELECT id FROM referral_requests WHERE "careStageId" = ${stage.id} FOR SHARE`;
+    const referral = await db.referralRequest.findFirst({ where: {
+      careStageId: stage.id, patientId: input.patientId, destinationScope: "INTERNAL_CENTER",
+      destinationCenterId: stage.responsibleCenterId, status: "ACCEPTED", assignedReviewerId: actor.userId,
+    }, select: { id: true } });
+    if (!referral) throw new Error("علاقة الطبيب المراجع بإحالة المركز غير مثبتة");
+  }
+  if (clinicalCenter && stage.operationalCompletedAt && input.to !== "CONFIRMED" && input.to !== stage.status) {
+    throw new Error("العمل مكتمل وبانتظار مراجعة الطبيب؛ يلزم إسناد جديد لإعادة العمل");
+  }
   const central = actor.role === "ADMIN" || (actor.role === "MANAGER" && permissions.has("centers.central.view"));
   if (stage.responsibilityScope === "CENTER") {
     // Approved CENTER rules: role (or the existing administrative override) + active membership of the stage center.
-    if (!canConfirmStage(actor.role, stage.responsibleRole)) throw new Error("هذه المحطة يؤكّدها صاحب الدور المسؤول فقط");
+    if (!physicianReview && !canConfirmStage(actor.role, stage.responsibleRole)) throw new Error("هذه المحطة يؤكّدها صاحب الدور المسؤول فقط");
     if (stage.responsibleCenterId == null) throw new Error("نطاق مسؤولية المحطة غير مكتمل");
-    if (!central) {
+    if (physicianReview || !central) {
       const membershipRole = centerRoleForUserRole(actor.role);
       const member = membershipRole ? await db.centerMembership.findFirst({
         where: { userId: actor.userId, centerId: stage.responsibleCenterId, ...activeMembershipWhere(membershipRole), center: { active: true } },
@@ -58,7 +82,7 @@ export async function transitionCareStage(
       }) : null;
       if (!member) throw new Error("غير مصرح");
       // An exclusive assignment, when recorded, is respected; otherwise the work pool of the center applies.
-      if (stage.assignedUserId && stage.assignedUserId !== actor.userId) throw new Error("المحطة مسندة لشخص آخر");
+      if (!physicianReview && stage.assignedUserId && stage.assignedUserId !== actor.userId) throw new Error("المحطة مسندة لشخص آخر");
     }
   } else {
     // SERVICE and specialist stages: no role-only access and no administrative override; only the recorded assignee.
@@ -89,7 +113,8 @@ export async function transitionCareStage(
   const result = await db.careStage.updateMany({
     where: { id: stage.id, status: stage.status },
     data: confirming
-      ? { status: "CONFIRMED", confirmedBy: actor.name ?? null, confirmedById: actor.userId, confirmedAt: new Date() }
+      ? { status: "CONFIRMED", confirmedBy: actor.name ?? null, confirmedById: actor.userId, confirmedAt: new Date(),
+          ...(stage.requiresPhysicianConfirmation === false ? { operationalCompletedById: actor.userId, operationalCompletedAt: new Date(), operationalCompletionId: randomUUID() } : {}) }
       : { status: input.to, confirmedBy: null, confirmedById: null, confirmedAt: null },
   });
   if (result.count !== 1) throw new Error("تغيّرت حالة المحطة، حدّث الصفحة");
@@ -120,6 +145,28 @@ export async function transitionCareStage(
     }
   }
   return { changed: true, status: input.to };
+}
+
+/** Work attestation is independent of physician approval. No assignment or approval is inferred here. */
+export async function completeCenterStageWork(
+  db: Prisma.TransactionClient, actor: StageActor,
+  input: { patientId: string; stageId: string; expectedUpdatedAt: string },
+) {
+  await db.$queryRaw`SELECT id FROM "CareStage" WHERE id = ${input.stageId} FOR UPDATE`;
+  const stage = await db.careStage.findFirst({ where: { id: input.stageId, patientId: input.patientId } });
+  if (!stage || stage.responsibilityScope !== "CENTER" || stage.requiresPhysicianConfirmation !== true
+    || stage.responsibleRole !== actor.role || !["WAITING", "IN_PROGRESS"].includes(stage.status)
+    || stage.operationalCompletedAt || stage.updatedAt.toISOString() !== input.expectedUpdatedAt) throw new Error("العمل غير متاح أو تغيّر؛ حدّث الصفحة");
+  // Use the existing current actor/permission/membership/patient/assignee guards before any attestation write.
+  await transitionCareStage(db, actor, { patientId: input.patientId, stageId: input.stageId, to: "IN_PROGRESS" });
+  const at = new Date();
+  const completionId = randomUUID();
+  await db.careStage.update({ where: { id: stage.id }, data: { operationalCompletedById: actor.userId, operationalCompletedAt: at, operationalCompletionId: completionId } });
+  await db.auditLog.create({ data: { userId: actor.userId, action: "UPDATE", tableName: "care_stages", recordId: stage.id,
+    newValue: { operationalCompletion: true, operationalCompletionId: completionId, operationalCompletedById: actor.userId, operationalCompletedAt: at.toISOString(), status: "IN_PROGRESS" } } });
+  const referral = await db.referralRequest.findFirst({ where: { careStageId: stage.id, patientId: input.patientId, destinationScope: "INTERNAL_CENTER", status: "ACCEPTED" }, select: { assignedReviewerId: true } });
+  if (referral?.assignedReviewerId) await notifyUserInTransaction(db as never, referral.assignedReviewerId, "عمل مركز مكتمل ينتظر التأكيد الطبي", { link: `/patients/${input.patientId}`, careStageId: stage.id });
+  return { operationalCompletedAt: at.toISOString(), operationalCompletionId: completionId };
 }
 
 const OPEN_STAGE = ["WAITING", "IN_PROGRESS"] as const;
@@ -178,9 +225,10 @@ export async function reassignCenterStage(
 
   const result = await db.careStage.updateMany({
     where: { id: stage.id, status: { in: [...OPEN_STAGE] }, assignedUserId: stage.assignedUserId },
-    data: { assignedUserId: replacement.id, assignedAt: new Date() },
+    data: { assignedUserId: replacement.id, assignedAt: new Date(), operationalCompletedById: null, operationalCompletedAt: null, operationalCompletionId: null },
   });
   if (result.count !== 1) throw new Error("تغيّر إسناد المحطة، حدّث الصفحة");
+  await db.notification.updateMany({ where: { careStageId: stage.id, resolvedAt: null }, data: { resolvedAt: new Date() } });
   await db.auditLog.create({ data: {
     userId: actor.userId, action: "UPDATE", tableName: "care_stages", recordId: stage.id,
     oldValue: { assignedUserId: stage.assignedUserId }, newValue: { assignedUserId: replacement.id, reason, by: "MANAGER" },
@@ -210,11 +258,24 @@ export async function listStagesAwaitingAssignment(
   if (!centerIds.length) return [];
   return db.careStage.findMany({
     where: {
-      status: { in: [...OPEN_STAGE] }, assignedUserId: null, responsibilityScope: "CENTER",
+      status: { in: [...OPEN_STAGE] }, assignedUserId: null, responsibilityScope: "CENTER", operationalCompletedAt: null,
       responsibleCenterId: { in: centerIds }, patient: { archivedAt: null },
     },
     orderBy: { createdAt: "asc" },
     take: limit,
     select: { id: true, station: true, responsibleRole: true, patientId: true, patient: { select: { fullName: true, fileNumber: true } } },
   });
+}
+
+/** Read-only review inbox: named referral reviewer AND active specialist membership AND current patient scope. */
+export async function listStagesAwaitingPhysicianReview(db: typeof import("@/lib/db").prisma,
+  actor: { userId: string; role: UserRole; permissions: ReadonlySet<string> }) {
+  if (actor.role !== "DOCTOR" || !actor.permissions.has("journey.confirm")) return [];
+  const scope = await patientScopeWhere(db, actor);
+  const centers = await db.centerMembership.findMany({ where: { userId: actor.userId, ...activeMembershipWhere("SPECIALIST"), center: { active: true } }, select: { centerId: true } });
+  const rows = await db.careStage.findMany({ where: { responsibilityScope: "CENTER", requiresPhysicianConfirmation: true,
+    status: { in: [...OPEN_STAGE] }, operationalCompletedAt: { not: null }, responsibleCenterId: { in: centers.map(c => c.centerId) },
+    patient: { AND: [scope], archivedAt: null }, referralRequest: { is: { destinationScope: "INTERNAL_CENTER", status: "ACCEPTED", assignedReviewerId: actor.userId } } },
+    select: { id: true, patientId: true, station: true, responsibleCenterId: true, patient: { select: { fullName: true } }, referralRequest: { select: { destinationCenterId: true } } }, take: 30 });
+  return rows.filter(r => r.responsibleCenterId === r.referralRequest?.destinationCenterId);
 }

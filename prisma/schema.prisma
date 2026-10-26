@@ -438,6 +438,7 @@ model User {
   @@index([username])
   @@map("users")
   assignedCareStages CareStage[] @relation("CareStageAssignee")
+  completedCareStageWork CareStage[] @relation("CareStageWorkCompletedBy")
   verifiedVisits     Visit[]     @relation("VisitVerifiedBy")
 }
 
@@ -2411,6 +2412,12 @@ model CareStage {
   confirmedBy     String? // اسم المؤكِّد
   confirmedById   String?
   confirmedAt     DateTime?
+  // NULL is unclassified legacy history, never evidence of physician approval.
+  requiresPhysicianConfirmation Boolean?
+  operationalCompletedById String?
+  operationalCompletedBy User? @relation("CareStageWorkCompletedBy", fields: [operationalCompletedById], references: [id], onDelete: Restrict)
+  operationalCompletedAt DateTime?
+  operationalCompletionId String? @db.Uuid
   createdById     String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt

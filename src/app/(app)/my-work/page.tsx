@@ -11,7 +11,7 @@ import { prisma } from "@/lib/db";
 import { currentStockViewer, batchViewWhere, lowStockMedications } from "@/lib/pharmacy-stock";
 import { pharmacyPrescriptionWhere } from "@/lib/pharmacy-scope";
 import { listInbox, listSentToday } from "@/lib/handoff-service";
-import { listStagesAwaitingAssignment } from "@/lib/care-stage-service";
+import { listStagesAwaitingAssignment, listStagesAwaitingPhysicianReview } from "@/lib/care-stage-service";
 import { referralAccessScope } from "@/lib/referral-access";
 import { workStatusLabel } from "@/lib/labels";
 import type { UserRole } from "@prisma/client";
@@ -104,6 +104,7 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   const userId = (session.user as any).id as string;
   const role = (session.user as any).role as UserRole;
   const awaitingStages = await listStagesAwaitingAssignment(prisma, { userId, role, permissions: perms });
+  const physicianReviews = await listStagesAwaitingPhysicianReview(prisma, { userId, role, permissions: perms });
   const userName = session.user?.name ?? "";
   const now = new Date();
   const todayStart = new Date(now);
@@ -356,6 +357,7 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
       ) : null}
 
       {perms.has("handoff.send") && (filters.type === "all" || filters.type === "handoff") ? <HandoffSentToday items={sentItems} /> : null}
+      {physicianReviews.length ? <section className="card space-y-2 p-4"><h2 className="font-semibold">عمل مركز مكتمل ينتظر تأكيدي الطبي</h2>{physicianReviews.map(stage => <p key={stage.id}><Link className="text-brand-700 underline" href={`/patients/${stage.patientId}`}>{stage.patient.fullName} — {stage.station}</Link><span className="ms-2 text-sm">بانتظار التأكيد؛ لم تعتمد سريرياً بعد</span></p>)}</section> : null}
       {awaitingStages.length ? (
         <section className="min-w-0 space-y-3" aria-labelledby="awaiting-assignment-title" data-testid="awaiting-assignment">
           <h2 id="awaiting-assignment-title" className="text-base font-semibold">محطات بانتظار الإسناد</h2>

@@ -4,6 +4,14 @@ import { withSerializableRetry } from "@/lib/serializable-retry";
 const conflict = () => Object.assign(new Error("write conflict"), { code: "P2034" });
 
 describe("withSerializableRetry", () => {
+  it("retries only the raw PostgreSQL serialization SQLSTATE, not other raw errors", async () => {
+    let calls = 0;
+    await expect(withSerializableRetry(async () => { if (++calls === 1) throw { code: "P2010", meta: { code: "40001" } }; return "ok"; })).resolves.toBe("ok");
+    expect(calls).toBe(2);
+    calls = 0;
+    await expect(withSerializableRetry(async () => { calls++; throw { code: "P2010", meta: { code: "23503" } }; })).rejects.toMatchObject({ meta: { code: "23503" } });
+    expect(calls).toBe(1);
+  });
   it("retries a serialization conflict and returns the later result", async () => {
     let calls = 0;
     const result = await withSerializableRetry(async () => { calls += 1; if (calls < 3) throw conflict(); return "ok"; });

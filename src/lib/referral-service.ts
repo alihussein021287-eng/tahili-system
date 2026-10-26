@@ -192,6 +192,7 @@ export async function transitionReferralRequest(id: string, toStatus: ReferralRe
         patientId: current.patientId,
         station: current.destinationCenter?.name || current.requestedService,
         responsibleRole: current.destinationScope === "INTERNAL_SPECIALIST" ? "DOCTOR" : "HEAD_THERAPIST",
+        requiresPhysicianConfirmation: true,
         ...(current.destinationScope === "INTERNAL_CENTER" && current.destinationCenterId != null
           ? { responsibilityScope: "CENTER" as const, responsibleCenterId: current.destinationCenterId }
           : {}),

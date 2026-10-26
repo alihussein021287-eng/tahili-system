@@ -245,13 +245,16 @@ export default async function PatientDetail({ params, searchParams }: { params: 
             orderBy: { sequence: "asc" },
             select: {
               id: true, station: true, responsibleRole: true, status: true, responsibilityScope: true, assignedUserId: true, responsibleCenterId: true,
+              requiresPhysicianConfirmation: true, operationalCompletedAt: true, operationalCompletionId: true, updatedAt: true,
               assignedUser: { select: { fullName: true } },
-              referralRequest: { select: { destinationScope: true, assignedReviewerId: true, acceptedById: true } },
+              referralRequest: { select: { destinationScope: true, assignedReviewerId: true, acceptedById: true, status: true, destinationCenterId: true } },
             },
             });
             const managedCenters = myRole === "MANAGER" && myUserId && perms.has("journey.manage")
               ? (await prisma.centerMembership.findMany({ where: { userId: myUserId, ...activeMembershipWhere("CENTER_MANAGEMENT"), center: { active: true } }, select: { centerId: true } })).map((m) => m.centerId)
               : [];
+            const eligibleCenters = myUserId && CENTER_ROLE_FOR_TARGET[myRole as keyof typeof CENTER_ROLE_FOR_TARGET]
+              ? (await prisma.centerMembership.findMany({ where: { userId: myUserId, ...activeMembershipWhere(CENTER_ROLE_FOR_TARGET[myRole as keyof typeof CENTER_ROLE_FOR_TARGET]), center: { active: true } }, select: { centerId: true } })).map(m => m.centerId) : [];
             return Promise.all(openStages.map(async (stage) => {
               let reassignCandidates: { id: string; name: string }[] | null = null;
               if (stage.responsibilityScope === "CENTER" && stage.responsibleCenterId != null && stage.responsibleRole
@@ -265,6 +268,12 @@ export default async function PatientDetail({ params, searchParams }: { params: 
               return {
                 id: stage.id, station: stage.station, responsibleRole: stage.responsibleRole, status: stage.status,
                 responsibilityScope: stage.responsibilityScope, assignedUserId: stage.assignedUserId,
+                requiresPhysicianConfirmation: stage.requiresPhysicianConfirmation, operationalCompletionId: stage.operationalCompletionId,
+                operationalCompletedAt: stage.operationalCompletedAt?.toISOString() ?? null, updatedAt: stage.updatedAt.toISOString(),
+                canCompleteWork: perms.has("journey.confirm") && stage.responsibleRole === myRole && eligibleCenters.includes(stage.responsibleCenterId!) && (!stage.assignedUserId || stage.assignedUserId === myUserId),
+                canPhysicianConfirm: perms.has("journey.confirm") && myRole === "DOCTOR" && eligibleCenters.includes(stage.responsibleCenterId!)
+                  && stage.referralRequest?.assignedReviewerId === myUserId && stage.referralRequest.status === "ACCEPTED"
+                  && stage.referralRequest.destinationScope === "INTERNAL_CENTER" && stage.referralRequest.destinationCenterId === stage.responsibleCenterId,
                 assignedName: stage.assignedUser?.fullName ?? null,
                 specialistBound: stage.responsibilityScope === "SPECIALIST_REVIEW" && !!stage.assignedUserId
                   && stage.referralRequest?.destinationScope === "INTERNAL_SPECIALIST"

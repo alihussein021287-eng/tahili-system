@@ -9,6 +9,7 @@ export type StageAssignmentTx = {
     updateMany(args: Prisma.CareStageUpdateManyArgs): Promise<{ count: number }>;
   };
   auditLog: { create(args: Prisma.AuditLogCreateArgs): Promise<unknown> };
+  notification?: { updateMany(args: Prisma.NotificationUpdateManyArgs): Promise<{ count: number }> };
 };
 
 type StageRow = {
@@ -85,9 +86,10 @@ export async function assignStageOnAccept(
   const now = new Date();
   const result = await tx.careStage.updateMany({
     where: { id: stage.id, status: { in: ACTIVE as never }, assignedUserId: former },
-    data: { assignedUserId: acceptor.id, assignedAt: now },
+    data: { assignedUserId: acceptor.id, assignedAt: now, operationalCompletedById: null, operationalCompletedAt: null, operationalCompletionId: null },
   });
   if (result.count !== 1) throw new Error("تغيّر إسناد المحطة، حدّث الصفحة");
+  if (tx.notification) await tx.notification.updateMany({ where: { careStageId: stage.id, resolvedAt: null }, data: { resolvedAt: new Date() } });
   await tx.auditLog.create({ data: {
     userId: acceptor.id, action: "UPDATE", tableName: "care_stages", recordId: stage.id,
     oldValue: { assignedUserId: former }, newValue: { assignedUserId: acceptor.id, handoffId: handoff.id, ...(former ? { reason: handoff.note } : {}) },

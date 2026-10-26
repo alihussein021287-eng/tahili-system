@@ -1,5 +1,5 @@
 import { ROLE_LABELS } from "@/lib/permissions";
-import { confirmStage, reassignStageAction } from "@/app/(app)/patients/actions";
+import { confirmStage, reassignStageAction, completeStageWorkAction } from "@/app/(app)/patients/actions";
 import { HandoffDialog } from "@/components/handoffs/HandoffDialog";
 
 type Stage = {
@@ -7,6 +7,12 @@ type Stage = {
   assignedUserId: string | null; assignedName: string | null; specialistBound: boolean;
   /** Present only when the viewer is a manager whose scope covers this CENTER stage. */
   reassignCandidates: { id: string; name: string }[] | null;
+  requiresPhysicianConfirmation?: boolean | null;
+  operationalCompletedAt?: string | null;
+  operationalCompletionId?: string | null;
+  updatedAt?: string;
+  canCompleteWork?: boolean;
+  canPhysicianConfirm?: boolean;
 };
 
 /**
@@ -51,6 +57,13 @@ export function CareStageConfirmations({ patientId, patientName, fileNumber, sta
             eligible = canConfirm && roleMatches && iAmAssignee && (scope === "SERVICE" || stage.specialistBound);
             if (!eligible) reason = !stage.assignedUserId ? "بانتظار الإسناد — جهة الإسناد لهذه المحطة غير محددة بعد" : "المحطة مسندة لشخص آخر";
           }
+          const clinicalCenter = scope === "CENTER" && stage.requiresPhysicianConfirmation === true;
+          if (clinicalCenter) {
+            eligible = !!stage.canPhysicianConfirm && !!stage.operationalCompletedAt;
+            reason = stage.operationalCompletedAt ? "العمل مكتمل — بانتظار التأكيد الطبي الصريح" : "بانتظار إكمال العمل التشغيلي";
+          } else if (scope !== "SPECIALIST_REVIEW" && stage.requiresPhysicianConfirmation !== false) {
+            eligible = false; reason = "تصنيف التأكيد غير موثق — يلزم تحديده دون افتراض اعتماد طبي";
+          }
           // Mirrors the server: only the current assignee hands over; first assignment is possible for CENTER stages only.
           const canHandOff = canSend && (stage.assignedUserId
             ? iAmAssignee && (scope === "CENTER" || scope === "SERVICE")
@@ -66,9 +79,14 @@ export function CareStageConfirmations({ patientId, patientName, fileNumber, sta
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {clinicalCenter && stage.canCompleteWork && !stage.operationalCompletedAt ? (
+                  <form action={completeStageWorkAction.bind(null, patientId, stage.id, stage.updatedAt!)}>
+                    <button type="submit" className="btn-primary min-h-11">توثيق إكمال العمل</button>
+                  </form>
+                ) : null}
                 {eligible ? (
-                  <form action={confirmStage.bind(null, patientId, stage.id)}>
-                    <button type="submit" className="btn-primary min-h-11">تأكيد المحطة</button>
+                  <form action={confirmStage.bind(null, patientId, stage.id, stage.operationalCompletionId ?? undefined)}>
+                    <button type="submit" className="btn-primary min-h-11">{clinicalCenter || scope === "SPECIALIST_REVIEW" ? "تأكيد الطبيب" : "تأكيد إكمال المحطة التشغيلية"}</button>
                   </form>
                 ) : (
                   <span className="text-xs text-gray-400">{reason}</span>
