@@ -114,3 +114,12 @@
 | `employees.view` | ADMIN | عرض سجلات الموظفين وأعدادها ضمن فرع المستخدم |
 | `employees.edit` | ADMIN | تعديل الحقول المصرّح بها لسجلات الفرع (الفرع نفسه للأدمن فقط) |
 | `users.manage` (ADMIN) | ADMIN | ربط حساب موجود أو تجهيز حساب معطّل من ملف الموظف |
+
+## إضافة V1 المحلية — 2026-10-27
+| المفتاح | حدود التنفيذ |
+| --- | --- |
+| clinical.review.nominate | default deny؛ SECRETARY فقط مع UserPermission فردي صريح وعضوية SECRETARY فعالة ونطاق المراجع؛ الدور أو رحلة التوجيه لا يكفيان |
+| clinical.review.accept | DOCTOR فقط، تعيين باسمه وعضوية SPECIALIST فعالة ونطاق المراجع، دون ADMIN/MANAGER بديل |
+| centers.programs.medicalConfirm | DOCTOR مقبول بتعيين برنامج مستقل، بعد إنجاز HEAD_THERAPIST، مع الصلاحية والنطاق والعضوية الحالية |
+| centers.programs.finalize | لإنجاز CenterProgram التشغيلي الجديد: HEAD_THERAPIST حصراً؛ التأكيد الطبي مستقل. لا تغيير لعقد TreatmentPlan |
+الترشيح والسحب والقبول والتأكيد مدققة؛ لا منح تلقائي للسكرتارية. المرجع V1_CLINICAL_RELEASE_AR.md.

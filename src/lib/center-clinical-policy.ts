@@ -1,10 +1,7 @@
-/** No approved actor/scope contract exists yet for appointing a CENTER clinical reviewer.
- * This is deliberately not an environment flag, request option or general permission.
- * Enabling it requires a separately reviewed designation workflow and owner-approved policy.
- * Referral.assignedReviewerId alone documents association, not authority to appoint.
+/** Referral-only reviewer selection remains insufficient authority.
+ * New V1 authorization uses clinical-review-service: scoped individual secretary
+ * grant + active membership + persisted nomination + explicit physician acceptance.
+ * This legacy boolean deliberately cannot unlock that workflow.
  */
-export function hasApprovedCenterReviewerDesignationPolicy(): boolean {
-  return false;
-}
-
-export const CENTER_DESIGNATION_PENDING = "إكمال العمل محفوظ؛ اعتماد الطبيب محجوب حتى اعتماد جهة تعيين المراجع الطبي ونطاقها";
+export function hasApprovedCenterReviewerDesignationPolicy(): boolean { return false; }
+export const CENTER_DESIGNATION_PENDING = "إكمال العمل محفوظ؛ يلزم إثبات جهة تعيين المراجع الطبي وقبول الطبيب للمسؤولية";

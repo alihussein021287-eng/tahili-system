@@ -7,6 +7,9 @@ import { revalidatePath } from "next/cache";
 import { allowedServicesForCenterName } from "@/lib/center-workspaces";
 import { activeMembershipWhere, centerRoleForUserRole, parseCenterMembership } from "@/lib/center-membership";
 import { loadPermissionsFromStore } from "@/lib/permission-store";
+import { requireSession } from "@/lib/access";
+import { lockEditableCenterProgram, completeCenterProgramWork, recordCenterSessionInTransaction } from "@/lib/center-program-lifecycle";
+import type { ClinicalActor } from "@/lib/clinical-review-service";
 import { handOverInTransaction } from "@/lib/handoff-service";
 
 function refresh(centerId: number) {
@@ -96,11 +99,13 @@ export async function createCenterProgram(centerId: number, fd: FormData) {
 
 export async function scheduleCenterSession(centerId: number, programId: string, fd: FormData) {
   const actor = await centerActor(centerId, "centers.programs.manage");
+  const identity = (await requireSession()).user as { id: string; role: ClinicalActor["role"]; authVersion: number };
   const scheduledAt = new Date(fd.get("scheduledAt")?.toString() || "");
   const duration = Math.max(15, Math.min(240, Number(fd.get("durationMinutes")) || 60));
   const endsAt = new Date(scheduledAt.getTime() + duration * 60000);
   const resourceId = fd.get("resourceId")?.toString() || null;
   await withSerializableRetry(() => prisma.$transaction(async (tx) => {
+    await lockEditableCenterProgram(tx, { userId: identity.id, role: identity.role, authVersion: identity.authVersion }, centerId, programId, "centers.programs.manage");
     const program = await tx.centerProgram.findFirst({ where: { id: programId, centerId, status: "ACTIVE" }, include: { assignedTo: true } });
     if (!program || Number.isNaN(scheduledAt.getTime())) throw new Error("البرنامج أو الموعد غير صالح");
     const overlap = { scheduledAt: { lt: endsAt }, endsAt: { gt: scheduledAt }, status: { in: ["SCHEDULED", "ATTENDED"] as any } };
@@ -143,42 +148,25 @@ export async function scheduleCenterSessionWithFeedback(centerId: number, progra
 }
 
 export async function recordCenterSession(centerId: number, sessionId: string, fd: FormData) {
-  const actor = await centerActor(centerId, "centers.sessions.record");
-  const status = fd.get("status")?.toString() as any;
-  await prisma.$transaction(async (tx) => {
-    const current = await tx.centerSession.findFirst({ where: { id: sessionId, centerId }, include: { program: true } });
-    if (!current || current.assignedToId !== actor.userId) throw new Error("المسؤول المسند فقط يستطيع تسجيل الجلسة");
-    if (current.program.status === "COMPLETED") throw new Error("البرنامج مغلق");
-    if (current.status === "COMPLETED" && status === "COMPLETED") return;
-    await tx.centerSession.update({ where: { id: sessionId }, data: { attended: fd.get("attended") === "1", procedure: fd.get("procedure")?.toString() || null, result: fd.get("result")?.toString() || null, progress: fd.get("progress")?.toString() || null, notes: fd.get("notes")?.toString() || null, sensitiveNotes: current.program.serviceType === "PSYCHOLOGICAL" && actor.permissions.has("centers.psych.sensitive") ? fd.get("sensitiveNotes")?.toString() || null : undefined, status, completedAt: status === "COMPLETED" ? new Date() : null } });
-    if (current.appointmentId) await tx.appointment.update({ where: { id: current.appointmentId }, data: { status: status === "COMPLETED" ? "COMPLETED" : status === "NO_SHOW" ? "NOSHOW" : status === "CANCELLED" ? "CANCELLED" : "SCHEDULED" } });
-    await tx.auditLog.create({ data: { userId: actor.userId, action: "UPDATE", tableName: "center_sessions", recordId: sessionId, newValue: { status, attended: fd.get("attended") === "1" } } });
-  }); refresh(centerId); revalidatePath("/appointments");
+  const user = (await requireSession()).user as { id: string; role: ClinicalActor["role"]; authVersion: number };
+  await withSerializableRetry(() => prisma.$transaction(tx => recordCenterSessionInTransaction(tx,
+    { userId: user.id, role: user.role, authVersion: user.authVersion }, centerId, sessionId, {
+      status: fd.get("status")?.toString() as import("@prisma/client").CenterSessionStatus, attended: fd.get("attended") === "1",
+      procedure: fd.get("procedure")?.toString() || null, result: fd.get("result")?.toString() || null,
+      progress: fd.get("progress")?.toString() || null, notes: fd.get("notes")?.toString() || null,
+      sensitiveNotes: fd.get("sensitiveNotes")?.toString() || null,
+    }), { isolationLevel: "Serializable" }));
+  refresh(centerId); revalidatePath("/appointments");
 }
 
 export async function finalizeCenterProgram(centerId: number, programId: string, fd: FormData) {
-  const actor = await centerActor(centerId, "centers.programs.finalize");
-  const returnToConsultancy = fd.get("returnToConsultancy") === "1";
-  await prisma.$transaction(async (tx) => {
-    const program = await tx.centerProgram.findFirst({ where: { id: programId, centerId } });
-    if (!program || program.status === "COMPLETED") throw new Error("البرنامج مغلق أو غير موجود");
-    const pendingSessions = await tx.centerSession.count({ where: { programId, status: { in: ["SCHEDULED", "ATTENDED"] } } });
-    if (pendingSessions > 0) throw new Error("أكمل أو ألغِ الجلسات المعلقة قبل إغلاق البرنامج");
-    await tx.centerAssessment.create({ data: { programId, patientId: program.patientId, kind: "FINAL", summary: fd.get("finalSummary")?.toString() || null, improvementLevel: fd.get("improvementLevel")?.toString() || null, recommendation: fd.get("recommendation")?.toString() || null, sensitiveNotes: program.serviceType === "PSYCHOLOGICAL" && actor.permissions.has("centers.psych.sensitive") ? fd.get("sensitiveNotes")?.toString() || null : null, createdById: actor.userId } });
-    await tx.centerProgram.update({ where: { id: programId }, data: { status: "COMPLETED", finalSummary: fd.get("finalSummary")?.toString() || null, improvementLevel: fd.get("improvementLevel")?.toString() || null, recommendation: fd.get("recommendation")?.toString() || null, returnToConsultancy, closedAt: new Date() } });
-    if (returnToConsultancy) {
-      // Hand the patient back to the doctor who reviewed (or wrote) the referral, so "now with" shows the doctor.
-      const referral = program.referralRequestId ? await tx.referralRequest.findUnique({ where: { id: program.referralRequestId }, select: { assignedReviewer: { select: { id: true, role: true, isActive: true } }, createdBy: { select: { id: true, role: true, isActive: true } } } }) : null;
-      const doctor = [referral?.assignedReviewer, referral?.createdBy].find((user) => user?.isActive && user.role === "DOCTOR");
-      const center = await tx.center.findUnique({ where: { id: centerId }, select: { name: true } });
-      const note = `انتهى برنامج ${center?.name ?? "المركز"} — متابعة عند الطبيب`;
-      if (doctor) {
-        const me = await tx.user.findUnique({ where: { id: actor.userId }, select: { role: true } });
-        await handOverInTransaction(tx as any, { patientId: program.patientId, actorId: actor.userId, actorRole: me?.role ?? "ADMIN", toRole: "DOCTOR", toUserId: doctor.id, note });
-      } else {
-        await tx.notification.create({ data: { targetRole: "DOCTOR", title: "برنامج مركز مكتمل", body: `${note}. لا يوجد طبيب محدد بالإحالة، استلمه من «تسليم المراجعين».`, link: `/patients/${program.patientId}` } });
-      }
-    }
-    await tx.auditLog.create({ data: { userId: actor.userId, action: "UPDATE", tableName: "center_programs", recordId: programId, newValue: { status: "COMPLETED", returnToConsultancy } } });
-  }); refresh(centerId);
+  const session = await requireSession();
+  const user = session.user as { id: string; role: ClinicalActor["role"]; authVersion: number };
+  await withSerializableRetry(() => prisma.$transaction(tx => completeCenterProgramWork(tx,
+    { userId: user.id, role: user.role, authVersion: user.authVersion }, centerId, programId, {
+      finalSummary: fd.get("finalSummary")?.toString() || "", improvementLevel: fd.get("improvementLevel")?.toString() || "",
+      recommendation: fd.get("recommendation")?.toString() || "", returnToConsultancy: fd.get("returnToConsultancy") === "1",
+      sensitiveNotes: fd.get("sensitiveNotes")?.toString(),
+    }), { isolationLevel: "Serializable" }));
+  refresh(centerId);
 }

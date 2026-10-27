@@ -245,6 +245,7 @@ export default async function PatientDetail({ params, searchParams }: { params: 
             orderBy: { sequence: "asc" },
             select: {
               id: true, station: true, responsibleRole: true, status: true, responsibilityScope: true, assignedUserId: true, responsibleCenterId: true,
+              clinicalAssignments: { where: { revokedAt: null }, select: { id: true, reviewerId: true, acceptedById: true, acceptedAt: true } },
               requiresPhysicianConfirmation: true, operationalCompletedAt: true, operationalCompletionId: true, updatedAt: true,
               assignedUser: { select: { fullName: true } },
               referralRequest: { select: { destinationScope: true, assignedReviewerId: true, acceptedById: true, status: true, destinationCenterId: true } },
@@ -271,9 +272,9 @@ export default async function PatientDetail({ params, searchParams }: { params: 
                 requiresPhysicianConfirmation: stage.requiresPhysicianConfirmation, operationalCompletionId: stage.operationalCompletionId,
                 operationalCompletedAt: stage.operationalCompletedAt?.toISOString() ?? null, updatedAt: stage.updatedAt.toISOString(),
                 canCompleteWork: perms.has("journey.confirm") && stage.responsibleRole === myRole && eligibleCenters.includes(stage.responsibleCenterId!) && (!stage.assignedUserId || stage.assignedUserId === myUserId),
+                clinicalAssignmentId: stage.clinicalAssignments.find(a => a.reviewerId === myUserId && a.acceptedById === myUserId && a.acceptedAt)?.id,
                 canPhysicianConfirm: perms.has("journey.confirm") && myRole === "DOCTOR" && eligibleCenters.includes(stage.responsibleCenterId!)
-                  && stage.referralRequest?.assignedReviewerId === myUserId && stage.referralRequest.status === "ACCEPTED"
-                  && stage.referralRequest.destinationScope === "INTERNAL_CENTER" && stage.referralRequest.destinationCenterId === stage.responsibleCenterId,
+                  && stage.clinicalAssignments.some(a => a.reviewerId === myUserId && a.acceptedById === myUserId && !!a.acceptedAt),
                 assignedName: stage.assignedUser?.fullName ?? null,
                 specialistBound: stage.responsibilityScope === "SPECIALIST_REVIEW" && !!stage.assignedUserId
                   && stage.referralRequest?.destinationScope === "INTERNAL_SPECIALIST"

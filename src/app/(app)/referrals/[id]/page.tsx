@@ -1,3 +1,4 @@
+import { ClinicalReviewControls } from "@/components/patients/ClinicalReviewControls";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -16,7 +17,7 @@ export default async function ReferralDetail({ params, searchParams }: { params:
   const sp = await searchParams;
   const [perms, session] = await Promise.all([currentPerms(), getSession()]);
   const scope = await referralAccessScope(prisma, { userId: (session!.user as any).id, role: (session!.user as any).role, permissions: perms });
-  const request = await prisma.referralRequest.findFirst({ where: { id, AND: [scope.where] }, include: { patient: { select: { id: true, fullName: true, fileNumber: true } }, createdBy: { select: { fullName: true } }, assignedReviewer: { select: { fullName: true } }, destinationCenter: { select: { name: true } }, officialDocument: true, careStage: true, reviewedBy: { select: { fullName: true } }, acceptedBy: { select: { fullName: true } } } });
+  const request = await prisma.referralRequest.findFirst({ where: { id, AND: [scope.where] }, include: { patient: { select: { id: true, fullName: true, fileNumber: true } }, createdBy: { select: { fullName: true } }, assignedReviewer: { select: { fullName: true } }, destinationCenter: { select: { name: true } }, officialDocument: true, careStage: true, centerProgram: true, reviewedBy: { select: { fullName: true } }, acceptedBy: { select: { fullName: true } } } });
   if (!request) notFound();
   const [doctors, centers, logs] = await Promise.all([
     prisma.user.findMany({ where: { isActive: true, role: "DOCTOR" }, select: { id: true, fullName: true }, orderBy: { fullName: "asc" } }),
@@ -34,6 +35,8 @@ export default async function ReferralDetail({ params, searchParams }: { params:
   const canReview = request.status === "RESULT_RECEIVED" && perms.has("referrals.reviewResult") && role === "DOCTOR" && request.assignedReviewerId === uid;
   const canCancel = ["DRAFT","PENDING_PRINT","READY","SENT"].includes(request.status) && perms.has("referrals.cancel");
   return <div className="space-y-5">
+    {request.careStage?.responsibilityScope === "CENTER" && ["WAITING", "IN_PROGRESS"].includes(request.careStage.status) && request.destinationCenterId ? <ClinicalReviewControls target={{ kind: "STAGE", id: request.careStage.id }} patientId={request.patientId} centerId={request.destinationCenterId} completionId={request.careStage.operationalCompletionId} /> : null}
+    {request.centerProgram?.status === "ACTIVE" && request.destinationCenterId ? <ClinicalReviewControls target={{ kind: "PROGRAM", id: request.centerProgram.id }} patientId={request.patientId} centerId={request.destinationCenterId} completionId={request.centerProgram.operationalCompletionId} /> : null}
     <PageHeader title="تفاصيل طلب الفحص أو الإحالة" subtitle={`${request.patient.fullName}، ملف #${request.patient.fileNumber}`} icon="↗" />
     {sp.msg ? <div aria-live="polite" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{sp.msg}</div> : null}
     <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap gap-2"><Link href="/referrals" className="btn-ghost">العودة إلى الطلبات</Link><Link href="/referrals" className="btn-ghost">لوحة المرضى والرعاية</Link></div><div className="flex gap-2"><ReferralStatus status={request.status} /><Link href={`/patients/${request.patient.id}`} className="btn-ghost">ملف المراجع</Link>{request.officialDocument ? <Link href={`/referrals/${id}/official`} className="btn-ghost">كتاب الإرسال</Link> : null}</div></div>

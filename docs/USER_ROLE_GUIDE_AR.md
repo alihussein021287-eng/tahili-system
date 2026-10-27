@@ -179,3 +179,6 @@
 - [خريطة التسليم](ROLE_WORKFLOW_HANDOFFS_AR.md)
 - `src/lib/perms.ts`, `src/lib/access.ts`, `src/lib/role-workspaces.ts`, `src/lib/work-registry.ts`, `src/lib/my-work.ts`
 - `SYSTEM_MAP.md`, `ROLES_PERMISSIONS.md`, `ACCEPTANCE_MATRIX.md`, `docs/MEDICAL_WORKFLOW_BOUNDARIES.md`
+
+## ترشيح ومراجعة CENTER وإغلاق البرنامج — مرشح V1 المحلي
+السكرتارية المخوّلة بتفويض حساب فردي clinical.review.nominate وعضوية SECRETARY فعالة ترشح الطبيب من تفاصيل الإحالة/البرنامج؛ لا تعتمد طبياً. الطبيب يقبل مسؤوليته صراحة من الإشعار ثم يؤكد بعد الإنجاز. رئيس المعالجين يوثق الإنجاز التشغيلي؛ البرنامج يبقى غير مغلق طبياً حتى تأكيد الطبيب المقبول. الجلسات والجدولة تقفل بعد الإنجاز التشغيلي دون تجاوز إداري. التاريخ غير المصنف لا يعاد اعتماده. المرجع: V1_CLINICAL_RELEASE_AR.md.

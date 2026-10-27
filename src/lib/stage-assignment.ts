@@ -79,6 +79,9 @@ export async function assignStageOnAccept(
   if (acceptor.role !== handoff.toRole) throw denied();
   if (acceptor.id === handoff.fromUserId) throw denied();
   const stage = await loadLinkedStage(tx, handoff.careStageId, handoff.patientId, handoff.toRole, handoff.toCenterId);
+  if (stage.responsibilityScope === "SERVICE" && !stage.assignedUserId) {
+    throw new Error("إسناد SERVICE الأولي محجوب: لا توجد علاقة موثوقة تحدد مسؤول الخدمة المخوّل");
+  }
   if (stage.assignedUserId === acceptor.id) return { former: null, changed: false };
   const former = stage.assignedUserId;
   if (former && former !== handoff.fromUserId) throw new Error("المحطة مسندة لشخص آخر");

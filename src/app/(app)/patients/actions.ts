@@ -806,13 +806,13 @@ export async function addStage(patientId: string, fd: FormData) {
   revalidatePath(`/patients/${patientId}`);
 }
 
-async function stageTransition(patientId: string, id: string, to: "CONFIRMED" | "WAITING" | "IN_PROGRESS" | "SKIPPED", expectedOperationalCompletionId?: string) {
+async function stageTransition(patientId: string, id: string, to: "CONFIRMED" | "WAITING" | "IN_PROGRESS" | "SKIPPED", expectedOperationalCompletionId?: string, expectedClinicalAssignmentId?: string) {
   const s = await guard("journey.confirm");
-  const user = s.user as { id: string; role: any; name?: string | null };
+  const user = s.user as { id: string; role: any; authVersion: number; name?: string | null };
   let message = "";
   try {
     await withSerializableRetry(() => prisma.$transaction(
-      (tx) => transitionCareStage(tx, { userId: user.id, role: user.role, name: user.name ?? null }, { patientId, stageId: id, to, expectedOperationalCompletionId }),
+      (tx) => transitionCareStage(tx, { userId: user.id, role: user.role, authVersion: user.authVersion, name: user.name ?? null }, { patientId, stageId: id, to, expectedOperationalCompletionId, expectedClinicalAssignmentId }),
       { isolationLevel: "Serializable" },
     ));
   } catch (error) {
@@ -844,15 +844,15 @@ export async function reassignStageAction(patientId: string, stageId: string, fd
 }
 
 // تأكيد المحطة السريرية صريح من صاحب الدور؛ لا يتأكد تلقائياً من التسليم أو الطابور أو الموعد
-export async function confirmStage(patientId: string, id: string, expectedOperationalCompletionId?: string) {
-  await stageTransition(patientId, id, "CONFIRMED", typeof expectedOperationalCompletionId === "string" ? expectedOperationalCompletionId : undefined);
+export async function confirmStage(patientId: string, id: string, expectedOperationalCompletionId?: string, expectedClinicalAssignmentId?: string) {
+  await stageTransition(patientId, id, "CONFIRMED", typeof expectedOperationalCompletionId === "string" ? expectedOperationalCompletionId : undefined, typeof expectedClinicalAssignmentId === "string" ? expectedClinicalAssignmentId : undefined);
 }
 
 export async function completeStageWorkAction(patientId: string, stageId: string, expectedUpdatedAt: string) {
   const s = await guard("journey.confirm");
-  const user = s.user as { id: string; role: any; name?: string | null };
+  const user = s.user as { id: string; role: any; authVersion: number; name?: string | null };
   await withSerializableRetry(() => prisma.$transaction(tx => completeCenterStageWork(tx,
-    { userId: user.id, role: user.role, name: user.name ?? null }, { patientId, stageId, expectedUpdatedAt }), { isolationLevel: "Serializable" }));
+    { userId: user.id, role: user.role, authVersion: user.authVersion, name: user.name ?? null }, { patientId, stageId, expectedUpdatedAt }), { isolationLevel: "Serializable" }));
   revalidatePath(`/patients/${patientId}`); revalidatePath("/my-work"); revalidatePath("/notifications");
 }
 

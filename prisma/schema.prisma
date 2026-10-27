@@ -439,6 +439,11 @@ model User {
   @@map("users")
   assignedCareStages CareStage[] @relation("CareStageAssignee")
   completedCareStageWork CareStage[] @relation("CareStageWorkCompletedBy")
+  clinicalNominations ClinicalReviewAssignment[] @relation("ClinicalNominator")
+  clinicalReviews ClinicalReviewAssignment[] @relation("ClinicalReviewer")
+  clinicalAcceptances ClinicalReviewAssignment[] @relation("ClinicalAcceptor")
+  programWorkCompleted CenterProgram[] @relation("ProgramWorkActor")
+  programMedicalClosed CenterProgram[] @relation("ProgramMedicalActor")
   verifiedVisits     Visit[]     @relation("VisitVerifiedBy")
 }
 
@@ -1692,6 +1697,14 @@ model CenterProgram {
   finalSummary        String?
   improvementLevel    String?
   recommendation      String?
+  operationalCompletedById String?
+  operationalCompletedBy User? @relation("ProgramWorkActor", fields: [operationalCompletedById], references: [id], onDelete: Restrict)
+  operationalCompletedAt DateTime?
+  operationalCompletionId String? @db.Uuid
+  medicalClosedById String?
+  medicalClosedBy User? @relation("ProgramMedicalActor", fields: [medicalClosedById], references: [id], onDelete: Restrict)
+  medicalClosedAt DateTime?
+  clinicalAssignments ClinicalReviewAssignment[]
   returnToConsultancy Boolean             @default(false)
   closedAt            DateTime?
   createdAt           DateTime            @default(now())
@@ -2415,6 +2428,7 @@ model CareStage {
   // NULL is unclassified legacy history, never evidence of physician approval.
   requiresPhysicianConfirmation Boolean?
   operationalCompletedById String?
+  clinicalAssignments ClinicalReviewAssignment[]
   operationalCompletedBy User? @relation("CareStageWorkCompletedBy", fields: [operationalCompletedById], references: [id], onDelete: Restrict)
   operationalCompletedAt DateTime?
   operationalCompletionId String? @db.Uuid
@@ -2641,4 +2655,26 @@ model ProstheticType {
   name String @unique
 
   @@map("prosthetic_types")
+}
+
+// A nomination is provenance, not permission. Current authority is revalidated on use.
+model ClinicalReviewAssignment {
+  id String @id @default(uuid()) @db.Uuid
+  careStageId String?
+  careStage CareStage? @relation(fields: [careStageId], references: [id], onDelete: Restrict)
+  programId String?
+  program CenterProgram? @relation(fields: [programId], references: [id], onDelete: Restrict)
+  reviewerId String
+  reviewer User @relation("ClinicalReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+  nominatedById String
+  nominatedBy User @relation("ClinicalNominator", fields: [nominatedById], references: [id], onDelete: Restrict)
+  nominatedAt DateTime @default(now())
+  acceptedById String?
+  acceptedBy User? @relation("ClinicalAcceptor", fields: [acceptedById], references: [id], onDelete: Restrict)
+  acceptedAt DateTime?
+  revokedAt DateTime?
+  @@index([reviewerId, revokedAt])
+  @@index([careStageId])
+  @@index([programId])
+  @@map("clinical_review_assignments")
 }

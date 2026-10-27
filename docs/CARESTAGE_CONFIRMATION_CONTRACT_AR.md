@@ -1,5 +1,7 @@
 # عقد CareStage — إكمال العمل ومراجعة الطبيب
 
+> تاريخ Mission46 للأساس b32ed323. سياسة V1 المعتمدة الجديدة وتنفيذها المحلي موثقان في V1_CLINICAL_RELEASE_AR.md؛ تعيين الطبيب والقبول الصريح يحلان محل الحجب المطلق في هذا التاريخ، دون اعتماد طبي رجعي.
+
 هذا عقد التعديل المحلي Mission46، ويحتاج قرار تعيين الطبيب ومراجعة مستقلة قبل أي إصدار. لا يغير TreatmentPlan/CenterProgram END أو سلطة إسناد SERVICE.
 
 - إحالة INTERNAL_CENTER المقبولة تنشئ مرحلة CENTER بدور HEAD_THERAPIST؛ `requiresPhysicianConfirmation=true` تصنيف خادمي صريح، لا استنتاج من اسم المحطة.

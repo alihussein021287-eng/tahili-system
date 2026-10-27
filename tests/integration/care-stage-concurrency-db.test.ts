@@ -36,7 +36,7 @@ async function fixture(label: string) {
 }
 
 beforeAll(async () => {
-  expect(process.env.DATABASE_URL ?? "").toMatch(/127\.0\.0\.1:55432/);
+  expect(new URL(process.env.DATABASE_URL!).host).toBe(`127.0.0.1:${process.env.ACCEPTANCE_DB_PORT || "55432"}`);
   branchId = (await prisma.branch.create({ data: { name: `${tag} branch` } })).id;
   centerId = (await prisma.center.create({ data: { name: `${tag} center` } })).id;
   const mk = (n: string, role: any) => prisma.user.create({ data: { username: `${tag}-${n}`, fullName: `${tag} ${n}`, role, branchId, passwordHash: "!" } });
