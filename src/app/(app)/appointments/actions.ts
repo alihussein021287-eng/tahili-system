@@ -1,5 +1,6 @@
 "use server";
 import { prisma } from "@/lib/db";
+import { withLockedAppointment } from "@/lib/appointment-lifecycle";
 import { logAudit } from "@/lib/audit";
 import { assertPerm, assertAdminDelete } from "@/lib/access";
 import { assertPatientActionScope } from "@/lib/patient-guard";
@@ -31,7 +32,7 @@ function optionalPositiveInt(value: FormDataEntryValue | null) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-async function appointmentConflict(params: { patientId: string; assignedTo?: string | null; scheduledAt: Date; excludeId?: string; hallId?: number | null }) {
+async function appointmentConflict(params: { patientId: string; assignedTo?: string | null; scheduledAt: Date; excludeId?: string; hallId?: number | null }, db = prisma as import("@prisma/client").Prisma.TransactionClient) {
   const when = normalizeDateTime(params.scheduledAt);
   const nextMinute = new Date(when.getTime() + 60000);
   const or: any[] = [
@@ -39,7 +40,7 @@ async function appointmentConflict(params: { patientId: string; assignedTo?: str
     ...(params.assignedTo ? [{ assignedTo: params.assignedTo }] : []),
   ];
   if (params.hallId) or.push({ hallId: params.hallId }, { session: { is: { hallId: params.hallId } } });
-  const conflicts = await prisma.appointment.findMany({
+  const conflicts = await db.appointment.findMany({
     where: {
       id: params.excludeId ? { not: params.excludeId } : undefined,
       status: "SCHEDULED",
@@ -71,10 +72,6 @@ async function appointmentPolicyError(when: Date) {
   const time = `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
   if (time < config.workStart || time >= config.workEnd) return "وقت الموعد خارج ساعات الدوام المحددة في الإعدادات";
   return null;
-}
-
-async function linkedPlan(id: string) {
-  return prisma.appointment.findUnique({ where: { id }, select: { session: { select: { treatmentPlanId: true, plan: { select: { status: true } } } } } });
 }
 
 export async function createAppointment(fd: FormData) {
@@ -119,22 +116,22 @@ export async function createAppointment(fd: FormData) {
 export async function updateAppointmentCenterHall(id: string, fd: FormData) {
   await assertPerm("appointments.edit");
   await assertAppointmentPatientScope(id);
-  const current = await prisma.appointment.findUnique({ where: { id }, select: { sessionId: true, patientId: true, assignedTo: true, scheduledAt: true } });
-  if (!current) redirect(withSaved("/appointments", "الموعد غير موجود"));
-  if (current.sessionId) redirect(withSaved("/appointments", "موعد الجلسة مرتبط بالخطة العلاجية"));
-  const centerId = optionalPositiveInt(fd.get("centerId"));
-  const hallId = optionalPositiveInt(fd.get("hallId"));
-  if (hallId && !centerId) redirect(withSaved("/appointments", "اختر المركز قبل القاعة"));
-  if (centerId) {
-    if (!(await prisma.center.count({ where: { id: centerId, active: true } }))) redirect(withSaved("/appointments", "المركز غير صالح"));
-    if (hallId) await assertCenterHallById(prisma, centerId, hallId).catch((error) => redirect(withSaved("/appointments", error instanceof Error ? error.message : "الفرع/القاعة لا يتبع المركز المختار")));
-  }
-  if (hallId) {
-    const conflict = await appointmentConflict({ patientId: current.patientId, assignedTo: current.assignedTo, scheduledAt: current.scheduledAt, excludeId: id, hallId });
-    if (conflict) redirect(withSaved("/appointments", conflict));
-  }
-  await prisma.appointment.update({ where: { id }, data: { centerId, hallId } });
-  await logAudit({ action: "UPDATE", tableName: "appointments", recordId: id, newValue: { centerId, hallId } });
+  await withLockedAppointment(id, "appointments.edit", async (tx, current, user) => {
+    if (current.sessionId) redirect(withSaved("/appointments", "موعد الجلسة مرتبط بالخطة العلاجية"));
+    const centerId = optionalPositiveInt(fd.get("centerId"));
+    const hallId = optionalPositiveInt(fd.get("hallId"));
+    if (hallId && !centerId) redirect(withSaved("/appointments", "اختر المركز قبل القاعة"));
+    if (centerId) {
+      if (!(await tx.center.count({ where: { id: centerId, active: true } }))) redirect(withSaved("/appointments", "المركز غير صالح"));
+      if (hallId) await assertCenterHallById(tx, centerId, hallId).catch((error) => redirect(withSaved("/appointments", error instanceof Error ? error.message : "الفرع/القاعة لا يتبع المركز المختار")));
+    }
+    if (hallId) {
+      const conflict = await appointmentConflict({ patientId: current.patientId, assignedTo: current.assignedTo, scheduledAt: current.scheduledAt, excludeId: id, hallId }, tx);
+      if (conflict) redirect(withSaved("/appointments", conflict));
+    }
+    await tx.appointment.update({ where: { id }, data: { centerId, hallId } });
+    await tx.auditLog.create({ data: { userId: user.id, actorUsername: user.username, actorName: user.fullName, action: "UPDATE", tableName: "appointments", recordId: id, newValue: { centerId, hallId } } });
+  });
   revalidatePath("/appointments"); revalidatePath("/appointments/calendar"); revalidatePath("/");
   redirect(withSaved("/appointments", "تم تعديل مركز/قاعة الموعد"));
 }
@@ -143,13 +140,14 @@ export async function setAppointmentStatus(id: string, status: string) {
   await assertPerm("appointments.edit");
   await assertAppointmentPatientScope(id);
   const validStatus = parseOrThrow(appointmentStatusSchema, status);
-  const linked = await linkedPlan(id);
-  if (linked?.session?.treatmentPlanId && validStatus === "COMPLETED") await assertPerm("therapy.admin.override");
-  if (linked?.session?.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
-  // Conditional update: repeating the current status is a no-op and writes no audit entry, even when requests race.
-  const changed = await prisma.appointment.updateMany({ where: { id, status: { not: validStatus as any } }, data: { status: validStatus as any } });
-  if (changed.count === 1) await logAudit({ action: "UPDATE", tableName: "appointments", recordId: id, newValue: { status: validStatus } });
-  else if (!(await prisma.appointment.count({ where: { id } }))) throw new Error("الموعد غير موجود");
+  await withLockedAppointment(id, "appointments.edit", async (tx, current, user) => {
+    if (current.session?.treatmentPlanId && validStatus === "COMPLETED" && !user.permissions.has("therapy.admin.override")) throw new Error("غير مصرح");
+    if (current.session?.plan?.status === "COMPLETED" && !user.permissions.has("therapy.admin.override")) throw new Error("غير مصرح");
+    // A repeated status is a no-op, including its audit.
+    const changed = await tx.appointment.updateMany({ where: { id, status: { not: validStatus as any } }, data: { status: validStatus as any } });
+    if (changed.count === 1) await tx.auditLog.create({ data: { userId: user.id, actorUsername: user.username, actorName: user.fullName,
+      action: "UPDATE", tableName: "appointments", recordId: id, newValue: { status: validStatus } } });
+  });
   revalidatePath("/appointments"); revalidatePath("/appointments/calendar"); revalidatePath("/");
 }
 
@@ -157,8 +155,12 @@ export async function deleteAppointment(id: string) {
   await assertAdminDelete();
   await assertPerm("appointments.delete");
   await assertAppointmentPatientScope(id);
-  await prisma.appointment.delete({ where: { id } });
-  await logAudit({ action: "DELETE", tableName: "appointments", recordId: id });
+  await withLockedAppointment(id, "appointments.delete", async (tx, _current, user) => {
+    if (user.role !== "ADMIN") throw new Error("غير مصرح");
+    await tx.appointment.delete({ where: { id } });
+    await tx.auditLog.create({ data: { userId: user.id, actorUsername: user.username, actorName: user.fullName,
+      action: "DELETE", tableName: "appointments", recordId: id } });
+  });
   revalidatePath("/appointments"); revalidatePath("/appointments/calendar"); revalidatePath("/");
 }
 
@@ -168,16 +170,17 @@ export async function rescheduleAppointment(id: string, fd: FormData) {
   const t = fd.get("scheduledAt")?.toString();
   if (!t) return;
   if (Number.isNaN(Date.parse(t))) throw new Error("تاريخ/وقت غير صحيح");
-  const current = await prisma.appointment.findUnique({ where: { id }, select: { patientId: true, assignedTo: true, hallId: true, session: { select: { hallId: true, plan: { select: { status: true } } } } } });
-  if (!current) redirect(withSaved("/appointments", "الموعد غير موجود"));
-  if (current.session?.plan?.status === "COMPLETED") await assertPerm("therapy.admin.override");
-  const when = normalizeDateTime(new Date(t));
-  const policyError = await appointmentPolicyError(when);
-  if (policyError) redirect(withSaved("/appointments", policyError));
-  const conflict = await appointmentConflict({ patientId: current.patientId, assignedTo: current.assignedTo, scheduledAt: when, excludeId: id, hallId: current.hallId || current.session?.hallId });
-  if (conflict) redirect(withSaved("/appointments", conflict));
-  await prisma.appointment.update({ where: { id }, data: { scheduledAt: when } });
-  await logAudit({ action: "UPDATE", tableName: "appointments", recordId: id, newValue: { rescheduled: true } });
+  await withLockedAppointment(id, "appointments.edit", async (tx, current, user) => {
+    if (current.session?.plan?.status === "COMPLETED" && !user.permissions.has("therapy.admin.override")) throw new Error("غير مصرح");
+    const when = normalizeDateTime(new Date(t));
+    const policyError = await appointmentPolicyError(when);
+    if (policyError) redirect(withSaved("/appointments", policyError));
+    const conflict = await appointmentConflict({ patientId: current.patientId, assignedTo: current.assignedTo, scheduledAt: when, excludeId: id, hallId: current.hallId || current.session?.hallId }, tx);
+    if (conflict) redirect(withSaved("/appointments", conflict));
+    await tx.appointment.update({ where: { id }, data: { scheduledAt: when } });
+    await tx.auditLog.create({ data: { userId: user.id, actorUsername: user.username, actorName: user.fullName,
+      action: "UPDATE", tableName: "appointments", recordId: id, newValue: { rescheduled: true } } });
+  });
   revalidatePath("/appointments"); revalidatePath("/appointments/calendar"); revalidatePath("/");
   redirect(withSaved("/appointments", "تم نقل الموعد"));
 }
