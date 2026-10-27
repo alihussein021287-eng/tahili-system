@@ -24,11 +24,12 @@ const confirm = (u: { id: string }, patientId: string, stageId: string, role: an
 async function fixture(label: string) {
   const patient = await prisma.patient.create({ data: { fullName: `${tag} ${label}`, branchId } });
   const who = { userId: member.id, role: "DOCTOR" as const, permissions: roleDefaultSet("DOCTOR") };
-  const request = await createReferralRequest({ patientId: patient.id, type: "TREATMENT_CENTER", destinationScope: "INTERNAL_CENTER", destinationCenterId: centerId, assignedReviewerId: member.id, requestedService: "Synthetic center", clinicalReason: "Synthetic only" }, who);
+  // CENTER final confirmation awaits owner policy; exercise actual authorized
+  // SPECIALIST_REVIEW confirmation rather than mocking or bypassing that gate.
+  const request = await createReferralRequest({ patientId: patient.id, type: "SPECIALIST", destinationScope: "INTERNAL_SPECIALIST", assignedReviewerId: member.id, requestedService: "Synthetic specialist", clinicalReason: "Synthetic only" }, who);
   await transitionReferralRequest(request.id, "READY", {}, who);
-  const accepted = await transitionReferralRequest(request.id, "ACCEPTED", { acceptedById: head.id }, { userId: head.id, role: "HEAD_THERAPIST", permissions: roleDefaultSet("HEAD_THERAPIST") });
+  const accepted = await transitionReferralRequest(request.id, "ACCEPTED", { acceptedById: member.id }, who);
   const stage = await prisma.careStage.findUniqueOrThrow({ where: { id: accepted.careStageId! } });
-  await prisma.$transaction(tx => completeCenterStageWork(tx, { userId: head.id, role: "HEAD_THERAPIST" }, { patientId: patient.id, stageId: stage.id, expectedUpdatedAt: stage.updatedAt.toISOString() }));
   const next = await prisma.careStage.create({ data: { patientId: patient.id, station: "محطة تالية", responsibleRole: "THERAPIST", responsibilityScope: "CENTER", responsibleCenterId: centerId, sequence: 1 } });
   await prisma.notification.create({ data: { targetRole: "HEAD_THERAPIST", title: `${tag} n`, link: `/patients/${patient.id}`, careStageId: stage.id } });
   return { patient, stage, next };

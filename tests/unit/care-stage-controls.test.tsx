@@ -10,10 +10,19 @@ describe("separate operational and physician controls", () => {
     const html = view("HEAD_THERAPIST", { canCompleteWork: true });
     expect(html).toContain("توثيق إكمال العمل"); expect(html).not.toContain(">تأكيد الطبيب<");
   });
-  it("shows pending review and a separate action only to an eligible physician", () => {
+  it("keeps even a named eligible physician pending until designation authority is approved", () => {
     const extra = { operationalCompletedAt: "2026-10-27T01:01:00.000Z" };
-    expect(view("DOCTOR", { ...extra, canPhysicianConfirm: true })).toContain(">تأكيد الطبيب<");
-    const denied = view("DOCTOR", extra); expect(denied).not.toContain(">تأكيد الطبيب<"); expect(denied).toContain("بانتظار التأكيد الطبي الصريح");
+    expect(view("DOCTOR", { ...extra, canPhysicianConfirm: true })).not.toContain(">تأكيد الطبيب<");
+    const denied = view("DOCTOR", extra); expect(denied).not.toContain(">تأكيد الطبيب<"); expect(denied).toContain("جهة تعيين المراجع الطبي");
+  });
+  it("offers historical CENTER operational completion without inferring clinical classification", () => {
+    const html = view("HEAD_THERAPIST", { requiresPhysicianConfirmation: null, canCompleteWork: true });
+    expect(html).toContain("توثيق إكمال العمل"); expect(html).not.toContain(">تأكيد الطبيب<");
+    expect(html).toContain("لا اعتماد طبي رجعي");
+  });
+  it("shows a controlled reconciliation hint for ambiguous ownership without offering an action", () => {
+    const html = view("HEAD_THERAPIST", { requiresPhysicianConfirmation: null, responsibleRole: null });
+    expect(html).toContain("تسوية موثقة"); expect(html).not.toContain(">توثيق إكمال العمل<");
   });
   it("does not fabricate a medical action for unclassified legacy history", () => {
     const html = view("DOCTOR", { requiresPhysicianConfirmation: null });

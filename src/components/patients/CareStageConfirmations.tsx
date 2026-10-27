@@ -1,6 +1,7 @@
 import { ROLE_LABELS } from "@/lib/permissions";
 import { confirmStage, reassignStageAction, completeStageWorkAction } from "@/app/(app)/patients/actions";
 import { HandoffDialog } from "@/components/handoffs/HandoffDialog";
+import { hasApprovedCenterReviewerDesignationPolicy, CENTER_DESIGNATION_PENDING } from "@/lib/center-clinical-policy";
 
 type Stage = {
   id: string; station: string; responsibleRole: string | null; status: string; responsibilityScope: string | null;
@@ -58,9 +59,12 @@ export function CareStageConfirmations({ patientId, patientName, fileNumber, sta
             if (!eligible) reason = !stage.assignedUserId ? "بانتظار الإسناد — جهة الإسناد لهذه المحطة غير محددة بعد" : "المحطة مسندة لشخص آخر";
           }
           const clinicalCenter = scope === "CENTER" && stage.requiresPhysicianConfirmation === true;
-          if (clinicalCenter) {
-            eligible = !!stage.canPhysicianConfirm && !!stage.operationalCompletedAt;
-            reason = stage.operationalCompletedAt ? "العمل مكتمل — بانتظار التأكيد الطبي الصريح" : "بانتظار إكمال العمل التشغيلي";
+          const centerWork = scope === "CENTER" && stage.requiresPhysicianConfirmation !== false;
+          if (centerWork) {
+            eligible = clinicalCenter && hasApprovedCenterReviewerDesignationPolicy() && !!stage.canPhysicianConfirm && !!stage.operationalCompletedAt;
+            reason = stage.operationalCompletedAt ? CENTER_DESIGNATION_PENDING : "بانتظار إكمال العمل التشغيلي";
+            if (stage.requiresPhysicianConfirmation == null) reason += " — تصنيف التأكيد غير موثق؛ لا اعتماد طبي رجعي";
+            if (!stage.canCompleteWork && !stage.operationalCompletedAt) reason += " — يلزم التحقق من المسؤولية والعضوية والإسناد قبل تسوية موثقة";
           } else if (scope !== "SPECIALIST_REVIEW" && stage.requiresPhysicianConfirmation !== false) {
             eligible = false; reason = "تصنيف التأكيد غير موثق — يلزم تحديده دون افتراض اعتماد طبي";
           }
@@ -79,7 +83,7 @@ export function CareStageConfirmations({ patientId, patientName, fileNumber, sta
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {clinicalCenter && stage.canCompleteWork && !stage.operationalCompletedAt ? (
+                {centerWork && stage.canCompleteWork && !stage.operationalCompletedAt ? (
                   <form action={completeStageWorkAction.bind(null, patientId, stage.id, stage.updatedAt!)}>
                     <button type="submit" className="btn-primary min-h-11">توثيق إكمال العمل</button>
                   </form>

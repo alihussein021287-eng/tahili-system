@@ -78,22 +78,21 @@ beforeAll(async () => {
 beforeEach(() => { session("doctor"); auth.failAudit = false; });
 afterAll(async () => { save("FINAL", { patients: await db.patient.count(), stages: await db.careStage.count(), syntheticOnly: true }); await Promise.all([db.$disconnect(), first.$disconnect(), second.$disconnect(), observer.$disconnect()]); });
 
-it("real INTERNAL_CENTER referral -> HEAD work -> named DOCTOR confirmation, exactly once", async () => {
+it("real INTERNAL_CENTER referral -> HEAD work remains pending the explicit designation policy", async () => {
   const f = await fixture(); const created = await db.careStage.findUniqueOrThrow({ where: { id: f.stageId } });
   expect(created).toMatchObject({ responsibleRole: "HEAD_THERAPIST", requiresPhysicianConfirmation: true, status: "WAITING" });
   session("head"); await completeStageWorkAction(f.patientId, f.stageId, created.updatedAt.toISOString());
   const pending = await db.careStage.findUniqueOrThrow({ where: { id: f.stageId } });
   expect(pending).toMatchObject({ status: "IN_PROGRESS", responsibleRole: "HEAD_THERAPIST", operationalCompletedById: users.get("head")!.id, confirmedById: null });
-  expect((await listStagesAwaitingPhysicianReview(db, referralActor("doctor"))).some(x => x.id === f.stageId)).toBe(true);
+  expect((await listStagesAwaitingPhysicianReview(db, referralActor("doctor"))).some(x => x.id === f.stageId)).toBe(false);
   expect((await listStagesAwaitingPhysicianReview(db, referralActor("otherDoctor"))).some(x => x.id === f.stageId)).toBe(false);
   const next = await db.careStage.create({ data: { patientId: f.patientId, station: "M44 next", sequence: 99, responsibleRole: "DOCTOR" } });
-  session("doctor"); await confirmStage(f.patientId, f.stageId, pending.operationalCompletionId!);
-  await confirmStage(f.patientId, f.stageId, pending.operationalCompletionId!);
-  const final = await state(f.stageId); expect(final.stage).toMatchObject({ status: "CONFIRMED", responsibleRole: "HEAD_THERAPIST", operationalCompletedById: users.get("head")!.id, confirmedById: users.get("doctor")!.id });
-  expect(final.stage.operationalCompletedAt).toBeTruthy(); expect(final.stage.confirmedAt).toBeTruthy();
-  expect(final.audits.filter((a: { newValue?: { status?: string } }) => a.newValue?.status === "CONFIRMED")).toHaveLength(1);
-  expect(await db.notification.count({ where: { careStageId: next.id } })).toBe(1);
-  expect(final.notices.every((n: { resolvedAt: unknown }) => n.resolvedAt)).toBe(true);
+  session("doctor"); await denied("pending-designation-direct", f.stageId, () => confirmStage(f.patientId, f.stageId, pending.operationalCompletionId!));
+  await denied("pending-designation-repeat", f.stageId, () => confirmStage(f.patientId, f.stageId, pending.operationalCompletionId!));
+  const final = await state(f.stageId); expect(final.stage).toMatchObject({ status: "IN_PROGRESS", responsibleRole: "HEAD_THERAPIST", operationalCompletedById: users.get("head")!.id, confirmedById: null });
+  expect(final.stage.operationalCompletedAt).toBeTruthy(); expect(final.stage.confirmedAt).toBeNull();
+  expect(final.audits.filter((a: { newValue?: { status?: string } }) => a.newValue?.status === "CONFIRMED")).toHaveLength(0);
+  expect(await db.notification.count({ where: { careStageId: next.id } })).toBe(0);
   save("CENTER_REFERRAL_END_TO_END", { f, created, pending, final });
 });
 it.each(["head", "admin", "manager", "resident"])("%s cannot substitute for physician confirmation", async key => {
@@ -111,20 +110,22 @@ it("missing named reviewer remains a gate without creator or ADMIN fallback", as
   await denied("no-reviewer-fallback", f.stageId, () => confirm(f, stamp.operationalCompletionId));
   expect((await listStagesAwaitingPhysicianReview(db, referralActor("doctor"))).some(x => x.id === f.stageId)).toBe(false);
 });
-it("new center routing rejects a missing or ineligible reviewer before creating an unfinishable stage", async () => {
+it("new center routing preserves operational acceptance without appointing a clinical reviewer", async () => {
   const patient = await db.patient.create({ data: { fullName: `M44 SYNTHETIC routing ${++serial}`, branchId: branch } });
   const ref = await createReferralRequest({ patientId: patient.id, type: "TREATMENT_CENTER", destinationScope: "INTERNAL_CENTER", destinationCenterId: center,
     requestedService: "M44 synthetic", clinicalReason: "synthetic only" }, referralActor("doctor"));
   const before = { row: await db.referralRequest.findUnique({ where: { id: ref.id } }), stages: await db.careStage.count({ where: { patientId: patient.id } }), audits: await db.auditLog.count({ where: { recordId: ref.id } }) };
-  await expect(transitionReferralRequest(ref.id, "READY", {}, referralActor("doctor"))).rejects.toThrow();
-  expect({ row: await db.referralRequest.findUnique({ where: { id: ref.id } }), stages: await db.careStage.count({ where: { patientId: patient.id } }), audits: await db.auditLog.count({ where: { recordId: ref.id } }) }).toEqual(before);
+  await transitionReferralRequest(ref.id, "READY", {}, referralActor("doctor"));
+  const accepted = await transitionReferralRequest(ref.id, "ACCEPTED", { acceptedById: users.get("head")!.id }, referralActor("head"));
+  expect(accepted.careStageId).toBeTruthy();
+  const f = { patientId: patient.id, stageId: accepted.careStageId!, referralId: ref.id };
+  const stamp = await work(f);
+  await denied("new-no-designation", f.stageId, () => confirm(f, stamp.operationalCompletionId));
   const invalid = await createReferralRequest({ patientId: patient.id, type: "TREATMENT_CENTER", destinationScope: "INTERNAL_CENTER", destinationCenterId: center,
     assignedReviewerId: users.get("head")!.id, requestedService: "M44 synthetic", clinicalReason: "synthetic only" }, referralActor("doctor"));
-  const invalidBefore = await db.referralRequest.findUniqueOrThrow({ where: { id: invalid.id } });
-  await expect(transitionReferralRequest(invalid.id, "READY", {}, referralActor("doctor"))).rejects.toThrow();
-  expect(await db.referralRequest.findUniqueOrThrow({ where: { id: invalid.id } })).toEqual(invalidBefore);
-  expect(await db.careStage.count({ where: { patientId: patient.id } })).toBe(0);
-  save("routing-reviewer-required", { rejectedBeforeStageCreation: true, noMutation: true, refId: ref.id });
+  await transitionReferralRequest(invalid.id, "READY", {}, referralActor("doctor"));
+  expect(await db.careStage.count({ where: { patientId: patient.id } })).toBe(1);
+  save("routing-operational-only", { before, after: await state(f.stageId), refId: ref.id, namedReviewerNotAuthority: true });
 });
 it("stage-linked handover invalidates completed work before another physician request", async () => {
   const f = await fixture(); const stamp = await work(f);
@@ -164,8 +165,8 @@ it("cannot complete another employee work or bypass direct Server Actions", asyn
 it("rolls back real audit FK failure with no partial operational or clinical success", async () => {
   const f = await fixture(); auth.failAudit = true;
   expect((await denied("work-audit-FK", f.stageId, () => work(f))) as { code: string }).toMatchObject({ code: "P2003" });
-  auth.failAudit = false; const stamp = await work(f); auth.failAudit = true;
-  expect((await denied("physician-audit-FK", f.stageId, () => confirm(f, stamp.operationalCompletionId))) as { code: string }).toMatchObject({ code: "P2003" });
+  auth.failAudit = false; const specialist = await fixture("doctor", "INTERNAL_SPECIALIST"); auth.failAudit = true;
+  expect((await denied("specialist-audit-FK", specialist.stageId, () => confirm(specialist))) as { code: string }).toMatchObject({ code: "P2003" });
 });
 it("preserves legitimate named specialist review and denies unassigned SERVICE", async () => {
   const f = await fixture("doctor", "INTERNAL_SPECIALIST"); await confirm(f);
@@ -182,7 +183,7 @@ it("rejects an obsolete completion identity even when two attestations have the 
     expect(old.operationalCompletedAt).toBe(current.operationalCompletedAt);
     expect(old.operationalCompletionId).not.toBe(current.operationalCompletionId);
     await denied("obsolete-completion-same-time", f.stageId, () => confirm(f, old.operationalCompletionId));
-    await confirm(f, current.operationalCompletionId);
+    await denied("current-completion-still-requires-policy", f.stageId, () => confirm(f, current.operationalCompletionId));
   } finally { vi.useRealTimers(); }
 });
 it("preserves explicitly nonclinical operation and resident progress without classifying legacy approvals", async () => {
@@ -214,9 +215,9 @@ async function interleave(label: string, id: string, holding: (t: Prisma.Transac
   try { proof = await waits(waiter, blocker); } finally { release.resolve(); }
   const results = await Promise.allSettled([a, bResult]); save(label, { blocker, waiter, lockProof: proof, results, persisted: await state(id) }); return results;
 }
-it("real lock waiting: duplicate physician confirmation has one success effect", async () => {
-  const f = await fixture(); const stamp = await work(f);
-  const call = (t: Prisma.TransactionClient) => transitionCareStage(t, actor("doctor"), { ...f, to: "CONFIRMED", expectedOperationalCompletionId: stamp.operationalCompletionId });
+it("real lock waiting: duplicate authorized specialist confirmation has one success effect", async () => {
+  const f = await fixture("doctor", "INTERNAL_SPECIALIST");
+  const call = (t: Prisma.TransactionClient) => transitionCareStage(t, actor("doctor"), { ...f, to: "CONFIRMED" });
   await interleave("duplicate-confirmation-lock", f.stageId, call, call);
   const s = await state(f.stageId); expect(s.stage.status).toBe("CONFIRMED"); expect(s.audits.filter((a: { newValue?: { status?: string } }) => a.newValue?.status === "CONFIRMED")).toHaveLength(1);
 });
