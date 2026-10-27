@@ -7,6 +7,7 @@ import { withSerializableRetry } from "@/lib/serializable-retry";
 import { validateCollaborationUpload, DEFAULT_BLOCKED_FILE_TYPES, sha256 } from "@/lib/collaboration-rules";
 import { putCollaborationObject, getCollaborationObject } from "@/lib/collaboration-storage";
 import { scanBufferWithClamAv } from "@/lib/collaboration-scan";
+import { parseConsentSignedDate } from "@/lib/consent-date";
 
 export async function consentActor(tx: Prisma.TransactionClient, actor: ClinicalActor, permission: string, patientId: string, filePermission: string) {
   const user = await currentTherapyActor(tx, { id: actor.userId, role: actor.role, authVersion: actor.authVersion }, permission, patientId);
@@ -17,9 +18,9 @@ export async function consentActor(tx: Prisma.TransactionClient, actor: Clinical
 type ConsentInput = { procedure: string; documentCode: string; documentVersion: string; signerName: string; signerCapacity: string; representationBasis?: string; signedAt: string; attestedSigned: boolean; careStageId?: string };
 function validate(input: ConsentInput) {
   for (const k of ["procedure", "documentCode", "documentVersion", "signerName"] as const) if (!input[k]?.trim() || input[k].length > 300) throw new Error("بيانات الموافقة والمستند والموقّع مطلوبة");
-  const date = new Date(input.signedAt);
+  const date = parseConsentSignedDate(input.signedAt);
   if (!input.attestedSigned || !["PATIENT", "GUARDIAN", "REPRESENTATIVE"].includes(input.signerCapacity)
-    || (input.signerCapacity !== "PATIENT" && !input.representationBasis?.trim()) || (input.representationBasis?.length ?? 0) > 1000 || Number.isNaN(date.getTime()) || date > new Date()) throw new Error("تحقق من دليل التوقيع وصفة الموقّع وتاريخه");
+    || (input.signerCapacity !== "PATIENT" && !input.representationBasis?.trim()) || (input.representationBasis?.length ?? 0) > 1000) throw new Error("تحقق من دليل التوقيع وصفة الموقّع وتاريخه");
   return date;
 }
 
