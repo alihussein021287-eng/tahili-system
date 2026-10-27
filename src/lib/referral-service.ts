@@ -143,6 +143,9 @@ export async function transitionReferralRequest(id: string, toStatus: ReferralRe
     const current = await tx.referralRequest.findFirst({ where: { id, AND: [access.where] }, include: { patient: { select: { fileNumber: true } }, destinationCenter: { select: { name: true } } } });
     if (!current) throw new Error("غير مصرح");
 
+    // CENTER acceptance authorizes operational work only. A draft's reviewer
+    // selection cannot confer final clinical authority without an approved policy.
+
     // The destination center owns acceptance; a generic permission or a
     // different center membership does not establish destination eligibility.
     const destinationMembershipVerified = current.destinationScope === "INTERNAL_CENTER"
@@ -192,6 +195,7 @@ export async function transitionReferralRequest(id: string, toStatus: ReferralRe
         patientId: current.patientId,
         station: current.destinationCenter?.name || current.requestedService,
         responsibleRole: current.destinationScope === "INTERNAL_SPECIALIST" ? "DOCTOR" : "HEAD_THERAPIST",
+        requiresPhysicianConfirmation: true,
         ...(current.destinationScope === "INTERNAL_CENTER" && current.destinationCenterId != null
           ? { responsibilityScope: "CENTER" as const, responsibleCenterId: current.destinationCenterId }
           : {}),

@@ -9,8 +9,11 @@ function assertIsolatedTarget(env = process.env) {
   const origin = `http://127.0.0.1:${port}`;
   if (env.E2E_BASE_URL !== origin || env.NEXTAUTH_URL !== origin || env.NEXTAUTH_URL_INTERNAL !== origin) fail();
   if (!/^[a-f0-9]{48}$/.test(env.ACCEPTANCE_DB_PASSWORD || '')) fail();
+  // Explicit high loopback port for hosts reserving 55432 (Windows Hyper-V).
+  const dbPort = env.ACCEPTANCE_DB_PORT || '55432';
+  if (dbPort !== '55432' && (!/^[0-9]+$/.test(dbPort) || Number(dbPort) < 32000 || Number(dbPort) > 49000)) fail();
   // Exact equality rejects QA names, alternate hosts, encoded targets and connection-string overrides.
-  if (env.DATABASE_URL !== `postgresql://acceptance:${env.ACCEPTANCE_DB_PASSWORD}@127.0.0.1:55432/acceptance_${id}`) fail();
+  if (env.DATABASE_URL !== `postgresql://acceptance:${env.ACCEPTANCE_DB_PASSWORD}@127.0.0.1:${dbPort}/acceptance_${id}`) fail();
   if (env.DIRECT_URL || env.SHADOW_DATABASE_URL || env.DOTENV_CONFIG_PATH || env.NODE_OPTIONS) fail();
   return { origin, id, port };
 }

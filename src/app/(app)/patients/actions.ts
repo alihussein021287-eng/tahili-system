@@ -15,7 +15,7 @@ import { z } from "zod";
 import { loadPatientTabData } from "@/lib/patient-tab-loader";
 import { referralAccessScope } from "@/lib/referral-access";
 import { closeOpenHandoffsForPatient } from "@/lib/handoff-service";
-import { transitionCareStage, reassignCenterStage } from "@/lib/care-stage-service";
+import { transitionCareStage, reassignCenterStage, completeCenterStageWork } from "@/lib/care-stage-service";
 import { assertPatientActionScope, assertBranchBoundRecordScope } from "@/lib/patient-guard";
 import { resolveRegistrationBranch, resolveUpdateBranch } from "@/lib/patient-branch";
 import { centerStationByName } from "@/lib/stations";
@@ -787,7 +787,7 @@ export async function startPathway(patientId: string) {
   const s = await guardPatient("journey.manage", patientId, "record");
   const count = await prisma.careStage.count({ where: { patientId } });
   if (count > 0) redirect(`/patients/${patientId}?saved=${encodeURIComponent("المسار موجود مسبقاً")}`);
-  await prisma.careStage.createMany({ data: DEFAULT_PATHWAY.map((st, i) => ({ patientId, station: st.station, responsibleRole: st.role as any, responsibilityScope: "SERVICE" as const, sequence: i, createdById: (s?.user as any)?.id })) });
+  await prisma.careStage.createMany({ data: DEFAULT_PATHWAY.map((st, i) => ({ patientId, station: st.station, responsibleRole: st.role as any, responsibilityScope: "SERVICE" as const, requiresPhysicianConfirmation: st.role === "RECEPTION" || st.role === "ACCOUNTANT" ? false : null, sequence: i, createdById: (s?.user as any)?.id })) });
   await logAudit({ action: "CREATE", tableName: "care_stages", recordId: patientId, newValue: { pathway: "default" } });
   revalidatePath(`/patients/${patientId}`);
 }
@@ -806,13 +806,13 @@ export async function addStage(patientId: string, fd: FormData) {
   revalidatePath(`/patients/${patientId}`);
 }
 
-async function stageTransition(patientId: string, id: string, to: "CONFIRMED" | "WAITING" | "IN_PROGRESS" | "SKIPPED") {
+async function stageTransition(patientId: string, id: string, to: "CONFIRMED" | "WAITING" | "IN_PROGRESS" | "SKIPPED", expectedOperationalCompletionId?: string, expectedClinicalAssignmentId?: string) {
   const s = await guard("journey.confirm");
-  const user = s.user as { id: string; role: any; name?: string | null };
+  const user = s.user as { id: string; role: any; authVersion: number; name?: string | null };
   let message = "";
   try {
     await withSerializableRetry(() => prisma.$transaction(
-      (tx) => transitionCareStage(tx, { userId: user.id, role: user.role, name: user.name ?? null }, { patientId, stageId: id, to }),
+      (tx) => transitionCareStage(tx, { userId: user.id, role: user.role, authVersion: user.authVersion, name: user.name ?? null }, { patientId, stageId: id, to, expectedOperationalCompletionId, expectedClinicalAssignmentId }),
       { isolationLevel: "Serializable" },
     ));
   } catch (error) {
@@ -844,8 +844,16 @@ export async function reassignStageAction(patientId: string, stageId: string, fd
 }
 
 // تأكيد المحطة السريرية صريح من صاحب الدور؛ لا يتأكد تلقائياً من التسليم أو الطابور أو الموعد
-export async function confirmStage(patientId: string, id: string) {
-  await stageTransition(patientId, id, "CONFIRMED");
+export async function confirmStage(patientId: string, id: string, expectedOperationalCompletionId?: string, expectedClinicalAssignmentId?: string) {
+  await stageTransition(patientId, id, "CONFIRMED", typeof expectedOperationalCompletionId === "string" ? expectedOperationalCompletionId : undefined, typeof expectedClinicalAssignmentId === "string" ? expectedClinicalAssignmentId : undefined);
+}
+
+export async function completeStageWorkAction(patientId: string, stageId: string, expectedUpdatedAt: string) {
+  const s = await guard("journey.confirm");
+  const user = s.user as { id: string; role: any; authVersion: number; name?: string | null };
+  await withSerializableRetry(() => prisma.$transaction(tx => completeCenterStageWork(tx,
+    { userId: user.id, role: user.role, authVersion: user.authVersion, name: user.name ?? null }, { patientId, stageId, expectedUpdatedAt }), { isolationLevel: "Serializable" }));
+  revalidatePath(`/patients/${patientId}`); revalidatePath("/my-work"); revalidatePath("/notifications");
 }
 
 export async function setStageStatus(patientId: string, id: string, status: string) {

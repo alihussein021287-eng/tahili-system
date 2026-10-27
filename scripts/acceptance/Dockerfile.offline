@@ -1,0 +1,22 @@
+# Prerequisite: import the exact validated Linux runtime image and source archive.
+# The image already contains the locked development dependencies and Prisma engines.
+ARG VALIDATED_IMAGE
+FROM ${VALIDATED_IMAGE} AS builder
+WORKDIR /app
+COPY . .
+RUN node node_modules/prisma/build/index.js generate && npm run build
+
+FROM ${VALIDATED_IMAGE} AS runner
+ARG GIT_REVISION
+LABEL org.opencontainers.image.revision=${GIT_REVISION}
+WORKDIR /app
+ENV NODE_ENV=production
+ENV GIT_REVISION=${GIT_REVISION}
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/public ./public
+EXPOSE 3000
+CMD ["npm", "start"]

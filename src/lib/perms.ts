@@ -48,6 +48,15 @@ export const PERM_GROUPS: PermGroup[] = [
     { key: "centers.resources.manage", label: "إدارة الموارد والحجوزات" },
     { key: "centers.programs.manage", label: "قبول الإحالات وإدارة البرامج" },
     { key: "centers.sessions.record", label: "تسجيل الجلسات المسندة" },
+    { key: "services.designate", label: "تعيين مسؤول الخدمة — ADMIN فقط" },
+    { key: "services.assign", label: "إسناد عمل خدمة مفوضة" },
+    { key: "services.execute", label: "تنفيذ عمل خدمة مسندة" },
+    { key: "consents.view", label: "عرض الموافقات الموقعة" },
+    { key: "consents.record", label: "تسجيل دليل موافقة موقعة" },
+    { key: "consents.withdraw", label: "توثيق سحب الموافقة" },
+    { key: "clinical.review.nominate", label: "ترشيح مراجع طبي — تفويض فردي للسكرتارية فقط" },
+    { key: "clinical.review.accept", label: "قبول مسؤولية المراجعة الطبية" },
+    { key: "centers.programs.medicalConfirm", label: "التأكيد الطبي لإغلاق البرنامج" },
     { key: "centers.programs.finalize", label: "التقييم النهائي والمتابعة" },
     { key: "centers.psych.sensitive", label: "عرض الملاحظات النفسية الحساسة" },
   ]},
@@ -260,6 +269,7 @@ const THERAPIST_DEFAULT = [
 // لا نرث قائمة المعالج هنا حتى لا تصل للطبيب صلاحيات الجلسات التنفيذية أو المواعيد
 // الإدارية بالصدفة.
 const DOCTOR_DEFAULT = [
+  "clinical.review.accept", "centers.programs.medicalConfirm",
   ...VIEWER_DEFAULT,
   "handoff.send", "handoff.receive",
   "patients.view", "patients.edit", "patients.print",
@@ -273,7 +283,7 @@ const DOCTOR_DEFAULT = [
   "referrals.view", "referrals.create", "referrals.updateStatus", "referrals.reviewResult", "referrals.accept", "referrals.cancel",
 ];
 const MANAGER_DEFAULT = [
-  ...DOCTOR_DEFAULT.filter((permission) => !permission.startsWith("referrals.")),
+  ...DOCTOR_DEFAULT.filter((permission) => !permission.startsWith("referrals.") && !permission.startsWith("clinical.review.") && permission !== "centers.programs.medicalConfirm"),
   "reports.medical.approve", // only the authorized manager (and ADMIN) approves a printed medical report
   "pharmacy.view", "pharmacy.dispense", "pharmacy.batch", "pharmacy.print",
   "pharmacy.dispense.partial", "pharmacy.purchase.view", "pharmacy.purchase.create", "pharmacy.purchase.approve", "pharmacy.purchase.receive", "pharmacy.purchase.prices",

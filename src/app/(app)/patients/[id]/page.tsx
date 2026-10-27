@@ -1,3 +1,5 @@
+import { PatientConsents } from "@/components/patients/PatientConsents";
+import { ServiceAssignmentControls } from "@/components/patients/ServiceAssignmentControls";
 import { prisma } from "@/lib/db";
 import { Combobox } from "@/components/Combobox";
 import { notFound } from "next/navigation";
@@ -244,14 +246,18 @@ export default async function PatientDetail({ params, searchParams }: { params: 
             where: { patientId: id, status: { in: ["WAITING", "IN_PROGRESS"] } },
             orderBy: { sequence: "asc" },
             select: {
-              id: true, station: true, responsibleRole: true, status: true, responsibilityScope: true, assignedUserId: true, responsibleCenterId: true,
+              serviceAssignmentId: true, id: true, station: true, responsibleRole: true, status: true, responsibilityScope: true, assignedUserId: true, responsibleCenterId: true,
+              clinicalAssignments: { where: { revokedAt: null }, select: { id: true, reviewerId: true, acceptedById: true, acceptedAt: true } },
+              requiresPhysicianConfirmation: true, operationalCompletedAt: true, operationalCompletionId: true, updatedAt: true,
               assignedUser: { select: { fullName: true } },
-              referralRequest: { select: { destinationScope: true, assignedReviewerId: true, acceptedById: true } },
+              referralRequest: { select: { destinationScope: true, assignedReviewerId: true, acceptedById: true, status: true, destinationCenterId: true } },
             },
             });
             const managedCenters = myRole === "MANAGER" && myUserId && perms.has("journey.manage")
               ? (await prisma.centerMembership.findMany({ where: { userId: myUserId, ...activeMembershipWhere("CENTER_MANAGEMENT"), center: { active: true } }, select: { centerId: true } })).map((m) => m.centerId)
               : [];
+            const eligibleCenters = myUserId && CENTER_ROLE_FOR_TARGET[myRole as keyof typeof CENTER_ROLE_FOR_TARGET]
+              ? (await prisma.centerMembership.findMany({ where: { userId: myUserId, ...activeMembershipWhere(CENTER_ROLE_FOR_TARGET[myRole as keyof typeof CENTER_ROLE_FOR_TARGET]), center: { active: true } }, select: { centerId: true } })).map(m => m.centerId) : [];
             return Promise.all(openStages.map(async (stage) => {
               let reassignCandidates: { id: string; name: string }[] | null = null;
               if (stage.responsibilityScope === "CENTER" && stage.responsibleCenterId != null && stage.responsibleRole
@@ -263,8 +269,14 @@ export default async function PatientDetail({ params, searchParams }: { params: 
                 })).map((m) => ({ id: m.user.id, name: m.user.fullName })) : [];
               }
               return {
-                id: stage.id, station: stage.station, responsibleRole: stage.responsibleRole, status: stage.status,
+                serviceAssignmentId: stage.serviceAssignmentId, id: stage.id, station: stage.station, responsibleRole: stage.responsibleRole, status: stage.status,
                 responsibilityScope: stage.responsibilityScope, assignedUserId: stage.assignedUserId,
+                requiresPhysicianConfirmation: stage.requiresPhysicianConfirmation, operationalCompletionId: stage.operationalCompletionId,
+                operationalCompletedAt: stage.operationalCompletedAt?.toISOString() ?? null, updatedAt: stage.updatedAt.toISOString(),
+                canCompleteWork: perms.has("journey.confirm") && stage.responsibleRole === myRole && eligibleCenters.includes(stage.responsibleCenterId!) && (!stage.assignedUserId || stage.assignedUserId === myUserId),
+                clinicalAssignmentId: stage.clinicalAssignments.find(a => a.reviewerId === myUserId && a.acceptedById === myUserId && a.acceptedAt)?.id,
+                canPhysicianConfirm: perms.has("journey.confirm") && myRole === "DOCTOR" && eligibleCenters.includes(stage.responsibleCenterId!)
+                  && stage.clinicalAssignments.some(a => a.reviewerId === myUserId && a.acceptedById === myUserId && !!a.acceptedAt),
                 assignedName: stage.assignedUser?.fullName ?? null,
                 specialistBound: stage.responsibilityScope === "SPECIALIST_REVIEW" && !!stage.assignedUserId
                   && stage.referralRequest?.destinationScope === "INTERNAL_SPECIALIST"
@@ -284,6 +296,8 @@ export default async function PatientDetail({ params, searchParams }: { params: 
 
       {isSecretary ? <SecretaryHandoffHistory rows={secretaryHistory} /> : null}
 
+      <ServiceAssignmentControls patientId={id} />
+      <PatientConsents patientId={id} />
       <PatientTabs rxVisitIds={perms.has("clinical.prescription") ? await eligiblePrescriptionVisitIds(prisma, id, (_sess?.user as any)?.id) : []} currentUserName={(_sess?.user as any)?.name ?? ""} currentUserId={(_sess?.user as any)?.id ?? ""} infoPanel={<div className="space-y-5">
       {(cEdit || cClinical) && <section className="space-y-3">
         <h3 className="font-semibold text-gray-800">البيانات الشخصية</h3>

@@ -10,6 +10,15 @@ const safe = {
   DATABASE_URL: `postgresql://acceptance:${password}@127.0.0.1:55432/acceptance_${id}`,
 };
 test('complete disposable identity is accepted', () => assert.equal(assertIsolatedTarget(safe).id, id));
+test('explicit isolated high port retains exact URL binding', () => {
+  const alternative = { ...safe, ACCEPTANCE_DB_PORT: '45432', DATABASE_URL: safe.DATABASE_URL.replace(':55432', ':45432') };
+  assert.equal(assertIsolatedTarget(alternative).id, id);
+  for (const port of ['5432', '3101', '3102', '0', '65535', '45432?host=qa', '045432']) {
+    assert.throws(() => assertIsolatedTarget({ ...alternative, ACCEPTANCE_DB_PORT: port }));
+  }
+  assert.throws(() => assertIsolatedTarget({ ...alternative, DATABASE_URL: safe.DATABASE_URL }));
+  assert.throws(() => assertIsolatedTarget({ ...alternative, DATABASE_URL: alternative.DATABASE_URL.replace('127.0.0.1', 'qa') }));
+});
 for (const key of Object.keys(safe)) test(`missing ${key} refuses writes`, () => {
   const env = { ...safe }; delete env[key];
   assert.throws(() => assertIsolatedTarget(env), /refusing all writes/);

@@ -9,15 +9,17 @@ export type StageAssignmentTx = {
     updateMany(args: Prisma.CareStageUpdateManyArgs): Promise<{ count: number }>;
   };
   auditLog: { create(args: Prisma.AuditLogCreateArgs): Promise<unknown> };
+  notification?: { updateMany(args: Prisma.NotificationUpdateManyArgs): Promise<{ count: number }> };
 };
 
 type StageRow = {
+  serviceAuthorityId?: string | null;
   id: string; patientId: string; status: string; responsibleRole: UserRole | null;
   responsibilityScope: "CENTER" | "SERVICE" | "SPECIALIST_REVIEW" | null; responsibleCenterId: number | null; assignedUserId: string | null;
 };
 
 const stageSelect = {
-  id: true, patientId: true, status: true, responsibleRole: true,
+  serviceAuthorityId: true, id: true, patientId: true, status: true, responsibleRole: true,
   responsibilityScope: true, responsibleCenterId: true, assignedUserId: true,
 } as const;
 const ACTIVE = ["WAITING", "IN_PROGRESS"];
@@ -33,6 +35,7 @@ async function loadLinkedStage(tx: StageAssignmentTx, stageId: string, patientId
   if (stage.responsibilityScope === "SPECIALIST_REVIEW") throw denied();
   if (stage.responsibleRole !== toRole) throw denied();
   if (stage.responsibilityScope === "CENTER" && stage.responsibleCenterId !== toCenterId) throw denied();
+  if (stage.responsibilityScope === "SERVICE" && stage.serviceAuthorityId) throw new Error("إسناد الخدمة الموثق يتم عبر مسؤولها فقط");
   return stage;
 }
 
@@ -78,6 +81,9 @@ export async function assignStageOnAccept(
   if (acceptor.role !== handoff.toRole) throw denied();
   if (acceptor.id === handoff.fromUserId) throw denied();
   const stage = await loadLinkedStage(tx, handoff.careStageId, handoff.patientId, handoff.toRole, handoff.toCenterId);
+  if (stage.responsibilityScope === "SERVICE" && !stage.assignedUserId) {
+    throw new Error("إسناد SERVICE الأولي محجوب: لا توجد علاقة موثوقة تحدد مسؤول الخدمة المخوّل");
+  }
   if (stage.assignedUserId === acceptor.id) return { former: null, changed: false };
   const former = stage.assignedUserId;
   if (former && former !== handoff.fromUserId) throw new Error("المحطة مسندة لشخص آخر");
@@ -85,9 +91,10 @@ export async function assignStageOnAccept(
   const now = new Date();
   const result = await tx.careStage.updateMany({
     where: { id: stage.id, status: { in: ACTIVE as never }, assignedUserId: former },
-    data: { assignedUserId: acceptor.id, assignedAt: now },
+    data: { assignedUserId: acceptor.id, assignedAt: now, operationalCompletedById: null, operationalCompletedAt: null, operationalCompletionId: null },
   });
   if (result.count !== 1) throw new Error("تغيّر إسناد المحطة، حدّث الصفحة");
+  if (tx.notification) await tx.notification.updateMany({ where: { careStageId: stage.id, resolvedAt: null }, data: { resolvedAt: new Date() } });
   await tx.auditLog.create({ data: {
     userId: acceptor.id, action: "UPDATE", tableName: "care_stages", recordId: stage.id,
     oldValue: { assignedUserId: former }, newValue: { assignedUserId: acceptor.id, handoffId: handoff.id, ...(former ? { reason: handoff.note } : {}) },

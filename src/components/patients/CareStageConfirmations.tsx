@@ -1,12 +1,21 @@
 import { ROLE_LABELS } from "@/lib/permissions";
-import { confirmStage, reassignStageAction } from "@/app/(app)/patients/actions";
+import { confirmStage, reassignStageAction, completeStageWorkAction } from "@/app/(app)/patients/actions";
 import { HandoffDialog } from "@/components/handoffs/HandoffDialog";
+import { CENTER_DESIGNATION_PENDING } from "@/lib/center-clinical-policy";
 
 type Stage = {
   id: string; station: string; responsibleRole: string | null; status: string; responsibilityScope: string | null;
   assignedUserId: string | null; assignedName: string | null; specialistBound: boolean;
   /** Present only when the viewer is a manager whose scope covers this CENTER stage. */
   reassignCandidates: { id: string; name: string }[] | null;
+  requiresPhysicianConfirmation?: boolean | null;
+  operationalCompletedAt?: string | null;
+  operationalCompletionId?: string | null;
+  updatedAt?: string;
+  canCompleteWork?: boolean;
+  serviceAssignmentId?: string | null;
+  canPhysicianConfirm?: boolean;
+  clinicalAssignmentId?: string;
 };
 
 /**
@@ -30,7 +39,7 @@ export function CareStageConfirmations({ patientId, patientName, fileNumber, sta
   // SERVICE and unclassified stages stay a destination marker elsewhere (visits page), not an assignment queue.
   const visible = stages.filter((stage) =>
     stage.responsibilityScope === "CENTER" || stage.responsibilityScope === "SPECIALIST_REVIEW"
-    || (stage.responsibilityScope === "SERVICE" && stage.assignedUserId === userId));
+    || (stage.responsibilityScope === "SERVICE" && !stage.serviceAssignmentId && stage.assignedUserId === userId));
   if (!visible.length) return null;
   return (
     <section className="card space-y-3 p-4" aria-labelledby="care-stages-title" data-testid="care-stage-confirmations">
@@ -51,6 +60,16 @@ export function CareStageConfirmations({ patientId, patientName, fileNumber, sta
             eligible = canConfirm && roleMatches && iAmAssignee && (scope === "SERVICE" || stage.specialistBound);
             if (!eligible) reason = !stage.assignedUserId ? "بانتظار الإسناد — جهة الإسناد لهذه المحطة غير محددة بعد" : "المحطة مسندة لشخص آخر";
           }
+          const clinicalCenter = scope === "CENTER" && stage.requiresPhysicianConfirmation === true;
+          const centerWork = scope === "CENTER" && stage.requiresPhysicianConfirmation !== false;
+          if (centerWork) {
+            eligible = clinicalCenter && !!stage.clinicalAssignmentId && !!stage.canPhysicianConfirm && !!stage.operationalCompletedAt;
+            reason = stage.operationalCompletedAt ? CENTER_DESIGNATION_PENDING : "بانتظار إكمال العمل التشغيلي";
+            if (stage.requiresPhysicianConfirmation == null) reason += " — تصنيف التأكيد غير موثق؛ لا اعتماد طبي رجعي";
+            if (!stage.canCompleteWork && !stage.operationalCompletedAt) reason += " — يلزم التحقق من المسؤولية والعضوية والإسناد قبل تسوية موثقة";
+          } else if (scope !== "SPECIALIST_REVIEW" && stage.requiresPhysicianConfirmation !== false) {
+            eligible = false; reason = "تصنيف التأكيد غير موثق — يلزم تحديده دون افتراض اعتماد طبي";
+          }
           // Mirrors the server: only the current assignee hands over; first assignment is possible for CENTER stages only.
           const canHandOff = canSend && (stage.assignedUserId
             ? iAmAssignee && (scope === "CENTER" || scope === "SERVICE")
@@ -66,9 +85,14 @@ export function CareStageConfirmations({ patientId, patientName, fileNumber, sta
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {centerWork && stage.canCompleteWork && !stage.operationalCompletedAt ? (
+                  <form action={completeStageWorkAction.bind(null, patientId, stage.id, stage.updatedAt!)}>
+                    <button type="submit" className="btn-primary min-h-11">توثيق إكمال العمل</button>
+                  </form>
+                ) : null}
                 {eligible ? (
-                  <form action={confirmStage.bind(null, patientId, stage.id)}>
-                    <button type="submit" className="btn-primary min-h-11">تأكيد المحطة</button>
+                  <form action={confirmStage.bind(null, patientId, stage.id, stage.operationalCompletionId ?? undefined, stage.clinicalAssignmentId)}>
+                    <button type="submit" className="btn-primary min-h-11">{clinicalCenter || scope === "SPECIALIST_REVIEW" ? "تأكيد الطبيب" : "تأكيد إكمال المحطة التشغيلية"}</button>
                   </form>
                 ) : (
                   <span className="text-xs text-gray-400">{reason}</span>
