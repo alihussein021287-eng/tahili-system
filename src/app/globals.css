@@ -138,14 +138,14 @@ button, summary { touch-action: manipulation; }
 @layer components {
   /* ===== الحقول ===== */
   .input {
-    @apply min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
+    @apply min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
            outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500;
   }
   .label { @apply mb-1 block text-sm font-medium text-gray-700; }
 
   /* ===== الأزرار — نظام موحّد ===== */
   .btn {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm
            font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
   }
   /* الإجراء الأساسي (حفظ، إضافة، تأكيد) */
@@ -261,9 +261,10 @@ button, summary { touch-action: manipulation; }
   .p-8 { padding: 1.1rem !important; }
   .text-2xl { font-size: 1.4rem !important; }
   .btn, .btn-primary, .btn-ghost, .btn-danger, .btn-warning, .btn-danger-soft {
-    min-height: 2.5rem;
+    min-height: 44px;
     white-space: normal;
   }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea { min-height: 44px; }
   .patient-file-content :is(input, select, textarea) {
     min-width: 0;
     max-width: 100%;

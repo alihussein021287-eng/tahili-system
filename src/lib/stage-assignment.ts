@@ -13,12 +13,13 @@ export type StageAssignmentTx = {
 };
 
 type StageRow = {
+  serviceAuthorityId?: string | null;
   id: string; patientId: string; status: string; responsibleRole: UserRole | null;
   responsibilityScope: "CENTER" | "SERVICE" | "SPECIALIST_REVIEW" | null; responsibleCenterId: number | null; assignedUserId: string | null;
 };
 
 const stageSelect = {
-  id: true, patientId: true, status: true, responsibleRole: true,
+  serviceAuthorityId: true, id: true, patientId: true, status: true, responsibleRole: true,
   responsibilityScope: true, responsibleCenterId: true, assignedUserId: true,
 } as const;
 const ACTIVE = ["WAITING", "IN_PROGRESS"];
@@ -34,6 +35,7 @@ async function loadLinkedStage(tx: StageAssignmentTx, stageId: string, patientId
   if (stage.responsibilityScope === "SPECIALIST_REVIEW") throw denied();
   if (stage.responsibleRole !== toRole) throw denied();
   if (stage.responsibilityScope === "CENTER" && stage.responsibleCenterId !== toCenterId) throw denied();
+  if (stage.responsibilityScope === "SERVICE" && stage.serviceAuthorityId) throw new Error("إسناد الخدمة الموثق يتم عبر مسؤولها فقط");
   return stage;
 }
 

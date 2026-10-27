@@ -13,6 +13,7 @@ type Stage = {
   operationalCompletionId?: string | null;
   updatedAt?: string;
   canCompleteWork?: boolean;
+  serviceAssignmentId?: string | null;
   canPhysicianConfirm?: boolean;
   clinicalAssignmentId?: string;
 };
@@ -38,7 +39,7 @@ export function CareStageConfirmations({ patientId, patientName, fileNumber, sta
   // SERVICE and unclassified stages stay a destination marker elsewhere (visits page), not an assignment queue.
   const visible = stages.filter((stage) =>
     stage.responsibilityScope === "CENTER" || stage.responsibilityScope === "SPECIALIST_REVIEW"
-    || (stage.responsibilityScope === "SERVICE" && stage.assignedUserId === userId));
+    || (stage.responsibilityScope === "SERVICE" && !stage.serviceAssignmentId && stage.assignedUserId === userId));
   if (!visible.length) return null;
   return (
     <section className="card space-y-3 p-4" aria-labelledby="care-stages-title" data-testid="care-stage-confirmations">

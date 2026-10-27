@@ -439,6 +439,12 @@ model User {
   @@map("users")
   assignedCareStages CareStage[] @relation("CareStageAssignee")
   completedCareStageWork CareStage[] @relation("CareStageWorkCompletedBy")
+  serviceStageAssignments CareStage[] @relation("ServiceStageAssigner")
+  serviceResponsibilities ServiceResponsibility[] @relation("ServiceResponsible")
+  serviceDesignations ServiceResponsibility[] @relation("ServiceDesignator")
+  serviceRevocations ServiceResponsibility[] @relation("ServiceRevoker")
+  consentsRecorded PatientConsent[] @relation("ConsentRecorder")
+  consentsWithdrawn PatientConsent[] @relation("ConsentWithdrawer")
   clinicalNominations ClinicalReviewAssignment[] @relation("ClinicalNominator")
   clinicalReviews ClinicalReviewAssignment[] @relation("ClinicalReviewer")
   clinicalAcceptances ClinicalReviewAssignment[] @relation("ClinicalAcceptor")
@@ -809,6 +815,7 @@ model WoundedExpenseAttachment {
 // =====================================================================
 
 model Patient {
+  signedConsents PatientConsent[]
   nextCheckupAt DateTime? // موعد الفحص القادم (يحدده رئيس المعالجين)
   branchId      Int?
   branch        Branch?   @relation(fields: [branchId], references: [id])
@@ -2405,6 +2412,12 @@ enum StageStatus {
 }
 
 model CareStage {
+  serviceAuthorityId String? @db.Uuid
+  serviceAuthority ServiceResponsibility? @relation(fields: [serviceAuthorityId], references: [id], onDelete: Restrict)
+  serviceAssignmentId String? @db.Uuid
+  serviceAssignedById String?
+  serviceAssignedBy User? @relation("ServiceStageAssigner", fields: [serviceAssignedById], references: [id], onDelete: Restrict)
+  consentEvidence PatientConsent[]
   id              String           @id @default(cuid())
   patientId       String
   patient         Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
@@ -2585,6 +2598,7 @@ model LoginLog {
 
 // ===== دعم متعدّد الفروع =====
 model Branch {
+  serviceResponsibilities ServiceResponsibility[]
   dataOperations DataOperation[]
   id       Int       @id @default(autoincrement())
   name     String    @unique
@@ -2677,4 +2691,60 @@ model ClinicalReviewAssignment {
   @@index([careStageId])
   @@index([programId])
   @@map("clinical_review_assignments")
+}
+
+model ServiceResponsibility {
+  id String @id @default(uuid()) @db.Uuid
+  serviceKey String
+  branchId Int
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  responsibleId String
+  responsible User @relation("ServiceResponsible", fields: [responsibleId], references: [id], onDelete: Restrict)
+  designatedById String
+  designatedBy User @relation("ServiceDesignator", fields: [designatedById], references: [id], onDelete: Restrict)
+  designatedAt DateTime @default(now())
+  revokedAt DateTime?
+  revokedById String?
+  revokedBy User? @relation("ServiceRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+  revocationReason String?
+  stages CareStage[]
+  @@index([branchId, serviceKey])
+  @@map("service_responsibilities")
+}
+
+enum ConsentStatus {
+  SIGNED
+  WITHDRAWN
+}
+
+model PatientConsent {
+  id String @id @default(cuid())
+  patientId String
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  careStageId String?
+  careStage CareStage? @relation(fields: [careStageId], references: [id], onDelete: Restrict)
+  procedure String
+  documentCode String
+  documentVersion String
+  signerName String
+  signerCapacity String
+  representationBasis String?
+  signedAt DateTime
+  status ConsentStatus @default(SIGNED)
+  recordedById String
+  recordedBy User @relation("ConsentRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  recordedAt DateTime @default(now())
+  withdrawnById String?
+  withdrawnBy User? @relation("ConsentWithdrawer", fields: [withdrawnById], references: [id], onDelete: Restrict)
+  withdrawnAt DateTime?
+  withdrawalReason String?
+  storageKey String @unique
+  originalName String
+  mimeType String
+  size Int
+  sha256 String
+  scanStatus FileScanStatus
+  @@unique([patientId, documentCode, documentVersion])
+  @@index([patientId, recordedAt])
+  @@map("patient_consents")
 }

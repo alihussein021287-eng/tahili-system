@@ -1,3 +1,4 @@
+import { ServiceResponsibilityAdmin } from "@/components/settings/ServiceResponsibilityAdmin";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { currentPerms, getSession, requirePerm } from "@/lib/access";
@@ -161,7 +162,7 @@ export default async function Settings({
       </section>
 
       {activeTab === "identity" ? <IdentityTab org={org} canEdit={canEdit} message={params} /> : null}
-      {activeTab === "operations" ? <OperationsTab cfg={cfg} canEdit={canEdit} /> : null}
+      {activeTab === "operations" ? <><OperationsTab cfg={cfg} canEdit={canEdit} /><ServiceResponsibilityAdmin /></> : null}
       {activeTab === "therapy" ? <TherapyTab cfg={cfg} canEdit={canEdit} canManageMembers={perms.has("centers.memberships.manage") && perms.has("centers.central.view")} message={params} /> : null}
       {activeTab === "security" ? <SecurityTab cfg={cfg} canEdit={canEdit} isAdmin={isAdmin} message={params} /> : null}
       {activeTab === "notifications" ? <NotificationsTab cfg={cfg} orgRow={orgRow} canEdit={canEdit} /> : null}

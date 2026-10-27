@@ -1,3 +1,5 @@
+import { PatientConsents } from "@/components/patients/PatientConsents";
+import { ServiceAssignmentControls } from "@/components/patients/ServiceAssignmentControls";
 import { prisma } from "@/lib/db";
 import { Combobox } from "@/components/Combobox";
 import { notFound } from "next/navigation";
@@ -244,7 +246,7 @@ export default async function PatientDetail({ params, searchParams }: { params: 
             where: { patientId: id, status: { in: ["WAITING", "IN_PROGRESS"] } },
             orderBy: { sequence: "asc" },
             select: {
-              id: true, station: true, responsibleRole: true, status: true, responsibilityScope: true, assignedUserId: true, responsibleCenterId: true,
+              serviceAssignmentId: true, id: true, station: true, responsibleRole: true, status: true, responsibilityScope: true, assignedUserId: true, responsibleCenterId: true,
               clinicalAssignments: { where: { revokedAt: null }, select: { id: true, reviewerId: true, acceptedById: true, acceptedAt: true } },
               requiresPhysicianConfirmation: true, operationalCompletedAt: true, operationalCompletionId: true, updatedAt: true,
               assignedUser: { select: { fullName: true } },
@@ -267,7 +269,7 @@ export default async function PatientDetail({ params, searchParams }: { params: 
                 })).map((m) => ({ id: m.user.id, name: m.user.fullName })) : [];
               }
               return {
-                id: stage.id, station: stage.station, responsibleRole: stage.responsibleRole, status: stage.status,
+                serviceAssignmentId: stage.serviceAssignmentId, id: stage.id, station: stage.station, responsibleRole: stage.responsibleRole, status: stage.status,
                 responsibilityScope: stage.responsibilityScope, assignedUserId: stage.assignedUserId,
                 requiresPhysicianConfirmation: stage.requiresPhysicianConfirmation, operationalCompletionId: stage.operationalCompletionId,
                 operationalCompletedAt: stage.operationalCompletedAt?.toISOString() ?? null, updatedAt: stage.updatedAt.toISOString(),
@@ -294,6 +296,8 @@ export default async function PatientDetail({ params, searchParams }: { params: 
 
       {isSecretary ? <SecretaryHandoffHistory rows={secretaryHistory} /> : null}
 
+      <ServiceAssignmentControls patientId={id} />
+      <PatientConsents patientId={id} />
       <PatientTabs rxVisitIds={perms.has("clinical.prescription") ? await eligiblePrescriptionVisitIds(prisma, id, (_sess?.user as any)?.id) : []} currentUserName={(_sess?.user as any)?.name ?? ""} currentUserId={(_sess?.user as any)?.id ?? ""} infoPanel={<div className="space-y-5">
       {(cEdit || cClinical) && <section className="space-y-3">
         <h3 className="font-semibold text-gray-800">البيانات الشخصية</h3>

@@ -45,9 +45,10 @@ export async function transitionCareStage(
 
   const stage = await db.careStage.findFirst({
     where: { id: input.stageId, patientId: input.patientId },
-    select: { id: true, station: true, status: true, sequence: true, responsibleRole: true, responsibilityScope: true, responsibleCenterId: true, assignedUserId: true, requiresPhysicianConfirmation: true, operationalCompletedById: true, operationalCompletedAt: true, operationalCompletionId: true },
+    select: { serviceAuthorityId: true, id: true, station: true, status: true, sequence: true, responsibleRole: true, responsibilityScope: true, responsibleCenterId: true, assignedUserId: true, requiresPhysicianConfirmation: true, operationalCompletedById: true, operationalCompletedAt: true, operationalCompletionId: true },
   });
   if (!stage) throw new Error("غير مصرح");
+  if (stage.responsibilityScope === "SERVICE" && stage.serviceAuthorityId) throw new Error("استخدم إجراء الخدمة المسندة بمعرف الإسناد الحالي");
   const clinicalCenter = stage.responsibilityScope === "CENTER" && stage.requiresPhysicianConfirmation === true;
   const physicianReview = clinicalCenter && input.to === "CONFIRMED";
   if (input.to === "CONFIRMED" && stage.requiresPhysicianConfirmation === true && !clinicalCenter && stage.responsibilityScope !== "SPECIALIST_REVIEW") throw new Error("سلطة التأكيد الطبي لهذه المحطة غير محددة");
